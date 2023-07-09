@@ -63,8 +63,8 @@ for i in range(rangex):
                           baseInertialFramePosition=[0, 0, 0],
                           baseCollisionShapeIndex=collisionShapeId,
                           baseVisualShapeIndex=visualShapeId,
-                          basePosition=[((-rangex / 2) + i) * meshScale[0] * 2,
-                                        (-rangey / 2 + j) * meshScale[1] * 2, 1],
+                          basePosition=[((-rangex / 2) + i) * meshScale[0] * 2 / 7,
+                                        (-rangey / 2 + j) * meshScale[1] * 2 / 7, 1],
                           useMaximalCoordinates=True)
 
 p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
