@@ -9,7 +9,8 @@ cid = p.connect(p.SHARED_MEMORY)
 if (cid < 0):
   p.connect(p.GUI)
 
-p.setAdditionalSearchPath('/home/gun/Desktop/pybullet-URDF-models/urdf_models/models')
+#p.setAdditionalSearchPath('/home/gun/Desktop/pybullet-URDF-models/urdf_models/models')
+p.setAdditionalSearchPath(pybullet_data.getDataPath())
 p.setPhysicsEngineParameter(numSolverIterations=10)
 p.setTimeStep(1. / 120.)
 logId = p.startStateLogging(p.STATE_LOGGING_PROFILE_TIMINGS, "visualShapeBench.json")
@@ -22,16 +23,19 @@ p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
 p.configureDebugVisualizer(p.COV_ENABLE_TINY_RENDERER, 0)
 
 shift = [0, -0.02, 0]
-meshScale = [0.1, 0.1, 0.1]
+meshScale = [10, 10, 10]
+#meshScale = [0.1, 0.1, 0.1]
 #the visual shape and collision shape can be re-used by all createMultiBody instances (instancing)
+
+p.setAdditionalSearchPath('/home/gun/Desktop/pybullet-URDF-models/urdf_models/models')
 visualShapeId = p.createVisualShape(shapeType=p.GEOM_MESH,
-                                    fileName="black_marker/textured.obj",
+                                    fileName="mug/textured.obj",
                                     rgbaColor=[1, 1, 1, 1],
                                     specularColor=[0.4, .4, 0],
                                     visualFramePosition=shift,
                                     meshScale=meshScale)
 collisionShapeId = p.createCollisionShape(shapeType=p.GEOM_MESH,
-                                          fileName="black_marker/collision.obj",
+                                          fileName="mug/collision.obj",
                                           collisionFramePosition=shift,
                                           meshScale=meshScale)
 
