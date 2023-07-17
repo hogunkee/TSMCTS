@@ -3,39 +3,53 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-def load_urdata(data_dir):
-    rgb_list = [f for f in os.listdir(data_dir) if f.startswith('image_')]
-    depth_list = [f for f in os.listdir(data_dir) if f.startswith('depth_')]
-    pose_list = [f for f in os.listdir(data_dir) if f.startswith('pose_')]
-    #rotation_list = [f for f in os.listdir(data_dir) if f.startswith('rotation_')]
 
-    def load_numpy(fname_list):
-        fpath_list = [os,path.join(datapath, f) for f in fname_list]
-        data_list = []
-        for f in fpath_list:
-            data = np.load(f)
-            data_list.append(data)
-        return np.concatenate(data_list)
-
-    images = load_numpy(rgb_list)
-    depths = load_numpy(depth_list)
-    poses = load_numpy(pose_list)
-    return images, depths, poses
-
-class UR5Dataset(Datset):
-    def __init__(self, data_dir):
+class UR5Dataset(Dataset):
+    def __init__(self, data_dir='/home/gun/ssd/disk/ur5_tidying_data/3block'):
         super().__init__()
-        images, depths, poses = load_urdata(data_dir)
-        self.i = torch.tensor(i)
-        self.d = torch.tensor(d)
-        self.p = torch.tensor(p)
+        self.data_dir = data_dir
+        self.buff_i = None
+        self.buff_d = None
+        self.buff_p = None
+
+        self.fsize = 2048
+        self.find_urdata(self.data_dir)
+        self.current_fidx = 0
+        self.load_data(self.current_fidx)
     
     def __getitem__(self, index):
-        i = self.i[index]
-        d = self.d[index]
-        p = self.p[index]
+        npy_idx = (index // self.fsize) // self.num_file
+        infile_idx = index % self.fsize
+        if npy_idx != self.current_fidx:
+            self.load_data(npy_idx)
+            self.current_fidx = npy_idx
+        i = self.buff_i[infile_idx]
+        d = self.buff_d[infile_idx]
+        p = self.buff_p[infile_idx]
+        i = np.transpose(i, [2, 0, 1])
+        i = torch.from_numpy(i).type(torch.float)
+        d = torch.from_numpy(d).type(torch.float)
+        p = torch.from_numpy(p).type(torch.float)
         return i, d, p
 
     def __len__(self):
-        return len(self.i)
+        return self.num_file * self.fsize
 
+    def find_urdata(self, data_dir):
+        rgb_list = [f for f in os.listdir(data_dir) if f.startswith('image_')]
+        depth_list = [f for f in os.listdir(data_dir) if f.startswith('depth_')]
+        pose_list = [f for f in os.listdir(data_dir) if f.startswith('pose_')]
+        #rotation_list = [f for f in os.listdir(data_dir) if f.startswith('rotation_')]
+
+        self.rgb_list = sorted(rgb_list)
+        self.depth_list = sorted(depth_list)
+        self.pose_list = sorted(pose_list)
+        #self.rotation_list = sorted(rotation_list)
+
+        self.num_file = len(self.rgb_list)
+
+    def load_data(self, dnum):
+        print('load %d-th npy file.' %dnum)
+        self.buff_i = np.load(os.path.join(self.data_dir, self.rgb_list[dnum]))
+        self.buff_d = np.load(os.path.join(self.data_dir, self.depth_list[dnum]))
+        self.buff_p = np.load(os.path.join(self.data_dir, self.pose_list[dnum]))
