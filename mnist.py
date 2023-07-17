@@ -6,7 +6,7 @@ import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
-import dsae
+from model import dsae
 
 
 def draw_spatial_features(numpy_image, features, image_size=(28, 28)):
