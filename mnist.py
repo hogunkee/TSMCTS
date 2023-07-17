@@ -29,7 +29,7 @@ def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_t
         axarr[idx, 0].imshow(og_im_res)
         # reconstructed image
         scaled_image = (im + 1) / 2
-        axarr[idx, 1].imshow(scaled_image.numpy().reshape(28, 28), cmap="gray")
+        axarr[idx, 1].imshow(scaled_image.cpu().numpy().reshape(28, 28), cmap="gray")
 
     plt.savefig(filename)
     plt.close()
