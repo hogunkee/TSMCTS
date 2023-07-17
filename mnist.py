@@ -24,7 +24,7 @@ def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_t
     for idx, im in enumerate(reconstructed_images_to_draw[:num_images_to_draw]):
         # original image
         og_image = (images_to_draw[:num_images_to_draw][idx] + 1) / 2
-        og_im_res = np.repeat(og_image.numpy().reshape(28, 28, 1), 3, axis=2)
+        og_im_res = np.repeat(og_image.cpu().numpy().reshape(28, 28, 1), 3, axis=2)
         draw_spatial_features(og_im_res, spatial_features_to_draw[idx])
         axarr[idx, 0].imshow(og_im_res)
         # reconstructed image
