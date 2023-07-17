@@ -1,2 +1,5 @@
 .*.swp
 *.json
+capture/
+*.mp4
+.*.swp
