@@ -159,12 +159,17 @@ class CustomEncoder(nn.Module):
         out = self.spatial_soft_argmax(out)
         return out
 
+
 class CustomDecoder(nn.Module):
     def __init__(self, latent_dimension, latent_height=6, latent_width=6, 
-                 hidden_dims=[256, 128, 64, 32], normalise=True):
+                 hidden_dims=[256, 128, 64, 32], out_channel=3, normalise=True):
         super().__init__()
+        self.n_hidden = hidden_dims[0]
+        self.latent_height = latent_height
+        self.latent_width = latent_width
 
-        self.linear = nn.Lineaer(in_features=latent_dimension, out_features=latent_height * latent_width)
+        self.linear = nn.Lineaer(in_features=latent_dimension, 
+                                 out_features=latent_height * latent_width * hidden_dims[0])
         self.leaky_relu = nn.LeakyReLU()
 
         modules = []
@@ -182,7 +187,7 @@ class CustomDecoder(nn.Module):
                         )
                     )
         self.cnn_transpose = nn.Sequential(*modules)
-        self.activ = nn.Tanh() if normalise else nn.Sigmoid()
+        self.activate = nn.Tanh if normalise else nn.Sigmoid
         self.final_layer = nn.Sequential(
                         nn.ConvTranspose2d(hidden_dims[-1],
                                            hidden_dims[-1],
@@ -191,21 +196,23 @@ class CustomDecoder(nn.Module):
                                            padding=1,
                                            output_padding=1),
                         nn.BatchNorm2d(hidden_dims[-1]),
-                        nn.LeakyReLU()
-                        nn.Conv2d(hidden_dims[-1], out_channel=3,
+                        nn.LeakyReLU(),
+                        nn.Conv2d(hidden_dims[-1], out_channel=out_channel,
                                   kernel_size=3, padding=1),
-                        self.activ
+                        self.activate()
                         )
 
-    def forward(self, x):
-        out_linear = self.leaky_relu(self.linear(x))
+    def forward(self, z):
+        out_linear = self.leaky_relu(self.linear(z))
+        out_reshape = out.view(-1, self.n_hidden, self.latent_height, self.latent_width)
         out_cnn_transpose = self.cnn_transpose(x)
         out = self.final_layer(out_cnn_transpose)
         return out
 
+
 class CustomDeepSpatialAutoencoder(nn.Module):
-    def __init__(self, in_channels=3, hidden_dims=[32, 64, 128, 256], latent_dimension=32, 
-                 temperature=None, normalise=False):
+    def __init__(self, in_channels=3, hidden_dims=[32, 64, 128, 32], latent_dimension=64, 
+                 out_channel=3, temperature=None, normalise=False):
         """
         Same as DeepSpatialAutoencoder, but with your own custom modules
         :param encoder: Encoder
@@ -216,7 +223,7 @@ class CustomDeepSpatialAutoencoder(nn.Module):
                                      temperature=temperature, normalise=normalise)
         hidden_dims.reverse()
         self.decoder = CustomDecoder(latent_dimension=latent_dimension, lantent_height=6,
-                                     latent_width=6, hidden_dims=hidden_dims)
+                             latent_width=6, hidden_dims=hidden_dims, out_channel=out_channel)
 
     def forward(self, x):
         spatial_features = self.encoder(x)
