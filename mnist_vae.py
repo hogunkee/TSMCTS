@@ -66,10 +66,12 @@ if __name__ == '__main__':
     # image output size can be smaller, not worth it for MNIST images
     #decoder = dsae.CustomDecoder(image_output_size=(28, 28), latent_dimension=16)
 
-    dsae_model = dsae.CustomDeepSpatialAutoencoder(in_channel=1, 
+    dsae_model = dsae.CustomDeepSpatialAutoencoder(in_channels=1, 
                                                    hidden_dims=[32, 64, 32], 
                                                    latent_dimension=64,
-                                                   out_channel=1, 
+                                                   latent_height=4,
+                                                   latent_width=4,
+                                                   out_channels=1, 
                                                    temperature=None, 
                                                    normalise=True
                                                    ).to(device)
