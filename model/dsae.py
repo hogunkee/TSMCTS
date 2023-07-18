@@ -42,7 +42,7 @@ class SpatialSoftArgmax(nn.Module):
         :return: Spatial features (one point per channel), of size (N, C, 2)
         """
         n, c, h, w = x.size()
-        spatial_softmax_per_map = nn.functional.softmax(x.view(n * c, h * w) / self.temperature, dim=1)
+        spatial_softmax_per_map = nn.functional.softmax(x.contiguous().view(n * c, h * w) / self.temperature, dim=1)
         spatial_softmax = spatial_softmax_per_map.view(n, c, h, w)
 
         # calculate image coordinate maps
