@@ -69,10 +69,10 @@ if __name__ == '__main__':
     #decoder = dsae.CustomDecoder(image_output_size=(28, 28), latent_dimension=16)
 
     dsae_model = dsae.CustomDeepSpatialAutoencoder(in_channels=3, 
-                                                   hidden_dims=[32, 64, 128, 32], 
-                                                   latent_dimension=64,
-                                                   latent_height=6,
-                                                   latent_width=6,
+                                                   hidden_dims=[32, 64, 16], #[32, 64, 128, 32],
+                                                   latent_dimension=32, #64
+                                                   latent_height=12, #6
+                                                   latent_width=12, #6
                                                    out_channels=3, 
                                                    temperature=None, 
                                                    normalise=True
