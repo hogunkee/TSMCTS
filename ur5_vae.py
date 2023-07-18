@@ -1,5 +1,6 @@
 import argparse
 
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -25,12 +26,11 @@ def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_t
     for idx, im in enumerate(reconstructed_images_to_draw[:num_images_to_draw]):
         # original image
         og_image = (images_to_draw[:num_images_to_draw][idx] + 1) / 2
-        og_im_res = np.repeat(og_image.cpu().numpy().reshape(28, 28, 1), 3, axis=2)
-        draw_spatial_features(og_im_res, spatial_features_to_draw[idx])
-        axarr[idx, 0].imshow(og_im_res)
+        draw_spatial_features(og_image, spatial_features_to_draw[idx])
+        axarr[idx, 0].imshow(og_image)
         # reconstructed image
         scaled_image = (im + 1) / 2
-        axarr[idx, 1].imshow(scaled_image.cpu().numpy().reshape(28, 28), cmap="gray")
+        axarr[idx, 1].imshow(scaled_image.cpu().numpy().reshape(96, 96, 3))
 
     plt.savefig(filename)
     plt.close()
@@ -49,7 +49,7 @@ if __name__ == '__main__':
     num_epochs = args.num_epochs
     # Adam learning rate
     lr = args.learning_rate
-    out_file_name = args.file_name
+    out_file_name = os.path.join('temp/', args.file_name)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     transform = transforms.Compose([
@@ -101,6 +101,11 @@ if __name__ == '__main__':
                     )
                 )
 
+            spatial_features = dsae_model.encoder(images)
+            num_images = 5
+            _file_name = out_file_name + '_train_%dep' %epoch
+            draw_figure(out_file_name, num_images, spatial_features, images, output)
+
     dsae_model.eval()
     with torch.no_grad():
         images, _depths, _poses = next(iter(train_loader)) # test_loader
@@ -109,3 +114,6 @@ if __name__ == '__main__':
         spatial_features = dsae_model.encoder(images)
         num_images = 5
         draw_figure(out_file_name, num_images, spatial_features, images, recon)
+
+    torch.save(dsae_model.state_dict(), out_file_name + '.pth')
+    print('Training done.')
