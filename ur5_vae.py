@@ -12,7 +12,7 @@ from data_loader import UR5Dataset
 from model import dsae
 
 
-def draw_spatial_features(numpy_image, features, image_size=(28, 28)):
+def draw_spatial_features(numpy_image, features, image_size=(96, 96)):
     image_size_x, image_size_y = image_size
     for sp in features:
         x, y = sp
