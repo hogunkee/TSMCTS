@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+from torch import nn
 from data_loader import UR5Dataset
 
 from model import dsae
@@ -26,11 +27,12 @@ def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_t
     for idx, im in enumerate(reconstructed_images_to_draw[:num_images_to_draw]):
         # original image
         og_image = (images_to_draw[:num_images_to_draw][idx] + 1) / 2
+        og_image = og_image.detach().cpu().numpy().transpose([1, 2, 0])
         draw_spatial_features(og_image, spatial_features_to_draw[idx])
         axarr[idx, 0].imshow(og_image)
         # reconstructed image
         scaled_image = (im + 1) / 2
-        axarr[idx, 1].imshow(scaled_image.cpu().numpy().reshape(96, 96, 3))
+        axarr[idx, 1].imshow(scaled_image.detach().cpu().numpy().reshape(96, 96, 3))
 
     plt.savefig(filename)
     plt.close()
@@ -78,8 +80,8 @@ if __name__ == '__main__':
 
     optimiser = torch.optim.Adam(dsae_model.parameters(), lr=lr)
     # g_slow does not make sense for non-sequence data such as MNIST
-    #dsae_loss = dsae.DSAE_Loss(add_g_slow=False)
-    rec_loss = nn.BCELoss(reduce='sum')
+    dsae_loss = dsae.DSAE_Loss(add_g_slow=False)
+    #rec_loss = nn.BCELoss(reduction='sum')
 
     for epoch in range(num_epochs):
         dsae_model.train()
@@ -88,8 +90,8 @@ if __name__ == '__main__':
             optimiser.zero_grad()
             output = dsae_model(images)
             # we ignore g_slow contribution for MNIST
-            #loss, _g_slow_contrib = dsae_loss(output, images)
-            loss = rec_loss(output, images)
+            loss, _g_slow_contrib = dsae_loss(output, images)
+            #loss = rec_loss(output, images)
             loss = loss / len(images)
             loss.backward()
             optimiser.step()
@@ -101,10 +103,10 @@ if __name__ == '__main__':
                     )
                 )
 
-            spatial_features = dsae_model.encoder(images)
-            num_images = 5
-            _file_name = out_file_name + '_train_%dep' %epoch
-            draw_figure(out_file_name, num_images, spatial_features, images, output)
+        spatial_features = dsae_model.encoder(images)
+        num_images = 5
+        _file_name = out_file_name + '_train_%dep' %epoch
+        draw_figure(_file_name, num_images, spatial_features, images, output)
 
     dsae_model.eval()
     with torch.no_grad():
