@@ -53,3 +53,19 @@ class UR5Dataset(Dataset):
         self.buff_i = np.load(os.path.join(self.data_dir, self.rgb_list[dnum]))
         self.buff_d = np.load(os.path.join(self.data_dir, self.depth_list[dnum]))
         self.buff_p = np.load(os.path.join(self.data_dir, self.pose_list[dnum]))
+
+    def pos2pixel(self, x, y):
+        theta = 30 * np.pi / 180
+        cx, cy, cz = 0.0, 0.65, 1.75
+        fovy = 45.0
+        camera_height = camera_width = 96
+        f = 0.5 * camera_height / np.tan(fovy * np.pi / 360)
+        u0 = 0.5 * camera_width
+        v0 = 0.5 * camera_height
+        z0 = 0.9
+        
+        y_cam = np.cos(theta) * (y - cy - np.tan(theta) * (z0 - cz)) + 1e-10
+        dv = f * np.cos(theta) / ((cz - z0) / y_cam - np.sin(theta))
+        v = dv + v0
+        u = - dv * x / y_cam + u0
+        return int(np.round(u)), int(np.round(v))
