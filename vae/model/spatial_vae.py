@@ -30,14 +30,28 @@ class CoordinateUtils(object):
 class LookupUtils(object):
     @staticmethod
     def get_lookup(pixels, h, w, normalised=True):
-        n = len(pixels)
+        b, n, _2 = pixels.shape
         if normalised:
             pixels = CoordinateUtils.denormalise(pixels, h)
-        lookup_filter = torch.zeros(n, h, w)
+        lookup_filter = torch.zeros(b, n, h, w)
         for i in range(n):
-            x, y = pixels[i].type(torch.int32)
-            lookup_filter[y, x] = 1.0
+            x = pixels[:, i, 0].type(torch.long)
+            y = pixels[:, i, 1].type(torch.long)
+            lookup_filter[torch.arange(b), i, y, x] = 1.0
         return lookup_filter
+
+    @staticmethod
+    def lookup(features, pixels, normalised=True):
+        b, c, h, w = features.shape
+        b, n, _2 = pixels.shape
+        if normalised:
+            pixels = CoordinateUtils.denormalise(pixels, h)
+        lookup_features = torch.zeros(b, n, c).to(features.device)
+        for i in range(n):
+            x = pixels[:, i, 0].type(torch.long)
+            y = pixels[:, i, 1].type(torch.long)
+            lookup_features[:, i] = features[torch.arange(b), :, y, x]
+        return lookup_features
             
 
 class CustomEncoder(nn.Module):
@@ -58,10 +72,20 @@ class CustomEncoder(nn.Module):
         self.cnn = nn.Sequential(*modules)
 
     def forward(self, x, p):
+        # out_cnn : B x C x Hin x Win
+        # lookup_filter: B x NB x Hin x Win
         out_cnn = self.cnn(x)
-        _, c, h, w = out_cnn.shape
-        lookup_filter = LookupUtils.get_lookup(p, h, w, normalised=True)
-        out = F.conv2d(out_cnn, lookup_filter, padding=0)
+        b, c, h, w = out_cnn.shape
+        p = CoordinateUtils.normalise(p, 96)
+        lookup_filter = LookupUtils.get_lookup(p, h, w, normalised=True).to(x.device)
+        out_flat = out_cnn.view(b, c, h*w)    # B x C x HW
+        lookup_filter_flat = lookup_filter.view(b, -1, h*w).permute((0, 2, 1)) # B x HW x NB
+        out = torch.matmul(out_flat, lookup_filter_flat)
+        # out: B x NB x C
+
+        # method2
+        # out = LookupUtils.lookup(out_cnn, p, normalised=True)
+        # out = out.permute((0, 2, 1))
         return out
 
 
@@ -129,11 +153,10 @@ class CustomDeepSpatialAutoencoder(nn.Module):
         self.decoder = CustomDecoder(latent_dimension=latent_dimension, latent_height=latent_height,
                              latent_width=latent_width, hidden_dims=hidden_dims, out_channels=out_channels)
 
-    def forward(self, x):
-        spatial_features = self.encoder(x)
-        n, c, _2 = spatial_features.size()
-        # (N, C * 2 = latent dimension)
-        return self.decoder(spatial_features.view(n, c * 2))
+    def forward(self, x, p):
+        spatial_features = self.encoder(x, p)
+        _, c, n = spatial_features.size()
+        return self.decoder(spatial_features.view(-1, n * c))
 
 
 class SVAE_Loss(object):

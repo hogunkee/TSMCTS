@@ -72,5 +72,6 @@ class UR5Dataset(Dataset):
         dv = f * np.cos(theta) / ((cz - z0) / y_cam - np.sin(theta))
         v = dv + v0
         u = - dv * x / y_cam + u0
-        return u, v
+        return np.concatenate([u[:, np.newaxis], v[:, np.newaxis]], axis=1)
+        #return u, v
         #return int(np.round(u)), int(np.round(v))

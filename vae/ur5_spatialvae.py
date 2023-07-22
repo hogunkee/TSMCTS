@@ -65,7 +65,7 @@ if __name__ == '__main__':
 
     svae_model = svae.CustomDeepSpatialAutoencoder(in_channels=3, 
                                                    hidden_dims=[32, 64, 16], #[32, 64, 128, 32],
-                                                   latent_dimension=32, #64
+                                                   latent_dimension=48, #64
                                                    latent_height=12, #6
                                                    latent_width=12, #6
                                                    out_channels=3, 
@@ -73,15 +73,15 @@ if __name__ == '__main__':
 
     optimiser = torch.optim.Adam(svae_model.parameters(), lr=lr)
     # g_slow does not make sense for non-sequence data such as MNIST
-    svae_loss = svae.SVAE_Loss(add_g_slow=False)
+    svae_loss = svae.SVAE_Loss()
     #rec_loss = nn.BCELoss(reduction='sum')
 
     for epoch in range(num_epochs):
         svae_model.train()
-        for batch_idx, (images, _depths, _poses) in enumerate(train_loader):
+        for batch_idx, (images, _depths, poses) in enumerate(train_loader):
             images = images.to(device)
             optimiser.zero_grad()
-            output = svae_model(images)
+            output = svae_model(images, poses)
             # we ignore g_slow contribution for MNIST
             loss = svae_loss(output, images)
             #loss = rec_loss(output, images)
