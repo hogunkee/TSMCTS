@@ -26,6 +26,7 @@ class UR5Dataset(Dataset):
         i = self.buff_i[infile_idx]
         d = self.buff_d[infile_idx]
         p = self.buff_p[infile_idx]
+        p = self.pos2pixel(p)
         i = np.transpose(i, [2, 0, 1])
         i = torch.from_numpy(i).type(torch.float)
         d = torch.from_numpy(d).type(torch.float)
@@ -54,7 +55,10 @@ class UR5Dataset(Dataset):
         self.buff_d = np.load(os.path.join(self.data_dir, self.depth_list[dnum]))
         self.buff_p = np.load(os.path.join(self.data_dir, self.pose_list[dnum]))
 
-    def pos2pixel(self, x, y):
+    def pos2pixel(self, poses):
+        x = poses[:, 0]
+        y = poses[:, 1]
+
         theta = 30 * np.pi / 180
         cx, cy, cz = 0.0, 0.65, 1.75
         fovy = 45.0
@@ -68,4 +72,5 @@ class UR5Dataset(Dataset):
         dv = f * np.cos(theta) / ((cz - z0) / y_cam - np.sin(theta))
         v = dv + v0
         u = - dv * x / y_cam + u0
-        return int(np.round(u)), int(np.round(v))
+        return u, v
+        #return int(np.round(u)), int(np.round(v))
