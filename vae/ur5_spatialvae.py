@@ -69,8 +69,6 @@ if __name__ == '__main__':
                                                    latent_height=12, #6
                                                    latent_width=12, #6
                                                    out_channels=3, 
-                                                   temperature=None, 
-                                                   normalise=True
                                                    ).to(device)
 
     optimiser = torch.optim.Adam(svae_model.parameters(), lr=lr)
