@@ -136,7 +136,7 @@ class CustomDeepSpatialAutoencoder(nn.Module):
         return self.decoder(spatial_features.view(n, c * 2))
 
 
-class DSAE_Loss(object):
+class SVAE_Loss(object):
     def __init__(self):
         self.mse_loss = nn.MSELoss(reduction="sum")
 
