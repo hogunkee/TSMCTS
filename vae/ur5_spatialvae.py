@@ -12,10 +12,10 @@ from data_loader import UR5Dataset
 from model import spatial_vae as svae
 
 
-def draw_spatial_features(numpy_image, features, image_size=(96, 96)):
+def draw_spatial_features(numpy_image, features, poses_norm, image_size=(96, 96)):
     image_size_x, image_size_y = image_size
-    for sp in features:
-        x, y = sp
+    for p in poses_norm:
+        x, y = p
         attend_x_pix = int((x + 1) * (image_size_x - 1) / 2)
         attend_y_pix = int((y + 1) * (image_size_y - 1) / 2)
         numpy_image[attend_y_pix, attend_x_pix] = np.array([1.0, 0.0, 0.0])
@@ -24,11 +24,12 @@ def draw_spatial_features(numpy_image, features, image_size=(96, 96)):
 def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_to_draw, reconstructed_images_to_draw):
     f, axarr = plt.subplots(num_images_to_draw, 2, figsize=(10, 15), dpi=100)
     plt.tight_layout()
+    spatial_features, poses_norm = spatial_features_to_draw
     for idx, im in enumerate(reconstructed_images_to_draw[:num_images_to_draw]):
         # original image
         og_image = (images_to_draw[:num_images_to_draw][idx] + 1) / 2
         og_image = og_image.detach().cpu().numpy().transpose([1, 2, 0])
-        draw_spatial_features(og_image, spatial_features_to_draw[idx])
+        draw_spatial_features(og_image, spatial_features[idx], poses_norm[idx])
         axarr[idx, 0].imshow(og_image)
         # reconstructed image
         scaled_image = (im + 1) / 2
@@ -65,7 +66,7 @@ if __name__ == '__main__':
 
     svae_model = svae.CustomDeepSpatialAutoencoder(in_channels=3, 
                                                    hidden_dims=[32, 64, 16], #[32, 64, 128, 32],
-                                                   latent_dimension=48, #64
+                                                   latent_dimension=54, #64
                                                    latent_height=12, #6
                                                    latent_width=12, #6
                                                    out_channels=3, 
@@ -96,10 +97,10 @@ if __name__ == '__main__':
                     )
                 )
 
-        spatial_features = svae_model.encoder(images, poses)
-        num_images = 5
-        _file_name = out_file_name + '_train_%dep' %epoch
-        draw_figure(_file_name, num_images, spatial_features, images, output)
+            spatial_features = svae_model.encoder(images, poses)
+            num_images = 5
+            _file_name = out_file_name + '_train_%dep' %epoch
+            draw_figure(_file_name, num_images, spatial_features, images, output)
 
     svae_model.eval()
     with torch.no_grad():

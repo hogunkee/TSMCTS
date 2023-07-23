@@ -76,17 +76,17 @@ class CustomEncoder(nn.Module):
         # lookup_filter: B x NB x Hin x Win
         out_cnn = self.cnn(x)
         b, c, h, w = out_cnn.shape
-        p = CoordinateUtils.normalise(p, 96)
-        lookup_filter = LookupUtils.get_lookup(p, h, w, normalised=True).to(x.device)
+        p_norm = CoordinateUtils.normalise(p, 96)
+        lookup_filter = LookupUtils.get_lookup(p_norm, h, w, normalised=True).to(x.device)
         out_flat = out_cnn.view(b, c, h*w)    # B x C x HW
         lookup_filter_flat = lookup_filter.view(b, -1, h*w).permute((0, 2, 1)) # B x HW x NB
-        out = torch.matmul(out_flat, lookup_filter_flat)
-        # out: B x NB x C
+        out = torch.matmul(out_flat, lookup_filter_flat) # B x C x NB
+        out = out.permute((0, 2, 1)) # B x NB x C
 
         # method2
         # out = LookupUtils.lookup(out_cnn, p, normalised=True)
         # out = out.permute((0, 2, 1))
-        return out
+        return out, p_norm
 
 
 class CustomDecoder(nn.Module):
@@ -154,9 +154,14 @@ class CustomDeepSpatialAutoencoder(nn.Module):
                              latent_width=latent_width, hidden_dims=hidden_dims, out_channels=out_channels)
 
     def forward(self, x, p):
-        spatial_features = self.encoder(x, p)
-        _, c, n = spatial_features.size()
-        return self.decoder(spatial_features.view(-1, n * c))
+        features, p_norm = self.encoder(x, p)
+        _, n, c = features.size()
+        features_concat = torch.cat([p_norm.to(x.device), features], dim=2) # B x NB x (C+2)
+        #features_flat = features.view(-1, n*c)
+        #p_norm_flat = p_norm.view(-1, n*2).to(x.device)
+        #features_concat = torch.cat([p_norm_flat, features_flat], dim=1)
+        out = self.decoder(features_concat.view(-1, n*(c+2)))
+        return out
 
 
 class SVAE_Loss(object):
