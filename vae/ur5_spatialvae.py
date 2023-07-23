@@ -14,11 +14,16 @@ from model import spatial_vae as svae
 
 def draw_spatial_features(numpy_image, poses_norm, image_size=(96, 96)):
     image_size_x, image_size_y = image_size
-    for p in poses_norm:
+    colors = np.array([
+        [1., 0., 0.],
+        [0., 0.6, 0.],
+        [0., 0., 1.]
+        ])
+    for c, p in zip(colors, poses_norm):
         x, y = p
         attend_x_pix = int((x + 1) * (image_size_x - 1) / 2)
         attend_y_pix = int((y + 1) * (image_size_y - 1) / 2)
-        numpy_image[attend_y_pix, attend_x_pix] = np.array([1.0, 0.0, 0.0])
+        numpy_image[attend_y_pix, attend_x_pix] = c
 
 
 def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_to_draw, 
@@ -106,7 +111,7 @@ if __name__ == '__main__':
         spatial_features = svae_model.encoder(images, poses)
         # Sample new points #
         poses_sample = torch.rand(spatial_features[1].shape) * 2 - 1
-        f_concat = torch.cat([poses_sample.to(device), spatial_features], dim=2)
+        f_concat = torch.cat([poses_sample.to(device), spatial_features[0]], dim=2)
         output_sample = svae_model.decoder(f_concat)
 
         num_images = 5
