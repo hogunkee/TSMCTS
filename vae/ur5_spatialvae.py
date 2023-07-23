@@ -12,7 +12,7 @@ from data_loader import UR5Dataset
 from model import spatial_vae as svae
 
 
-def draw_spatial_features(numpy_image, features, poses_norm, image_size=(96, 96)):
+def draw_spatial_features(numpy_image, poses_norm, image_size=(96, 96)):
     image_size_x, image_size_y = image_size
     for p in poses_norm:
         x, y = p
@@ -21,19 +21,25 @@ def draw_spatial_features(numpy_image, features, poses_norm, image_size=(96, 96)
         numpy_image[attend_y_pix, attend_x_pix] = np.array([1.0, 0.0, 0.0])
 
 
-def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_to_draw, reconstructed_images_to_draw):
-    f, axarr = plt.subplots(num_images_to_draw, 2, figsize=(10, 15), dpi=100)
+def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_to_draw, 
+                reconstructed_images_to_draw, reconstructed_sample_images, poses_sample):
+    f, axarr = plt.subplots(num_images_to_draw, 3, figsize=(12, 15), dpi=100)
     plt.tight_layout()
     spatial_features, poses_norm = spatial_features_to_draw
     for idx, im in enumerate(reconstructed_images_to_draw[:num_images_to_draw]):
         # original image
         og_image = (images_to_draw[:num_images_to_draw][idx] + 1) / 2
         og_image = og_image.detach().cpu().numpy().transpose([1, 2, 0])
-        draw_spatial_features(og_image, spatial_features[idx], poses_norm[idx])
         axarr[idx, 0].imshow(og_image)
         # reconstructed image
-        scaled_image = (im + 1) / 2
-        axarr[idx, 1].imshow(scaled_image.detach().cpu().numpy().transpose([1, 2, 0]))
+        scaled_image = (im.detach().cpu().numpy().transpose([1, 2, 0]) + 1) / 2
+        draw_spatial_features(scaled_image, poses_norm[idx])
+        axarr[idx, 1].imshow(scaled_image)
+        # reconstruct with sampled points
+        im_sample = reconstructed_sample_images[idx]
+        scaled_image_sample = (im_sample.detach().cpu().numpy().transpose([1, 2, 0]) + 1) / 2
+        draw_spatial_features(scaled_image_sample, poses_sample[idx])
+        axarr[idx, 2].imshow(scaled_image_sample)
 
     plt.savefig(filename)
     plt.close()
@@ -97,10 +103,16 @@ if __name__ == '__main__':
                     )
                 )
 
-            spatial_features = svae_model.encoder(images, poses)
-            num_images = 5
-            _file_name = out_file_name + '_train_%dep' %epoch
-            draw_figure(_file_name, num_images, spatial_features, images, output)
+        spatial_features = svae_model.encoder(images, poses)
+        # Sample new points #
+        poses_sample = torch.rand(spatial_features[1].shape) * 2 - 1
+        f_concat = torch.cat([poses_sample.to(device), spatial_features], dim=2)
+        output_sample = svae_model.decoder(f_concat)
+
+        num_images = 5
+        _file_name = out_file_name + '_train_%dep' %epoch
+        draw_figure(_file_name, num_images, spatial_features, images, output, 
+                    output_sample, poses_sample)
 
     svae_model.eval()
     with torch.no_grad():

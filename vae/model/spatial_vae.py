@@ -132,6 +132,9 @@ class CustomDecoder(nn.Module):
                         )
 
     def forward(self, z):
+        if len(z.shape)>2:
+            b, n, c_ = z.size()
+            z = z.view(-1, n*c_)
         out_linear = self.leaky_relu(self.linear(z))
         out_reshape = out_linear.view(-1, self.n_hidden, self.latent_height, self.latent_width)
         out_cnn_transpose = self.cnn_transpose(out_reshape)
@@ -160,7 +163,8 @@ class CustomDeepSpatialAutoencoder(nn.Module):
         #features_flat = features.view(-1, n*c)
         #p_norm_flat = p_norm.view(-1, n*2).to(x.device)
         #features_concat = torch.cat([p_norm_flat, features_flat], dim=1)
-        out = self.decoder(features_concat.view(-1, n*(c+2)))
+        out = self.decoder(features_concat)
+        #out = self.decoder(features_concat.view(-1, n*(c+2)))
         return out
 
 
