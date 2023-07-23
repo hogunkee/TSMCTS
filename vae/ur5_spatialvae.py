@@ -96,7 +96,7 @@ if __name__ == '__main__':
                     )
                 )
 
-        spatial_features = svae_model.encoder(images)
+        spatial_features = svae_model.encoder(images, poses)
         num_images = 5
         _file_name = out_file_name + '_train_%dep' %epoch
         draw_figure(_file_name, num_images, spatial_features, images, output)
