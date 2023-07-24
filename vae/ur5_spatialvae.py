@@ -51,6 +51,7 @@ def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_t
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_epochs", type=int, default=20)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
@@ -64,6 +65,7 @@ if __name__ == '__main__':
     # Adam learning rate
     lr = args.learning_rate
     out_file_name = os.path.join('temp/', args.file_name)
+    torch.cuda.set_device(str(args.gpu))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     training_dataset = UR5Dataset(data_dir=args.data_dir)
