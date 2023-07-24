@@ -12,18 +12,21 @@ from data_loader import UR5Dataset
 from model import spatial_vae as svae
 
 
-def draw_spatial_features(numpy_image, poses_norm, image_size=(96, 96)):
+def draw_spatial_features(numpy_image, poses, image_size=(96, 96), normalised=False):
     image_size_x, image_size_y = image_size
     colors = np.array([
         [1., 0., 0.],
         [0., 0.6, 0.],
         [0., 0., 1.]
         ])
-    for c, p in zip(colors, poses_norm):
+    for c, p in zip(colors, poses):
         x, y = p
-        attend_x_pix = int((x + 1) * (image_size_x - 1) / 2)
-        attend_y_pix = int((y + 1) * (image_size_y - 1) / 2)
-        numpy_image[attend_y_pix, attend_x_pix] = c
+        if normalised:
+            attend_x_pix = int((x + 1) * (image_size_x - 1) / 2)
+            attend_y_pix = int((y + 1) * (image_size_y - 1) / 2)
+            numpy_image[attend_y_pix, attend_x_pix] = c
+        else:
+            numpy_image[int(y), int(x)] = c
 
 
 def draw_figure(filename, num_images_to_draw, images_to_draw, reconstructed_images_to_draw, 
@@ -52,7 +55,7 @@ def draw_figure(filename, num_images_to_draw, images_to_draw, reconstructed_imag
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--num_epochs", type=int, default=10)
+    parser.add_argument("--num_epochs", type=int, default=20)
     parser.add_argument("--learning_rate", type=float, default=0.001)
     parser.add_argument("--file_name", type=str)
     args = parser.parse_args()
@@ -75,8 +78,8 @@ if __name__ == '__main__':
     #test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=2, shuffle=False)
 
     svae_model = svae.CustomDeepSpatialAutoencoder(in_channels=3, 
-                                                   hidden_dims=[32, 64, 16], #[32, 64, 128, 32],
-                                                   latent_dimension=54, #64
+                                                   hidden_dims=[32, 64, 128], #[32, 64, 16]
+                                                   latent_dimension=390, #64
                                                    latent_height=12, #6
                                                    latent_width=12, #6
                                                    out_channels=3, 
@@ -99,7 +102,7 @@ if __name__ == '__main__':
             loss = loss / len(images)
             loss.backward()
             optimiser.step()
-            if batch_idx % 30 == 0:
+            if batch_idx % 300 == 0:
                 print(
                     'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                         epoch, batch_idx * len(images), len(train_loader.dataset),

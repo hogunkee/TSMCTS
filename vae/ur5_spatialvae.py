@@ -53,7 +53,7 @@ def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_t
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--num_epochs", type=int, default=10)
+    parser.add_argument("--num_epochs", type=int, default=20)
     parser.add_argument("--learning_rate", type=float, default=0.001)
     parser.add_argument("--file_name", type=str)
     args = parser.parse_args()
@@ -76,10 +76,10 @@ if __name__ == '__main__':
     #test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=2, shuffle=False)
 
     svae_model = svae.CustomDeepSpatialAutoencoder(in_channels=3, 
-                                                   hidden_dims=[32, 64, 16], #[32, 64, 128, 32],
-                                                   latent_dimension=54, #64
-                                                   latent_height=12, #6
-                                                   latent_width=12, #6
+                                                   hidden_dims=[32, 64, 128],
+                                                   latent_dimension=390,
+                                                   latent_height=12,
+                                                   latent_width=12,
                                                    out_channels=3, 
                                                    ).to(device)
 
@@ -100,7 +100,7 @@ if __name__ == '__main__':
             loss = loss / len(images)
             loss.backward()
             optimiser.step()
-            if batch_idx % 30 == 0:
+            if batch_idx % 60 == 0:
                 print(
                     'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                         epoch, batch_idx * len(images), len(train_loader.dataset),
