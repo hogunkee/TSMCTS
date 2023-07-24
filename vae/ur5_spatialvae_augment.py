@@ -114,6 +114,7 @@ if __name__ == '__main__':
         num_images = 5
         _file_name = out_file_name + '_train_%dep' %epoch
         draw_figure(_file_name, num_images, images, recon_og, poses, output, poses_prime)
+        torch.save(svae_model.state_dict(), out_file_name + '_%dep.pth'%epoch)
 
 
     svae_model.eval()
