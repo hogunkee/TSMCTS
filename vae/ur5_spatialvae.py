@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torchvision.datasets as datasets
-import torchvision.transforms as transforms
 from torch import nn
 from data_loader import UR5Dataset
 
@@ -54,8 +53,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_epochs", type=int, default=20)
-    parser.add_argument("--learning_rate", type=float, default=0.001)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--file_name", type=str)
+    parser.add_argument("--data_dir", default='/home/gun/ssd/disk/ur5_tidying_data/3block', type=str)
     args = parser.parse_args()
 
     # parameters and miscellaneous
@@ -66,12 +66,7 @@ if __name__ == '__main__':
     out_file_name = os.path.join('temp/', args.file_name)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
-    ])
-
-    training_dataset = UR5Dataset()
+    training_dataset = UR5Dataset(data_dir=args.data_dir)
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=batch_size, num_workers=4, shuffle=True)
     #test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=2, shuffle=False)
 
