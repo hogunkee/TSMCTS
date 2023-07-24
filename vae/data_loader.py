@@ -98,7 +98,7 @@ class UR5Dataset(Dataset):
         x = poses[:, 0]
         y = poses[:, 1]
 
-        theta = 30 * np.pi / 180
+        theta = 0 #30 * np.pi / 180
         cx, cy, cz = 0.0, 0.65, 1.75
         fovy = 45.0
         camera_height = camera_width = 96
