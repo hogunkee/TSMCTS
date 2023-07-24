@@ -65,7 +65,14 @@ if __name__ == '__main__':
     # Adam learning rate
     lr = args.learning_rate
     out_file_name = os.path.join('temp/', args.file_name)
-    torch.cuda.set_device(str(args.gpu))
+
+    gpu = args.gpu
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        visible_gpus = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
+        if str(gpu) is visible_gpus:
+            gpu_idx = visible_gpus.index(str(gpu))
+            torch.cuda.set_device(gpu_idx)
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     training_dataset = UR5Dataset(data_dir=args.data_dir)
