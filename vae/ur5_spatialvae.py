@@ -124,6 +124,7 @@ if __name__ == '__main__':
         _file_name = out_file_name + '_train_%dep' %epoch
         draw_figure(_file_name, num_images, spatial_features, images, output, 
                     output_sample, poses_sample)
+        torch.save(svae_model.state_dict(), out_file_name + '_%dep.pth'%epoch)
 
     svae_model.eval()
     with torch.no_grad():
