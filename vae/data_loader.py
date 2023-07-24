@@ -5,33 +5,65 @@ from torch.utils.data import Dataset
 
 
 class UR5Dataset(Dataset):
-    def __init__(self, data_dir='/home/gun/ssd/disk/ur5_tidying_data/3block'):
+    def __init__(self, data_dir='/home/gun/ssd/disk/ur5_tidying_data/3block', augmentation=False, num_duplication=4):
         super().__init__()
         self.data_dir = data_dir
+        self.augmentation = augmentation
         self.buff_i = None
         self.buff_d = None
         self.buff_p = None
-
         self.fsize = 2048
+        self.num_duplication = num_duplication
+        if self.augmentation:
+            self.buff_i_prime = None
+            self.buff_p_prime = None
+            self.hash_augment = self.get_augmentation()
+            self.fsize = len(self.hash_augment) * int(self.fsize / num_duplication)
+
         self.find_urdata(self.data_dir)
         self.current_fidx = 0
         self.load_data(self.current_fidx)
     
     def __getitem__(self, index):
         npy_idx = (index // self.fsize) // self.num_file
-        infile_idx = index % self.fsize
         if npy_idx != self.current_fidx:
             self.load_data(npy_idx)
             self.current_fidx = npy_idx
-        i = self.buff_i[infile_idx]
-        d = self.buff_d[infile_idx]
-        p = self.buff_p[infile_idx]
-        p = self.pos2pixel(p)
-        i = np.transpose(i, [2, 0, 1])
-        i = torch.from_numpy(i).type(torch.float)
-        d = torch.from_numpy(d).type(torch.float)
-        p = torch.from_numpy(p).type(torch.float)
-        return i, d, p
+
+        if self.augmentation:
+            file_idx = index % self.fsize
+            idx1 = file_idx // len(self.hash_augment)
+            idx2 = file_idx % len(self.hash_augment)
+            infile_idx, infile_idx_prime = self.num_duplication * idx1 + self.hash_augment[idx2]
+
+            i = self.buff_i[infile_idx]
+            #d = self.buff_d[infile_idx]
+            p = self.buff_p[infile_idx]
+            i_prime = self.buff_i[infile_idx_prime]
+            p_prime = self.buff_p[infile_idx_prime]
+            p = self.pos2pixel(p)
+            p_prime = self.pos2pixel(p_prime)
+            i = np.transpose(i, [2, 0, 1])
+            i_prime = np.transpose(i_prime, [2, 0, 1])
+            i = torch.from_numpy(i).type(torch.float)
+            #d = torch.from_numpy(d).type(torch.float)
+            p = torch.from_numpy(p).type(torch.float)
+            i_prime = torch.from_numpy(i_prime).type(torch.float)
+            p_prime = torch.from_numpy(p_prime).type(torch.float)
+            return i, p, i_prime, p_prime
+        else:
+            infile_idx = index % self.fsize
+
+            i = self.buff_i[infile_idx]
+            d = self.buff_d[infile_idx]
+            p = self.buff_p[infile_idx]
+            p = self.pos2pixel(p)
+            i = np.transpose(i, [2, 0, 1])
+            i = torch.from_numpy(i).type(torch.float)
+            d = torch.from_numpy(d).type(torch.float)
+            p = torch.from_numpy(p).type(torch.float)
+            return i, d, p
+
 
     def __len__(self):
         return self.num_file * self.fsize
@@ -54,6 +86,13 @@ class UR5Dataset(Dataset):
         self.buff_i = np.load(os.path.join(self.data_dir, self.rgb_list[dnum]))
         self.buff_d = np.load(os.path.join(self.data_dir, self.depth_list[dnum]))
         self.buff_p = np.load(os.path.join(self.data_dir, self.pose_list[dnum]))
+
+    def get_augmentation(self, num_duplication=4):
+        hash_list = []
+        for i in range(num_duplication):
+            for j in range(i, num_duplication):
+                hash_list.append([i, j])
+        return np.array(hash_list)
 
     def pos2pixel(self, poses):
         x = poses[:, 0]

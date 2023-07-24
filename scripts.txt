@@ -1,0 +1,7 @@
+python collect_tidying_data.py --gpu 0 --data_dir /home/gun/ssd/disk/ur5_tidying_data/3blocks_align_re --align_object
+
+
+python collect_tidying_data.py --gpu 0 --dataset test --data_dir /home/gun/ssd/disk/ur5_tidying_data/3block_align_test --align_object --num_scenes 100 --save_freq 200 --num_process 1
+python collect_tidying_data.py --gpu 0 --dataset test --data_dir /home/gun/ssd/disk/ur5_tidying_data/3block_test --num_scenes 100 --save_freq 200 --num_process 1
+
+

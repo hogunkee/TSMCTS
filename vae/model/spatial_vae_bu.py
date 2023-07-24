@@ -131,13 +131,11 @@ class CustomDecoder(nn.Module):
                         self.activate()
                         )
 
-    def forward(self, z, p, normalise=False):
-        if normalise:
-            p = CoordinateUtils.normalise(p, 96)
-        z_concat = torch.cat([p, z], dim=2)
-        b, n, c_ = z_concat.size()
-        z_concat = z_concat.reshape(-1, n*c_)
-        out_linear = self.leaky_relu(self.linear(z_concat))
+    def forward(self, z):
+        if len(z.shape)>2:
+            b, n, c_ = z.size()
+            z = z.view(-1, n*c_)
+        out_linear = self.leaky_relu(self.linear(z))
         out_reshape = out_linear.view(-1, self.n_hidden, self.latent_height, self.latent_width)
         out_cnn_transpose = self.cnn_transpose(out_reshape)
         out = self.final_layer(out_cnn_transpose)
@@ -161,9 +159,12 @@ class CustomDeepSpatialAutoencoder(nn.Module):
     def forward(self, x, p):
         features, p_norm = self.encoder(x, p)
         _, n, c = features.size()
-        out = self.decoder(features, p_norm.to(x.device))
-        #features_concat = torch.cat([p_norm.to(x.device), features], dim=2) # B x NB x (C+2)
-        #out = self.decoder(features_concat)
+        features_concat = torch.cat([p_norm.to(x.device), features], dim=2) # B x NB x (C+2)
+        #features_flat = features.view(-1, n*c)
+        #p_norm_flat = p_norm.view(-1, n*2).to(x.device)
+        #features_concat = torch.cat([p_norm_flat, features_flat], dim=1)
+        out = self.decoder(features_concat)
+        #out = self.decoder(features_concat.view(-1, n*(c+2)))
         return out
 
 

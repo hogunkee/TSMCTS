@@ -26,11 +26,10 @@ def draw_spatial_features(numpy_image, poses_norm, image_size=(96, 96)):
         numpy_image[attend_y_pix, attend_x_pix] = c
 
 
-def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_to_draw, 
-                reconstructed_images_to_draw, reconstructed_sample_images, poses_sample):
+def draw_figure(filename, num_images_to_draw, images_to_draw, reconstructed_images_to_draw, 
+        poses, reconstructed_sample_images, poses_sample):
     f, axarr = plt.subplots(num_images_to_draw, 3, figsize=(12, 15), dpi=100)
     plt.tight_layout()
-    spatial_features, poses_norm = spatial_features_to_draw
     for idx, im in enumerate(reconstructed_images_to_draw[:num_images_to_draw]):
         # original image
         og_image = (images_to_draw[:num_images_to_draw][idx] + 1) / 2
@@ -38,7 +37,7 @@ def draw_figure(filename, num_images_to_draw, spatial_features_to_draw, images_t
         axarr[idx, 0].imshow(og_image)
         # reconstructed image
         scaled_image = (im.detach().cpu().numpy().transpose([1, 2, 0]) + 1) / 2
-        draw_spatial_features(scaled_image, poses_norm[idx])
+        draw_spatial_features(scaled_image, poses[idx])
         axarr[idx, 1].imshow(scaled_image)
         # reconstruct with sampled points
         im_sample = reconstructed_sample_images[idx]
@@ -71,7 +70,7 @@ if __name__ == '__main__':
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    training_dataset = UR5Dataset()
+    training_dataset = UR5Dataset(augmentation=True)
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=batch_size, num_workers=4, shuffle=True)
     #test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=2, shuffle=False)
 
@@ -90,13 +89,13 @@ if __name__ == '__main__':
 
     for epoch in range(num_epochs):
         svae_model.train()
-        for batch_idx, (images, _depths, poses) in enumerate(train_loader):
+        for batch_idx, (images, poses, images_prime, poses_prime) in enumerate(train_loader):
             images = images.to(device)
             optimiser.zero_grad()
-            output = svae_model(images, poses)
-            # we ignore g_slow contribution for MNIST
-            loss = svae_loss(output, images)
-            #loss = rec_loss(output, images)
+            spatial_features, poses_norm = svae_model.encoder(images, poses)
+            output = svae_model.decoder(spatial_features, poses_prime.to(device), normalise=True)
+
+            loss = svae_loss(output, images_prime.to(device))
             loss = loss / len(images)
             loss.backward()
             optimiser.step()
@@ -108,32 +107,22 @@ if __name__ == '__main__':
                     )
                 )
 
-        spatial_features = svae_model.encoder(images, poses)
-        # Sample new points #
-        poses_sample = torch.rand(spatial_features[1].shape) * 2 - 1
-        #f_concat = torch.cat([poses_sample.to(device), spatial_features[0]], dim=2)
-        output_sample = svae_model.decoder(spatial_features[0], poses_sample.to(device))
-
+        recon_og = svae_model.decoder(spatial_features, poses.to(device), normalise=True)
         num_images = 5
         _file_name = out_file_name + '_train_%dep' %epoch
-        draw_figure(_file_name, num_images, spatial_features, images, output, 
-                    output_sample, poses_sample)
+        draw_figure(_file_name, num_images, images, recon_og, poses, output, poses_prime)
+
 
     svae_model.eval()
     with torch.no_grad():
-        images, _depths, poses = next(iter(train_loader)) # test_loader
+        images, poses, images_prime, poses_prime = next(iter(train_loader)) # test_loader
         images = images.to(device)
-        recon = svae_model(images, poses)
-        spatial_features = svae_model.encoder(images, poses)
-        # Sample new points #
-        poses_sample = torch.rand(spatial_features[1].shape) * 2 - 1
-        #f_concat = torch.cat([poses_sample.to(device), spatial_features[0]], dim=2)
-        recon_sample = svae_model.decoder(spatial_features[0], poses_sample.to(device))
-        #recon_sample = svae_model.decoder(f_concat)
+        spatial_features, poses_norm = svae_model.encoder(images, poses)
+        recon = svae_model.decoder(spatial_features, poses.to(device), normalise=True)
+        recon_prime = svae_model.decoder(spatial_features, poses_prime.to(device), normalise=True)
 
         num_images = 5
-        draw_figure(out_file_name, num_images, spatial_features, images, recon,
-                recon_sample, poses_sample)
+        draw_figure(out_file_name, num_images, images, recon, poses, recon_prime, poses_prime)
 
     torch.save(svae_model.state_dict(), out_file_name + '.pth')
     print('Training done.')
