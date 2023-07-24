@@ -1,7 +1,12 @@
+import argparse
 import numpy as np
 from backgroundsubtraction_module import BackgroundSubtraction
 
-data_dir = '/home/gun/ssd/disk/ur5_tidying_data/3block/'
+parser = argparse.ArgumentParser()
+parser.add_argument("--data_dir", default='/home/gun/ssd/disk/ur5_tidying_data/3block/', type=str)
+args = parser.parse_args()
+
+data_dir = args.data_dir
 n_objects = 3
 save_freq = 2048
 
