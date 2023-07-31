@@ -380,7 +380,7 @@ def train_mnist():
                         x_real[k+(j*n_classes)] = x[idx]
 
                 x_all = torch.cat([x_gen, x_real])
-                grid = make_grid(x_all*-1 + 1, nrow=4)
+                grid = make_grid(x_all, nrow=4)
                 save_image(grid, save_dir + f"image_ep{ep}_w{w}.png")
                 print('saved image at ' + save_dir + f"image_ep{ep}_w{w}.png")
 
