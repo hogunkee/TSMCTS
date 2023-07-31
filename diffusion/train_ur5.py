@@ -333,7 +333,7 @@ def train_mnist():
 
     tf = transforms.Compose([transforms.ToTensor()]) # mnist is already normalised 0 to 1
 
-    dataset = UR5Dataset() #MNIST("./data", train=True, download=True, transform=tf)
+    dataset = UR5Dataset(data_dir="/home/gun/ssd/disk/ur5_tidying_data/3blocks_align_ng/")
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
 
