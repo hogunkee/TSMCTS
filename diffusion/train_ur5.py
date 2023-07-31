@@ -30,6 +30,12 @@ import numpy as np
 
 from data_loader import UR5Dataset
 
+def normalize_image(im):
+    v_max = im.max()
+    v_min = im.min()
+    im_norm = (im - v_min) / (v_max - v_min)
+    return im_norm
+
 class ResidualConvBlock(nn.Module):
     def __init__(
         self, in_channels: int, out_channels: int, is_res: bool = False
@@ -282,7 +288,7 @@ class DDPM(nn.Module):
         context_mask[n_sample:] = 1. # makes second half of batch context free
 
         x_i_store = [] # keep track of generated steps in case want to plot something 
-        print()
+        #print()
         for i in range(self.n_T, 0, -1):
             print(f'sampling timestep {i}',end='\r')
             t_is = torch.tensor([i / self.n_T]).to(device)
@@ -391,16 +397,16 @@ def train_mnist():
                     def animate_diff(i, x_gen_store):
                         print(f'gif animating frame {i} of {x_gen_store.shape[0]}', end='\r')
                         plots = []
+                        x_gen_norm = normalize_image(x_gen_store)
                         for row in range(n_classes):
                             for col in range(int(n_sample/n_classes)):
                                 axs[row, col].clear()
                                 axs[row, col].set_xticks([])
                                 axs[row, col].set_yticks([])
-                                # plots.append(axs[row, col].imshow(x_gen_store[i,(row*n_classes)+col,0],cmap='gray'))
-                                plots.append(axs[row, col].imshow(-x_gen_store[i,(row*n_classes)+col,0],cmap='gray',vmin=(-x_gen_store[i]).min(), vmax=(-x_gen_store[i]).max()))
+                                plots.append(axs[row, col].imshow(x_gen_norm[i,(row*n_classes)+col].transpose([1,2,0])))
                         return plots
                     ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-                    ani.save(save_dir + f"gif_ep{ep}_w{w}.gif", dpi=100, writer=PillowWriter(fps=5))
+                    ani.save(save_dir + f"gif_ep{ep}_w{w}.gif", dpi=100,writer=PillowWriter(fps=5))
                     print('saved image at ' + save_dir + f"gif_ep{ep}_w{w}.gif")
 
         # optionally save model
