@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES="5"
+export CUDA_VISIBLE_DEVICES="7"
 
 1. Data collection
 python collect_tidying_data.py --gpu 0 --data_dir /home/gun/ssd/disk/ur5_tidying_data/3blocks_align_re --align_object
@@ -9,10 +9,12 @@ python collect_tidying_data.py --gpu 0 --dataset test --data_dir /home/gun/ssd/d
 
 
 2. Training VAE
-python ur5_spatialvae.py --file_name 'svae-0724-test1'
+# Larpas #
+python ur5_spatialvae.py --file_name 'NoAug-Align-server1' --data_dir /disk3/hogun/3block_align --gpu 7
+python ur5_spatialvae_augment.py --file_name 'Aug-Align-server1' --data_dir /disk3/hogun/3block_align  --gpu 7
+python ur5_spatialvae.py --file_name 'NoAug-NoAlign-server1' --data_dir /disk3/hogun/3block --gpu 7
+python ur5_spatialvae_augment.py --file_name 'Aug-NoAlign-server1' --data_dir /disk3/hogun/3block  --gpu 7
 
-python ur5_spatialvae.py --file_name 'NoAug-server1' --data_dir /disk3/hogun/3block --gpu 6
-python ur5_spatialvae_augment.py --file_name 'Aug-server1' --data_dir /disk3/hogun/3block  --gpu 6
-
+# Local #
 python ur5_spatialvae.py --file_name 'NoAug3' --batch_size 128 --data_dir /home/gun/ssd/disk/ur5_tidying_data/3block_align
 python ur5_spatialvae_augment.py --file_name 'Aug3' --batch_size 128 --data_dir /home/gun/ssd/disk/ur5_tidying_data/3block_align

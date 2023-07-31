@@ -1,5 +1,7 @@
 import argparse
+import os
 import numpy as np
+from tqdm import tqdm
 from backgroundsubtraction_module import BackgroundSubtraction
 
 parser = argparse.ArgumentParser()
@@ -16,10 +18,10 @@ backsub.fitting_model(os.path.join(data_dir, 'image_0.npy'))
 buff_masks = []
 buff_centers = []
 f_list = [f for f in os.listdir(data_dir) if f.startswith('image_')]
-for fname in f_list:
-    images = np.load(f) * 255
+for fname in tqdm(f_list):
+    images = np.load(os.path.join(data_dir, fname)) * 255
     for img in images:
-        masks, colors, fmask = backsub.get_masks(img, n_clusters=n_objects)
+        masks, colors, fmask = backsub.get_masks(img, n_cluster=n_objects)
         centers = []
         for m in masks:
             sy, sx = np.where(m)

@@ -89,7 +89,7 @@ if __name__ == '__main__':
                                                    out_channels=3, 
                                                    ).to(device)
 
-    optimiser = torch.optim.Adam(svae_model.parameters(), lr=lr)
+    optimiser = torch.optim.Adam(svae_model.parameters(), lr=lr, weight_decay=1e-3)
     # g_slow does not make sense for non-sequence data such as MNIST
     svae_loss = svae.SVAE_Loss()
     #rec_loss = nn.BCELoss(reduction='sum')
