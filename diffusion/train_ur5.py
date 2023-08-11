@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
@@ -35,9 +36,11 @@ def train_ur5():
     n_classes = 2
     n_feat = 64 #128 # 128 ok, 256 better (but slower)
     lrate = 2e-5 #1e-4
+    ws_test = [0.0, 0.5, 2.0] # strength of generative guidance
     save_model = True #False
     save_dir = './data/ur5_outputs2/'
-    ws_test = [0.0, 0.5, 2.0] # strength of generative guidance
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
 
     ddpm = DDPM(nn_model=ContextUnet(in_channels=3, n_feat=n_feat, n_classes=n_classes), betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
     ddpm.to(device)

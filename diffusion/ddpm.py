@@ -147,7 +147,7 @@ class DDPM_NC(nn.Module): # non-conditional
         # return MSE between added noise, and our predicted noise
         return self.loss_mse(noise, self.nn_model(x_t, _ts / self.n_T))
 
-    def sample(self, n_sample, size, device, guide_w = 0.0):
+    def sample(self, n_sample, size, device):
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1), sample initial noise
         x_i_store = [] # keep track of generated steps in case want to plot something 
         #print()
@@ -156,17 +156,10 @@ class DDPM_NC(nn.Module): # non-conditional
             t_is = torch.tensor([i / self.n_T]).to(device)
             t_is = t_is.repeat(n_sample,1,1,1)
 
-            # double batch
-            x_i = x_i.repeat(2,1,1,1)
-            t_is = t_is.repeat(2,1,1,1)
-
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
 
             # split predictions and compute weighting
             eps = self.nn_model(x_i, t_is)
-            eps1 = eps[:n_sample]
-            eps2 = eps[n_sample:]
-            eps = (1+guide_w)*eps1 - guide_w*eps2
             x_i = x_i[:n_sample]
             x_i = (
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
