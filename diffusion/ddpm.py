@@ -117,7 +117,7 @@ class DDPM(nn.Module):
 
 class DDPM_NC(nn.Module): # non-conditional
     def __init__(self, nn_model, betas, n_T, device, drop_prob=0.1):
-        super(DDPM, self).__init__()
+        super(DDPM_NC, self).__init__()
         self.nn_model = nn_model.to(device)
 
         # register_buffer allows accessing dictionary produced by ddpm_schedules
