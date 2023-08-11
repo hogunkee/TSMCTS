@@ -30,7 +30,7 @@ def train_ur5():
 
     # hardcoding these here
     n_epoch = 30
-    batch_size = 1 #64 #256
+    batch_size = 32 #64 #256
     n_T = 400 # 500
     device = "cuda:0"
     n_feat = 64 #128 # 128 ok, 256 better (but slower)
@@ -43,9 +43,9 @@ def train_ur5():
 
     unet = UNetModel(
             in_channels=3,
-            model_channels=192,
+            model_channels=64, #192
             out_channels=3, #6
-            num_res_blocks=3,
+            num_res_blocks=2, #3
             attention_resolutions=(32,16,8),
             dropout=0.1,
             num_heads=1
