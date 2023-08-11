@@ -10,7 +10,7 @@ from torchvision.utils import save_image, make_grid
 from typing import Dict, Tuple
 from tqdm import tqdm
 from ddpm import DDPM
-from models.context_unet import ContextUnet
+from models.unet import UNetModel
 from data_loader import UR5Dataset
 
 
@@ -39,7 +39,16 @@ def train_ur5():
     save_dir = './data/ur5_outputs2/'
     ws_test = [0.0, 0.5, 2.0] # strength of generative guidance
 
-    ddpm = DDPM(nn_model=ContextUnet(in_channels=3, n_feat=n_feat, n_classes=n_classes), betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
+    unet = UnetModel(
+            in_channels=3,
+            model_channels=192,
+            out_channels=6,
+            num_res_blocks=3,
+            attention_resolutions="32,16,8",
+            dropout=0.1,
+            num_heads=1
+            )
+    ddpm = DDPM_NC(nn_model=unet, betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
     ddpm.to(device)
 
     # optionally load a model
@@ -62,11 +71,9 @@ def train_ur5():
         loss_ema = None
         #for x, c in pbar:
         for x, _d, _p in pbar:
-            c = torch.zeros(x.size()[0]).type(torch.int64)
             optim.zero_grad()
             x = x.to(device)
-            c = c.to(device)
-            loss = ddpm(x, c)
+            loss = ddpm(x)
             loss.backward()
             if loss_ema is None:
                 loss_ema = loss.item()
