@@ -35,7 +35,6 @@ def train_ur5():
     device = "cuda:0"
     n_feat = 64 #128 # 128 ok, 256 better (but slower)
     lrate = 2e-5 #1e-4
-    ws_test = [0.0, 0.5, 2.0] # strength of generative guidance
     save_model = True #False
     save_dir = './data/unet_output/'
     if not os.path.isdir(save_dir):
@@ -89,44 +88,43 @@ def train_ur5():
         ddpm.eval()
         with torch.no_grad():
             n_sample = 4*2
-            for w_i, w in enumerate(ws_test):
-                x_gen, x_gen_store = ddpm.sample(n_sample, (3, 96, 96), device, guide_w=w)
+            x_gen, x_gen_store = ddpm.sample(n_sample, (3, 96, 96), device)
 
-                # append some real images at bottom, order by class also
-                x_real = torch.Tensor(x_gen.shape).to(device)
-                for k in range(2):
-                    for j in range(int(n_sample/2)):
-                        try: 
-                            idx = torch.squeeze((c == k).nonzero())[j]
-                        except:
-                            idx = 0
-                        x_real[k+(j*2)] = x[idx]
+            # append some real images at bottom, order by class also
+            x_real = torch.Tensor(x_gen.shape).to(device)
+            for k in range(2):
+                for j in range(int(n_sample/2)):
+                    try: 
+                        idx = torch.squeeze((c == k).nonzero())[j]
+                    except:
+                        idx = 0
+                    x_real[k+(j*2)] = x[idx]
 
-                x_all = torch.cat([x_gen, x_real])
-                grid = make_grid(x_all, nrow=4)
-                save_image(grid, save_dir + f"image_ep{ep}_w{w}.png")
-                print('saved image at ' + save_dir + f"image_ep{ep}_w{w}.png")
+            x_all = torch.cat([x_gen, x_real])
+            grid = make_grid(x_all, nrow=4)
+            save_image(grid, save_dir + f"image_ep{ep}.png")
+            print('saved image at ' + save_dir + f"image_ep{ep}.png")
 
-                if ep%5==0 or ep == int(n_epoch-1):
-                    # create gif of images evolving over time, based on x_gen_store
-                    fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
-                                            sharex=True,sharey=True,figsize=(8,3))
-                    def animate_diff(i, x_gen_store):
-                        print(f'gif animating frame {i} of {x_gen_store.shape[0]}', end='\r')
-                        plots = []
-                        x_gen_clip = clip_image(x_gen_store)
-                        #x_gen_norm = normalize_image(x_gen_store)
-                        for row in range(2):
-                            for col in range(int(n_sample/2)):
-                                axs[row, col].clear()
-                                axs[row, col].set_xticks([])
-                                axs[row, col].set_yticks([])
-                                plots.append(axs[row, col].imshow(x_gen_clip[i,(row*2)+col].transpose([1,2,0])))
-                                #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
-                        return plots
-                    ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-                    ani.save(save_dir + f"gif_ep{ep}_w{w}.gif", dpi=100,writer=PillowWriter(fps=5))
-                    print('saved image at ' + save_dir + f"gif_ep{ep}_w{w}.gif")
+            if ep%5==0 or ep == int(n_epoch-1):
+                # create gif of images evolving over time, based on x_gen_store
+                fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
+                                        sharex=True,sharey=True,figsize=(8,3))
+                def animate_diff(i, x_gen_store):
+                    print(f'gif animating frame {i} of {x_gen_store.shape[0]}', end='\r')
+                    plots = []
+                    x_gen_clip = clip_image(x_gen_store)
+                    #x_gen_norm = normalize_image(x_gen_store)
+                    for row in range(2):
+                        for col in range(int(n_sample/2)):
+                            axs[row, col].clear()
+                            axs[row, col].set_xticks([])
+                            axs[row, col].set_yticks([])
+                            plots.append(axs[row, col].imshow(x_gen_clip[i,(row*2)+col].transpose([1,2,0])))
+                            #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
+                    return plots
+                ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
+                ani.save(save_dir + f"gif_ep{ep}.gif", dpi=100,writer=PillowWriter(fps=5))
+                print('saved image at ' + save_dir + f"gif_ep{ep}.gif")
 
         # optionally save model
         if save_model:

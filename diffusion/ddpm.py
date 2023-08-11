@@ -154,7 +154,7 @@ class DDPM_NC(nn.Module): # non-conditional
         for i in range(self.n_T, 0, -1):
             print(f'sampling timestep {i}',end='\r')
             t_is = torch.tensor([i / self.n_T]).to(device)
-            t_is = t_is.repeat(n_sample,1,1,1)
+            t_is = t_is.repeat(n_sample)
 
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
 
