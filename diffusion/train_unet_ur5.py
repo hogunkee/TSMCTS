@@ -27,7 +27,6 @@ def normalize_image(im):
 
 
 def train_ur5():
-
     # hardcoding these here
     n_epoch = 30
     batch_size = 32 #64 #256

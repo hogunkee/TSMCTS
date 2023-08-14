@@ -4,6 +4,43 @@ import torch
 from torch.utils.data import Dataset
 
 
+class TabletopDataset(Dataset):
+    def __init__(self, data_dir='/home/gun/ssd/disk/tabletop_dataset_v5_public/train_set/', augmentation=False, num_duplication=5):
+        super().__init__()
+        self.data_dir = data_dir
+        self.augmentation = augmentation
+        self.num_duplication = num_duplication
+        self.find_tabletopdata(self.data_dir)
+    
+    def __getitem__(self, index):
+        file_idx = index % self.num_file
+        # BGR image
+        filename = self.rgb_list[file_idx]
+        im = cv2.imread(filename)
+        im_tensor = torch.from_numpy(im) / 255.0
+        image_blob = im_tensor.permute(2, 0, 1).type(torch.float)
+        return image_blob, None, None
+
+    def __len__(self):
+        return self.num_file
+
+    def find_tabletopdata(self, data_dir):
+        scene_list = sorted([s for s in os.listdir() if s.startswith('scene_')])
+        rgb_list = []
+        depth_list = []
+        seg_list = []
+        for scene in scene_list:
+            for i in range(1, self.num_duplication+1):
+                rgb_list.append(os.path.join(scene, 'rgb_%05d.png'%i)
+                depth_list.append(os.path.join(scene, 'depth_%05d.png'%i)
+                seg_list.append(os.path.join(scene, 'segmentation_%05d.png'%i)
+
+        self.rgb_list = rgb_list
+        self.depth_list = depth_list
+        self.seg_list = seg_list
+        self.num_file = len(self.rgb_list)
+
+
 class UR5Dataset(Dataset):
     def __init__(self, data_dir='/home/gun/ssd/disk/ur5_tidying_data/3block', augmentation=False, num_duplication=4):
         super().__init__()
@@ -12,7 +49,6 @@ class UR5Dataset(Dataset):
         self.buff_i = None
         self.buff_d = None
         self.buff_p = None
-        self.fsize = 2048
         self.num_duplication = num_duplication
         if self.augmentation:
             self.buff_i_prime = None
