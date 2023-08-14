@@ -12,7 +12,7 @@ from typing import Dict, Tuple
 from tqdm import tqdm
 from ddpm import DDPM_NC
 from models.unet import UNetModel
-from data_loader import TabletopNpyDatset #TabletopDataset
+from data_loader import TabletopNpyDataset #TabletopDataset
 
 
 def clip_image(im):
@@ -29,7 +29,7 @@ def normalize_image(im):
 def train_tabletop():
     # hardcoding these here
     n_epoch = 30
-    batch_size = 32 #64 #256
+    batch_size = 50 #64 #256
     n_T = 400 # 500
     device = "cuda:0"
     n_feat = 64 #128 # 128 ok, 256 better (but slower)
@@ -56,6 +56,7 @@ def train_tabletop():
 
     tf = transforms.Compose([transforms.ToTensor()]) 
 
+    #dataset = TabletopNpyDataset(data_dir="/home/gun/ssd/disk/ur5_tidying_data/3blocks_align_ng")
     dataset = TabletopNpyDataset(data_dir="/home/gun/ssd/disk/ur5_tidying_data/tabletop_48x64")
     #dataset = TabletopDataset(data_dir="/home/gun/ssd/disk/tabletop_dataset_v5_public/train_set/")
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
@@ -71,7 +72,7 @@ def train_tabletop():
         pbar = tqdm(dataloader)
         loss_ema = None
         #for x, c in pbar:
-        for x, _d, _p in pbar:
+        for x in pbar:
             optim.zero_grad()
             x = x.to(device)
             loss = ddpm(x)

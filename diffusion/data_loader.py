@@ -19,7 +19,7 @@ class TabletopDataset(Dataset):
         im = cv2.imread(filename)
         im_tensor = torch.from_numpy(im) / 255.0
         image_blob = im_tensor.permute(2, 0, 1).type(torch.float)
-        return image_blob, None, None
+        return image_blob
 
     def __len__(self):
         return self.num_file
@@ -31,9 +31,9 @@ class TabletopDataset(Dataset):
         seg_list = []
         for scene in scene_list:
             for i in range(1, self.num_duplication+1):
-                rgb_list.append(os.path.join(self.data_dir, scene, 'rgb_%05d.jpeg'%i)
-                depth_list.append(os.path.join(self.data_dir, scene, 'depth_%05d.png'%i)
-                seg_list.append(os.path.join(self.data_dir, scene, 'segmentation_%05d.png'%i)
+                rgb_list.append(os.path.join(self.data_dir, scene, 'rgb_%05d.jpeg'%i))
+                depth_list.append(os.path.join(self.data_dir, scene, 'depth_%05d.png'%i))
+                seg_list.append(os.path.join(self.data_dir, scene, 'segmentation_%05d.png'%i))
 
         self.rgb_list = rgb_list
         self.depth_list = depth_list
@@ -48,6 +48,7 @@ class TabletopNpyDataset(Dataset):
         self.augmentation = augmentation
         self.buff_i = None
         self.num_duplication = num_duplication
+        self.fsize = 2000
 
         self.find_tabletopdata(self.data_dir)
         self.current_fidx = 0
@@ -61,8 +62,9 @@ class TabletopNpyDataset(Dataset):
 
         infile_idx = index % self.fsize
         i = self.buff_i[infile_idx]
+        i = np.transpose(i, [2, 0, 1])
         i = torch.from_numpy(i).type(torch.float)
-        return i, None, None
+        return i
 
 
     def __len__(self):
@@ -87,6 +89,7 @@ class UR5Dataset(Dataset):
         self.buff_d = None
         self.buff_p = None
         self.num_duplication = num_duplication
+        self.fsize = 2048
         if self.augmentation:
             self.buff_i_prime = None
             self.buff_p_prime = None
