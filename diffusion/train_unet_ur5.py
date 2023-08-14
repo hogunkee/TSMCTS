@@ -93,10 +93,7 @@ def train_ur5():
             x_real = torch.Tensor(x_gen.shape).to(device)
             for k in range(2):
                 for j in range(int(n_sample/2)):
-                    try: 
-                        idx = torch.squeeze((c == k).nonzero())[j]
-                    except:
-                        idx = 0
+                    idx = k + (j*2)
                     x_real[k+(j*2)] = x[idx]
 
             x_all = torch.cat([x_gen, x_real])
