@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 
 
 class TabletopDataset(Dataset):
-    def __init__(self, data_dir='/home/gun/ssd/disk/tabletop_dataset_v5_public/train_set/', augmentation=False, num_duplication=5):
+    def __init__(self, data_dir='/home/gun/ssd/disk/tabletop_dataset_v5_public/training_set/', augmentation=False, num_duplication=5):
         super().__init__()
         self.data_dir = data_dir
         self.augmentation = augmentation
@@ -25,20 +25,57 @@ class TabletopDataset(Dataset):
         return self.num_file
 
     def find_tabletopdata(self, data_dir):
-        scene_list = sorted([s for s in os.listdir() if s.startswith('scene_')])
+        scene_list = sorted([s for s in os.listdir(self.data_dir) if s.startswith('scene_')])
         rgb_list = []
         depth_list = []
         seg_list = []
         for scene in scene_list:
             for i in range(1, self.num_duplication+1):
-                rgb_list.append(os.path.join(scene, 'rgb_%05d.png'%i)
-                depth_list.append(os.path.join(scene, 'depth_%05d.png'%i)
-                seg_list.append(os.path.join(scene, 'segmentation_%05d.png'%i)
+                rgb_list.append(os.path.join(self.data_dir, scene, 'rgb_%05d.jpeg'%i)
+                depth_list.append(os.path.join(self.data_dir, scene, 'depth_%05d.png'%i)
+                seg_list.append(os.path.join(self.data_dir, scene, 'segmentation_%05d.png'%i)
 
         self.rgb_list = rgb_list
         self.depth_list = depth_list
         self.seg_list = seg_list
         self.num_file = len(self.rgb_list)
+
+
+class TabletopNpyDataset(Dataset):
+    def __init__(self, data_dir='/home/gun/ssd/disk/ur5_tidying_data/tabletop_48x64', augmentation=False, num_duplication=5):
+        super().__init__()
+        self.data_dir = data_dir
+        self.augmentation = augmentation
+        self.buff_i = None
+        self.num_duplication = num_duplication
+
+        self.find_tabletopdata(self.data_dir)
+        self.current_fidx = 0
+        self.load_data(self.current_fidx)
+    
+    def __getitem__(self, index):
+        npy_idx = (index // self.fsize) // self.num_file
+        if npy_idx != self.current_fidx:
+            self.load_data(npy_idx)
+            self.current_fidx = npy_idx
+
+        infile_idx = index % self.fsize
+        i = self.buff_i[infile_idx]
+        i = torch.from_numpy(i).type(torch.float)
+        return i, None, None
+
+
+    def __len__(self):
+        return self.num_file * self.fsize
+
+    def find_tabletopdata(self, data_dir):
+        rgb_list = [f for f in os.listdir(data_dir) if f.startswith('image_')]
+        self.rgb_list = sorted(rgb_list)
+        self.num_file = len(self.rgb_list)
+
+    def load_data(self, dnum):
+        print('load %d-th npy file.' %dnum)
+        self.buff_i = np.load(os.path.join(self.data_dir, self.rgb_list[dnum]))
 
 
 class UR5Dataset(Dataset):

@@ -12,7 +12,7 @@ from typing import Dict, Tuple
 from tqdm import tqdm
 from ddpm import DDPM_NC
 from models.unet import UNetModel
-from data_loader import TabletopDataset
+from data_loader import TabletopNpyDatset #TabletopDataset
 
 
 def clip_image(im):
@@ -56,7 +56,8 @@ def train_tabletop():
 
     tf = transforms.Compose([transforms.ToTensor()]) 
 
-    dataset = TabletopDataset(data_dir="/home/gun/ssd/disk/tabletop_dataset_v5_public/train_set/")
+    dataset = TabletopNpyDataset(data_dir="/home/gun/ssd/disk/ur5_tidying_data/tabletop_48x64")
+    #dataset = TabletopDataset(data_dir="/home/gun/ssd/disk/tabletop_dataset_v5_public/train_set/")
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
 
@@ -87,7 +88,7 @@ def train_tabletop():
         ddpm.eval()
         with torch.no_grad():
             n_sample = 4*2
-            x_gen, x_gen_store = ddpm.sample(n_sample, (3, 480, 640), device)
+            x_gen, x_gen_store = ddpm.sample(n_sample, (3, 48, 64), device)
 
             # append some real images at bottom, order by class also
             x_real = torch.Tensor(x_gen.shape).to(device)
