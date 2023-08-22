@@ -106,9 +106,6 @@ def train_tabletop():
             n_sample = 4*2
 
             x_real = torch.zeros([n_sample, *x.shape[1:]]).to(device)
-            print('+'*40)
-            print('x real:', x_real.shape)
-            print('+'*40)
             for k in range(2):
                 for j in range(int(n_sample/2)):
                     idx = k + (j*2)
