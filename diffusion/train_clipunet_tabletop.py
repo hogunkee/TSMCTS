@@ -39,7 +39,7 @@ def train_tabletop():
     n_feat = 64 #128 # 128 ok, 256 better (but slower)
     lrate = 2e-5 #1e-4
     save_model = True #False
-    save_dir = './data/unet_tabletop_output/'
+    save_dir = './data/clipunet_tabletop_output/'
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
 
@@ -58,16 +58,9 @@ def train_tabletop():
     clip_model, _ = clip.load('ViT-L/14', device=device, jit=False)
     clip_model.eval().requires_grad_(False)
     set_requires_grad(clip_model, False)
-    # x_visual = clip_model.encode_image(img)
 
-    # optionally load a model
-    # ddpm.load_state_dict(torch.load("./data/diffusion_outputs/ddpm_unet01_mnist_9.pth"))
-
-    tf = transforms.Compose([transforms.ToTensor()]) 
-
-    #dataset = TabletopNpyDataset(data_dir="/home/gun/ssd/disk/ur5_tidying_data/3blocks_align_ng")
-    dataset = TabletopNpyDataset(data_dir="/home/gun/ssd/disk/ur5_tidying_data/tabletop_48x64")
-    #dataset = TabletopDataset(data_dir="/home/gun/ssd/disk/tabletop_dataset_v5_public/train_set/")
+    data_dir = "/home/gun/ssd/disk/ur5_tidying_data/tabletop_48x64"
+    dataset = TabletopNpyDataset(data_dir=data_dir)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
 
@@ -84,7 +77,9 @@ def train_tabletop():
         for x in pbar:
             optim.zero_grad()
             x = x.to(device)
-            loss = ddpm(x)
+            c = clip_model.encode_image(x)
+            c = c.to(device)
+            loss = ddpm(x, c)
             loss.backward()
             if loss_ema is None:
                 loss_ema = loss.item()
@@ -98,14 +93,15 @@ def train_tabletop():
         ddpm.eval()
         with torch.no_grad():
             n_sample = 4*2
-            x_gen, x_gen_store = ddpm.sample(n_sample, (3, 48, 64), device)
 
-            # append some real images at bottom, order by class also
-            x_real = torch.Tensor(x_gen.shape).to(device)
+            x_real = torch.Tensor([n_sample, *x_gen.shape[1:]]).to(device)
             for k in range(2):
                 for j in range(int(n_sample/2)):
                     idx = k + (j*2)
                     x_real[k+(j*2)] = x[idx]
+
+            c_real = clip_model.encode(image(x_real))
+            x_gen, x_gen_store = ddpm.sample(n_sample, (3, 48, 64), device, c_real)
 
             x_all = torch.cat([x_gen, x_real])
             grid = make_grid(x_all, nrow=4)
