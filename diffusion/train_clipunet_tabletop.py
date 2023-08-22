@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.utils import save_image, make_grid
@@ -12,6 +13,7 @@ from typing import Dict, Tuple
 from tqdm import tqdm
 from ddpm import DDPM_Vision_Condition
 from models.unet_clip import UNetModel
+from clip_custom import clip
 from data_loader import TabletopNpyDataset #TabletopDataset
 
 
@@ -51,7 +53,8 @@ def train_tabletop():
             attention_resolutions=(32,16,8),
             dropout=0.1,
             num_heads=1,
-            emb_condition_channels=0
+            emb_condition_channels=0,
+            encoder_channels=768
             )
     ddpm = DDPM_Vision_Condition(nn_model=unet, betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
     ddpm.to(device)
@@ -77,9 +80,16 @@ def train_tabletop():
         #for x, c in pbar:
         for x in pbar:
             optim.zero_grad()
-            x = x.to(device)
-            c = clip_model.encode_image(x)
+            # context #
+            # resize & crop, pad
+            x_clip = torch.zeros([x.shape[0], 3, 224, 224])
+            x_resized = F.interpolate(x, size=(192, 256))
+            x_clip[:, :, 16:-16, :] = x_resized[:, :, :, 16:-16]
+            x_clip = x_clip.to(device)
+            c = clip_model.encode_image(x_clip)
             c = c.to(device)
+
+            x = x.to(device)
             loss = ddpm(x, c)
             loss.backward()
             if loss_ema is None:
@@ -95,13 +105,20 @@ def train_tabletop():
         with torch.no_grad():
             n_sample = 4*2
 
-            x_real = torch.Tensor([n_sample, *x_gen.shape[1:]]).to(device)
+            x_real = torch.zeros([n_sample, *x.shape[1:]]).to(device)
+            print('+'*40)
+            print('x real:', x_real.shape)
+            print('+'*40)
             for k in range(2):
                 for j in range(int(n_sample/2)):
                     idx = k + (j*2)
                     x_real[k+(j*2)] = x[idx]
 
-            c_real = clip_model.encode(image(x_real))
+            x_real_clip = torch.zeros([n_sample, 3, 224, 224])
+            x_real_resized = F.interpolate(x_real, size=(192, 256))
+            x_real_clip[:, :, 16:-16, :] = x_real_resized[:, :, :, 16:-16]
+            x_real_clip = x_real_clip.to(device)
+            c_real = clip_model.encode_image(x_real_clip)
             x_gen, x_gen_store = ddpm.sample(n_sample, (3, 48, 64), device, c_real)
 
             x_all = torch.cat([x_gen, x_real])

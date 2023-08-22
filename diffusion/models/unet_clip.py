@@ -363,7 +363,7 @@ class UNetModel(nn.Module):
         )
 
         if encoder_channels is not None:
-            self.clip_proj = nn.Linear(768, model_channels * 4, dtype=self.dtype)
+            self.clip_proj = nn.Linear(768, model_channels * 4) #, dtype=self.dtype)
 
         if self.num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_embed_dim)
@@ -581,8 +581,10 @@ class UNetModel(nn.Module):
         context_mask = context_mask[:, None]
         context_mask = context_mask.repeat(1, *xf_proj.size()[1:])
         context_mask = (-1*(1-context_mask)) # need to flip 0 <-> 1
-        xf_proj = xf_proj * context_mask
-        xf_out = xf_out * context_mask
+        if xf_proj is not None:
+            xf_proj = xf_proj * context_mask
+        if xf_out is not None:
+            xf_out = xf_out * context_mask
 
         if xf_proj is not None:
             emb = emb + self.clip_proj(xf_proj).to(emb)

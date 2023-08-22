@@ -173,7 +173,7 @@ class DDPM_NC(nn.Module): # non-conditional
 
 class DDPM_Vision_Condition(nn.Module):
     def __init__(self, nn_model, betas, n_T, device, drop_prob=0.1):
-        super(DDPM, self).__init__()
+        super(DDPM_Vision_Condition, self).__init__()
         self.nn_model = nn_model.to(device)
 
         # register_buffer allows accessing dictionary produced by ddpm_schedules
@@ -217,13 +217,12 @@ class DDPM_Vision_Condition(nn.Module):
 
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1), sample initial noise
         c_i = context.to(device)
-        c_i = c_i.repeat(int(n_sample))
 
         # don't drop context at test time
         context_mask = torch.zeros(c_i.size()[0]).to(device)
 
         # double the batch
-        c_i = c_i.repeat(2)
+        c_i = c_i.repeat([2, 1])
         context_mask = context_mask.repeat(2)
         context_mask[n_sample:] = 1. # makes second half of batch context free
 
@@ -232,11 +231,11 @@ class DDPM_Vision_Condition(nn.Module):
         for i in range(self.n_T, 0, -1):
             print(f'sampling timestep {i}',end='\r')
             t_is = torch.tensor([i / self.n_T]).to(device)
-            t_is = t_is.repeat(n_sample,1,1,1)
+            t_is = t_is.repeat(n_sample)
 
             # double batch
             x_i = x_i.repeat(2,1,1,1)
-            t_is = t_is.repeat(2,1,1,1)
+            t_is = t_is.repeat(2)
 
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
 
