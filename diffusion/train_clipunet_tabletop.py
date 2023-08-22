@@ -50,7 +50,8 @@ def train_tabletop():
             num_res_blocks=2, #3
             attention_resolutions=(32,16,8),
             dropout=0.1,
-            num_heads=1
+            num_heads=1,
+            emb_condition_channels=0
             )
     ddpm = DDPM_Vision_Condition(nn_model=unet, betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
     ddpm.to(device)
