@@ -68,6 +68,7 @@ def train_tabletop():
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     test_dataset = TabletopNpyDataset(data_dir=os.path.join(data_dir, 'test'))
     test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=1)
+    test_data_iterator = iter(test_dataloader)
 
     optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
 
@@ -108,7 +109,7 @@ def train_tabletop():
         with torch.no_grad():
             n_sample = 4*2
 
-            x_test = next(iter(test_dataloader))
+            x_test = next(test_data_iterator)
             x_real = torch.zeros([n_sample, *x.shape[1:]]).to(device)
             for k in range(2):
                 for j in range(int(n_sample/2)):
