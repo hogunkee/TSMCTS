@@ -62,14 +62,14 @@ def train(args):
         dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         im_height = 48
         im_width = 64
-    elif args.dataset=='tabletop-96:'
+    elif args.dataset=='tabletop-96':
         from data_loader import TabletopNpyDataset
         dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         im_height = 96
         im_width = 128
     elif args.dataset=='ur5':
-        from data_loadrt import UR5NpyDataset
-        dataset = UR5NPyDataset(data_dir=os.path.join(args.data_dir, 'train'))
+        from data_loader import UR5NpyDataset
+        dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         im_height = 96
         im_width = 96
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
@@ -144,7 +144,7 @@ def train(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArguentParser()
+    parser = argparse.ArgumentParser()
     parser.add_argument("--n_epoch", type=int, default=30)
     parser.add_argument("--batch_size", type=int, default=50)
     parser.add_argument("--n_T", type=int, default=400)

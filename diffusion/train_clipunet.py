@@ -1,3 +1,4 @@
+import argparse
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -69,16 +70,16 @@ def train():
         test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 48
         im_width = 64
-    elif args.dataset=='tabletop-96:'
+    elif args.dataset=='tabletop-96':
         from data_loader import TabletopNpyDataset
         dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 128
     elif args.dataset=='ur5':
-        from data_loadrt import UR5NpyDataset
-        dataset = UR5NPyDataset(data_dir=os.path.join(args.data_dir, 'train'))
-        test_dataset = UR5NPyDataset(data_dir=os.path.join(args.data_dir, 'test'))
+        from data_loader import UR5NpyDataset
+        dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
+        test_dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 96
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
@@ -171,7 +172,7 @@ def train():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArguentParser()
+    parser = argparse.ArgumentParser()
     parser.add_argument("--n_epoch", type=int, default=30)
     parser.add_argument("--batch_size", type=int, default=50)
     parser.add_argument("--n_T", type=int, default=400)
@@ -182,7 +183,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, choices=['tabletop-48', 'tabletop-96', 'ur5'],
                         default='tabletop-48')
     parser.add_argument("--data_dir", type=str, default='/disk1/hogun/tabletop_48x64')
-	args = parser.parse_args()
+    args = parser.parse_args()
 
     gpu = args.gpu
     if "CUDA_VISIBLE_DEVICES" in os.environ:
