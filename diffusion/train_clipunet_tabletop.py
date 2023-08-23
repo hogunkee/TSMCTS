@@ -127,7 +127,7 @@ def train_tabletop():
             save_image(grid, save_dir + f"image_ep{ep}.png")
             print('saved image at ' + save_dir + f"image_ep{ep}.png")
 
-            if ep%5==0 or ep == int(n_epoch-1):
+            if (ep+1)%5==0 or ep == int(n_epoch-1):
                 # create gif of images evolving over time, based on x_gen_store
                 fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
                                         sharex=True,sharey=True,figsize=(8,3))
@@ -148,10 +148,10 @@ def train_tabletop():
                 ani.save(save_dir + f"gif_ep{ep}.gif", dpi=100,writer=PillowWriter(fps=5))
                 print('saved image at ' + save_dir + f"gif_ep{ep}.gif")
 
-        # optionally save model
-        if save_model:
-            torch.save(ddpm.state_dict(), save_dir + f"model_{ep}.pth")
-            print('saved model at ' + save_dir + f"model_{ep}.pth")
+            # optionally save model
+            if save_model:
+                torch.save(ddpm.state_dict(), save_dir + f"model_{ep}.pth")
+                print('saved model at ' + save_dir + f"model_{ep}.pth")
 
 
 if __name__ == "__main__":
