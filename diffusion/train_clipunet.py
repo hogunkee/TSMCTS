@@ -1,18 +1,19 @@
-import argparse
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.utils import save_image, make_grid
 
 from typing import Dict, Tuple
 from tqdm import tqdm
-from ddpm import DDPM_NC
-from models.unet import UNetModel
+from ddpm import DDPM_Vision_Condition
+from models.unet_clip import UNetModel
+from clip_custom import clip
 
 
 def clip_image(im):
@@ -25,8 +26,12 @@ def normalize_image(im):
     im_norm = (im - v_min) / (v_max - v_min)
     return im_norm
 
+def set_requires_grad(model, value):
+    for param in model.parameters():
+        param.requires_grad = value
 
-def train(args):
+
+def train():
     # hardcoding these here
     n_epoch = args.n_epoch
     batch_size = args.batch_size
@@ -47,32 +52,39 @@ def train(args):
             num_res_blocks=2, #3
             attention_resolutions=(32,16,8),
             dropout=0.1,
-            num_heads=1
+            num_heads=1,
+            emb_condition_channels=0,
+            encoder_channels=768
             )
-    ddpm = DDPM_NC(nn_model=unet, betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
+    ddpm = DDPM_Vision_Condition(nn_model=unet, betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
     ddpm.to(device)
 
-    # optionally load a model
-    # ddpm.load_state_dict(torch.load("./data/diffusion_outputs/ddpm_unet01_mnist_9.pth"))
-
-    tf = transforms.Compose([transforms.ToTensor()]) 
+    clip_model, _ = clip.load('ViT-L/14', device=device, jit=False)
+    clip_model.eval().requires_grad_(False)
+    set_requires_grad(clip_model, False)
 
     if args.dataset=='tabletop-48':
         from data_loader import TabletopNpyDataset
         dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
+        test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 48
         im_width = 64
     elif args.dataset=='tabletop-96:'
         from data_loader import TabletopNpyDataset
         dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
+        test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 128
     elif args.dataset=='ur5':
         from data_loadrt import UR5NpyDataset
         dataset = UR5NPyDataset(data_dir=os.path.join(args.data_dir, 'train'))
+        test_dataset = UR5NPyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 96
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
+    test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=1)
+    test_data_iterator = iter(test_dataloader)
+
     optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
 
     for ep in range(n_epoch):
@@ -87,8 +99,17 @@ def train(args):
         #for x, c in pbar:
         for x in pbar:
             optim.zero_grad()
+            # context #
+            # resize & crop, pad
+            x_clip = torch.zeros([x.shape[0], 3, 224, 224])
+            x_resized = F.interpolate(x, size=(192, 256))
+            x_clip[:, :, 16:-16, :] = x_resized[:, :, :, 16:-16]
+            x_clip = x_clip.to(device)
+            c = clip_model.encode_image(x_clip)
+            c = c.to(device)
+
             x = x.to(device)
-            loss = ddpm(x)
+            loss = ddpm(x, c)
             loss.backward()
             if loss_ema is None:
                 loss_ema = loss.item()
@@ -102,21 +123,27 @@ def train(args):
         ddpm.eval()
         with torch.no_grad():
             n_sample = 4*2
-            x_gen, x_gen_store = ddpm.sample(n_sample, (3, im_height, im_width), device)
 
-            # append some real images at bottom, order by class also
-            x_real = torch.Tensor(x_gen.shape).to(device)
+            x_test = next(test_data_iterator)
+            x_real = torch.zeros([n_sample, *x.shape[1:]]).to(device)
             for k in range(2):
                 for j in range(int(n_sample/2)):
                     idx = k + (j*2)
-                    x_real[k+(j*2)] = x[idx]
+                    x_real[k+(j*2)] = x_test[idx]
+
+            x_real_clip = torch.zeros([n_sample, 3, 224, 224])
+            x_real_resized = F.interpolate(x_real, size=(192, 256))
+            x_real_clip[:, :, 16:-16, :] = x_real_resized[:, :, :, 16:-16]
+            x_real_clip = x_real_clip.to(device)
+            c_real = clip_model.encode_image(x_real_clip)
+            x_gen, x_gen_store = ddpm.sample(n_sample, (3, im_height, im_width), device, c_real)
 
             x_all = torch.cat([x_gen, x_real])
             grid = make_grid(x_all, nrow=4)
             save_image(grid, save_dir + f"image_ep{ep}.png")
             print('saved image at ' + save_dir + f"image_ep{ep}.png")
 
-            if ep%5==0 or ep == int(n_epoch-1):
+            if (ep+1)%5==0 or ep == int(n_epoch-1):
                 # create gif of images evolving over time, based on x_gen_store
                 fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
                                         sharex=True,sharey=True,figsize=(8,3))
@@ -137,10 +164,10 @@ def train(args):
                 ani.save(save_dir + f"gif_ep{ep}.gif", dpi=100,writer=PillowWriter(fps=5))
                 print('saved image at ' + save_dir + f"gif_ep{ep}.gif")
 
-        # optionally save model
-        if save_model:
-            torch.save(ddpm.state_dict(), save_dir + f"model_{ep}.pth")
-            print('saved model at ' + save_dir + f"model_{ep}.pth")
+            # optionally save model
+            if save_model:
+                torch.save(ddpm.state_dict(), save_dir + f"model_{ep}.pth")
+                print('saved model at ' + save_dir + f"model_{ep}.pth")
 
 
 if __name__ == "__main__":
@@ -150,7 +177,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_T", type=int, default=400)
     parser.add_argument("--n_feat", type=int, default=64)
     parser.add_argument("--lr", type=float, default=2e-5)
-    parser.add_argument("--out", type=str, default='unet_tabletop')
+    parser.add_argument("--out", type=str, default='clipunet_tabletop')
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--dataset", type=str, choices=['tabletop-48', 'tabletop-96', 'ur5'],
                         default='tabletop-48')
@@ -165,5 +192,5 @@ if __name__ == "__main__":
             torch.cuda.set_device(gpu_idx)
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
 
-    train(args)
+    train()
 
