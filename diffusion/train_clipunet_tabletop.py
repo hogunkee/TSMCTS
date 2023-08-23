@@ -41,7 +41,7 @@ def train_tabletop():
     n_feat = 64 #128 # 128 ok, 256 better (but slower)
     lrate = 2e-5 #1e-4
     save_model = True #False
-    save_dir = './data/clipunet_tabletop_output/'
+    save_dir = './data/clipunet_tabletop_output_test/'
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
 
@@ -64,8 +64,11 @@ def train_tabletop():
     set_requires_grad(clip_model, False)
 
     data_dir = "/home/gun/ssd/disk/ur5_tidying_data/tabletop_48x64"
-    dataset = TabletopNpyDataset(data_dir=data_dir)
+    dataset = TabletopNpyDataset(data_dir=os.path.join(data_dir, 'train'))
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
+    test_dataset = TabletopNpyDataset(data_dir=os.path.join(data_dir, 'test'))
+    test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=1)
+
     optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
 
     for ep in range(n_epoch):
@@ -105,11 +108,12 @@ def train_tabletop():
         with torch.no_grad():
             n_sample = 4*2
 
+            x_test = next(iter(test_dataloader))
             x_real = torch.zeros([n_sample, *x.shape[1:]]).to(device)
             for k in range(2):
                 for j in range(int(n_sample/2)):
                     idx = k + (j*2)
-                    x_real[k+(j*2)] = x[idx]
+                    x_real[k+(j*2)] = x_test[idx]
 
             x_real_clip = torch.zeros([n_sample, 3, 224, 224])
             x_real_resized = F.interpolate(x_real, size=(192, 256))
