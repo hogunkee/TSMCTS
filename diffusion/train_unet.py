@@ -27,7 +27,6 @@ def normalize_image(im):
 
 
 def train(args):
-    # hardcoding these here
     n_epoch = args.n_epoch
     batch_size = args.batch_size
     n_T = args.n_T

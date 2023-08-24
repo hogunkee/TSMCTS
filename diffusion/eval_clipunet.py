@@ -32,13 +32,13 @@ def set_requires_grad(model, value):
         param.requires_grad = value
 
 
-def train():
-    n_epoch = args.n_epoch
-    batch_size = args.batch_size
+def eval():
     n_T = args.n_T
     n_feat = args.n_feat
     lrate = args.lr
+    n_eval = args.n_eval
     save_dir = os.path.join('data', args.out)
+    model_path = os.path.join('data', args.model)
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
 
@@ -56,8 +56,13 @@ def train():
             emb_condition_channels=0,
             encoder_channels=768
             )
+
     ddpm = DDPM_Vision_Condition(nn_model=unet, betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
+    # load the model #
+    print('load model from ' + model_path)
+    ddpm.load_state_dict(torch.load(model_path))
     ddpm.to(device)
+    ddpm.eval()
 
     clip_model, _ = clip.load('ViT-L/14', device=device, jit=False)
     clip_model.eval().requires_grad_(False)
@@ -65,62 +70,25 @@ def train():
 
     if args.dataset=='tabletop-48':
         from data_loader import TabletopNpyDataset
-        dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 48
         im_width = 64
     elif args.dataset=='tabletop-96':
         from data_loader import TabletopNpyDataset
-        dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 128
     elif args.dataset=='ur5':
         from data_loader import UR5NpyDataset
-        dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         test_dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 96
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=1)
     test_data_iterator = iter(test_dataloader)
 
-    optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
-
-    for ep in range(n_epoch):
-        print(f'epoch {ep}')
-        ddpm.train()
-
-        # linear lrate decay
-        optim.param_groups[0]['lr'] = lrate*(1-ep/n_epoch)
-
-        pbar = tqdm(dataloader)
-        loss_ema = None
-        #for x, c in pbar:
-        for x in pbar:
-            optim.zero_grad()
-            # context #
-            # resize & crop, pad
-            x_clip = torch.zeros([x.shape[0], 3, 224, 224])
-            x_resized = F.interpolate(x, size=(192, 256))
-            x_clip[:, :, 16:-16, :] = x_resized[:, :, :, 16:-16]
-            x_clip = x_clip.to(device)
-            c = clip_model.encode_image(x_clip)
-            c = c.to(device)
-
-            x = x.to(device)
-            loss = ddpm(x, c)
-            loss.backward()
-            if loss_ema is None:
-                loss_ema = loss.item()
-            else:
-                loss_ema = 0.95 * loss_ema + 0.05 * loss.item()
-            pbar.set_description(f"loss: {loss_ema:.4f}")
-            optim.step()
-        
+    for ne in range(n_eval):
         # for eval, save an image of currently generated samples (top rows)
         # followed by real images (bottom rows)
-        ddpm.eval()
         with torch.no_grad():
             n_sample = 4*2
 
@@ -140,44 +108,39 @@ def train():
 
             x_all = torch.cat([x_gen, x_real])
             grid = make_grid(x_all, nrow=4)
-            save_image(grid, save_dir + f"image_ep{ep}.png")
-            print('saved image at ' + save_dir + f"image_ep{ep}.png")
+            save_image(grid, save_dir + f"image_{ne}.png")
+            print('saved image at ' + save_dir + f"image_{ne}.png")
 
-            if (ep+1)%5==0 or ep == int(n_epoch-1):
-                # create gif of images evolving over time, based on x_gen_store
-                fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
-                                        sharex=True,sharey=True,figsize=(8,3))
-                def animate_diff(i, x_gen_store):
-                    print(f'gif animating frame {i} of {x_gen_store.shape[0]}', end='\r')
-                    plots = []
-                    x_gen_clip = clip_image(x_gen_store)
-                    #x_gen_norm = normalize_image(x_gen_store)
-                    for row in range(2):
-                        for col in range(int(n_sample/2)):
-                            axs[row, col].clear()
-                            axs[row, col].set_xticks([])
-                            axs[row, col].set_yticks([])
-                            plots.append(axs[row, col].imshow(x_gen_clip[i,(row*2)+col].transpose([1,2,0])))
-                            #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
-                    return plots
-                ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-                ani.save(save_dir + f"gif_ep{ep}.gif", dpi=100,writer=PillowWriter(fps=5))
-                print('saved image at ' + save_dir + f"gif_ep{ep}.gif")
+            # create gif of images evolving over time, based on x_gen_store
+            fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
+                                    sharex=True,sharey=True,figsize=(8,3))
+            def animate_diff(i, x_gen_store):
+                print(f'gif animating frame {i} of {x_gen_store.shape[0]}', end='\r')
+                plots = []
+                x_gen_clip = clip_image(x_gen_store)
+                #x_gen_norm = normalize_image(x_gen_store)
+                for row in range(2):
+                    for col in range(int(n_sample/2)):
+                        axs[row, col].clear()
+                        axs[row, col].set_xticks([])
+                        axs[row, col].set_yticks([])
+                        plots.append(axs[row, col].imshow(x_gen_clip[i,(row*2)+col].transpose([1,2,0])))
+                        #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
+                return plots
+            ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
+            ani.save(save_dir + f"gif_ep{ep}.gif", dpi=100,writer=PillowWriter(fps=5))
+            print('saved image at ' + save_dir + f"gif_ep{ne}.gif")
 
-            # optionally save model
-            if save_model:
-                torch.save(ddpm.state_dict(), save_dir + f"model_{ep}.pth")
-                print('saved model at ' + save_dir + f"model_{ep}.pth")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_epoch", type=int, default=30)
-    parser.add_argument("--batch_size", type=int, default=50)
     parser.add_argument("--n_T", type=int, default=400)
     parser.add_argument("--n_feat", type=int, default=64)
     parser.add_argument("--lr", type=float, default=2e-5)
-    parser.add_argument("--out", type=str, default='clipunet_tabletop')
+    parser.add_argument("--n_eval", type=int, default=10)
+    parser.add_argument("--out", type=str, default='eval')
+    parser.add_argument("--model", type=str, default='clipunet_tabletop')
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--dataset", type=str, choices=['tabletop-48', 'tabletop-96', 'ur5'],
                         default='tabletop-48')
@@ -192,5 +155,4 @@ if __name__ == "__main__":
             torch.cuda.set_device(gpu_idx)
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
 
-    train()
-
+    eval()
