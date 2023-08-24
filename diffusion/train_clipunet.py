@@ -36,7 +36,9 @@ def train():
     n_epoch = args.n_epoch
     batch_size = args.batch_size
     n_T = args.n_T
-    n_feat = args.n_feat
+    model_channels = args.n_feat #64
+    num_res_blocks = args.n_res #2
+    attention_resolutions = (32, 16, 8)
     lrate = args.lr
     save_dir = os.path.join('data', args.out)
     if not os.path.isdir(save_dir):
@@ -51,37 +53,28 @@ def train():
         test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 48
         im_width = 64
-        model_channels = 64
-        num_res_blocks = 2
-        attention_resolutions = (32, 16, 8)
     elif args.dataset=='tabletop-96':
         from data_loader import TabletopNpyDataset
         dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 128
-        model_channels = 128
-        num_res_blocks = 3
-        attention_resolutions = (32, 16, 8)
     elif args.dataset=='ur5':
         from data_loader import UR5NpyDataset
         dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         test_dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 96
-        model_channels = 192
-        num_res_blocks = 3
-        attention_resolutions = (32, 16, 8)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=1)
     test_data_iterator = iter(test_dataloader)
 
     unet = UNetModel(
             in_channels=3,
-            model_channels=model_channels, #64, #192
-            out_channels=3, #6
-            num_res_blocks=num_res_blocks, #2, #3
-            attention_resolutions=attention_resolutions, #(32,16,8),
+            model_channels=model_channels,
+            out_channels=3,
+            num_res_blocks=num_res_blocks,
+            attention_resolutions=attention_resolutions,
             dropout=0.1,
             num_heads=1,
             emb_condition_channels=0,
@@ -185,6 +178,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=50)
     parser.add_argument("--n_T", type=int, default=400)
     parser.add_argument("--n_feat", type=int, default=64)
+    parser.add_argument("--n_res", type=int, default=2)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--out", type=str, default='clipunet_tabletop')
     parser.add_argument("--gpu", type=int, default=0)

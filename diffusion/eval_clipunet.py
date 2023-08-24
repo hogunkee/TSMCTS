@@ -34,8 +34,9 @@ def set_requires_grad(model, value):
 
 def eval():
     n_T = args.n_T
-    n_feat = args.n_feat
-    lrate = args.lr
+    model_channels = args.n_feat #64
+    num_res_blocks = args.n_res #2
+    attention_resolutions = (32, 16, 8)
     n_eval = args.n_eval
     save_dir = os.path.join('data', args.out)
     model_path = os.path.join('data', args.model)
@@ -47,10 +48,10 @@ def eval():
 
     unet = UNetModel(
             in_channels=3,
-            model_channels=64, #192
-            out_channels=3, #6
-            num_res_blocks=2, #3
-            attention_resolutions=(32,16,8),
+            model_channels=model_channels,
+            out_channels=3,
+            num_res_blocks=num_res_blocks,
+            attention_resolutions=attention_resolutions,
             dropout=0.1,
             num_heads=1,
             emb_condition_channels=0,
@@ -137,6 +138,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_T", type=int, default=400)
     parser.add_argument("--n_feat", type=int, default=64)
+    parser.add_argument("--n_res", type=int, default=2)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--n_eval", type=int, default=10)
     parser.add_argument("--out", type=str, default='eval')
