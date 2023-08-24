@@ -128,7 +128,7 @@ def eval():
                         #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
                 return plots
             ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-            ani.save(save_dir + f"gif_ep{ep}.gif", dpi=100,writer=PillowWriter(fps=5))
+            ani.save(save_dir + f"gif_ep{ne}.gif", dpi=100,writer=PillowWriter(fps=5))
             print('saved image at ' + save_dir + f"gif_ep{ne}.gif")
 
 
