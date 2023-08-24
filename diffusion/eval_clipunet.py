@@ -93,7 +93,7 @@ def eval():
             n_sample = 4*2
 
             x_test = next(test_data_iterator)
-            x_real = torch.zeros([n_sample, *x.shape[1:]]).to(device)
+            x_real = torch.zeros([n_sample, *x_test.shape[1:]]).to(device)
             for k in range(2):
                 for j in range(int(n_sample/2)):
                     idx = k + (j*2)
