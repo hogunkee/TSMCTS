@@ -108,8 +108,8 @@ def eval():
 
             x_all = torch.cat([x_gen, x_real])
             grid = make_grid(x_all, nrow=4)
-            save_image(grid, save_dir + f"image_{ne}.png")
-            print('saved image at ' + save_dir + f"image_{ne}.png")
+            save_image(grid, os.path.join(save_dir, f"image_{ne}.png"))
+            print('saved image at ' + os.path.join(save_dir, f"image_{ne}.png"))
 
             # create gif of images evolving over time, based on x_gen_store
             fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
@@ -128,8 +128,8 @@ def eval():
                         #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
                 return plots
             ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-            ani.save(save_dir + f"gif_ep{ne}.gif", dpi=100,writer=PillowWriter(fps=5))
-            print('saved image at ' + save_dir + f"gif_ep{ne}.gif")
+            ani.save(os.path.join(save_dir, f"gif_ep{ne}.gif"), dpi=100,writer=PillowWriter(fps=5))
+            print('saved image at ' + os.path.join(save_dir, f"gif_ep{ne}.gif"))
 
 
 

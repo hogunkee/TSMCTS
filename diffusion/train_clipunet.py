@@ -140,8 +140,8 @@ def train():
 
             x_all = torch.cat([x_gen, x_real])
             grid = make_grid(x_all, nrow=4)
-            save_image(grid, save_dir + f"image_ep{ep}.png")
-            print('saved image at ' + save_dir + f"image_ep{ep}.png")
+            save_image(grid, os.path.join(save_dir, f"image_ep{ep}.png"))
+            print('saved image at ' + os.path.join(save_dir, "image_ep{ep}.png"))
 
             if (ep+1)%5==0 or ep == int(n_epoch-1):
                 # create gif of images evolving over time, based on x_gen_store
@@ -161,13 +161,13 @@ def train():
                             #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
                     return plots
                 ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-                ani.save(save_dir + f"gif_ep{ep}.gif", dpi=100,writer=PillowWriter(fps=5))
-                print('saved image at ' + save_dir + f"gif_ep{ep}.gif")
+                ani.save(os.path.join(save_dir, f"gif_ep{ep}.gif"), dpi=100,writer=PillowWriter(fps=5))
+                print('saved image at ' + os.path.join(save_dir, f"gif_ep{ep}.gif"))
 
             # optionally save model
             if save_model:
-                torch.save(ddpm.state_dict(), save_dir + f"model_{ep}.pth")
-                print('saved model at ' + save_dir + f"model_{ep}.pth")
+                torch.save(ddpm.state_dict(), os.path.join(save_dir, f"model_{ep}.pth"))
+                print('saved model at ' + os.path.join(save_dir, f"model_{ep}.pth"))
 
 
 if __name__ == "__main__":
