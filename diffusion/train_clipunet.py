@@ -45,12 +45,43 @@ def train():
     save_model = True #False
     device = "cuda:0"
 
+    if args.dataset=='tabletop-48':
+        from data_loader import TabletopNpyDataset
+        dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
+        test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
+        im_height = 48
+        im_width = 64
+        model_channels = 64
+        num_res_blocks = 2
+        attention_resolutions = (32, 16, 8)
+    elif args.dataset=='tabletop-96':
+        from data_loader import TabletopNpyDataset
+        dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
+        test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
+        im_height = 96
+        im_width = 128
+        model_channels = 128
+        num_res_blocks = 3
+        attention_resolutions = (32, 16, 8)
+    elif args.dataset=='ur5':
+        from data_loader import UR5NpyDataset
+        dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
+        test_dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
+        im_height = 96
+        im_width = 96
+        model_channels = 192
+        num_res_blocks = 3
+        attention_resolutions = (32, 16, 8)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
+    test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=1)
+    test_data_iterator = iter(test_dataloader)
+
     unet = UNetModel(
             in_channels=3,
-            model_channels=64, #192
+            model_channels=model_channels, #64, #192
             out_channels=3, #6
-            num_res_blocks=2, #3
-            attention_resolutions=(32,16,8),
+            num_res_blocks=num_res_blocks, #2, #3
+            attention_resolutions=attention_resolutions, #(32,16,8),
             dropout=0.1,
             num_heads=1,
             emb_condition_channels=0,
@@ -62,28 +93,6 @@ def train():
     clip_model, _ = clip.load('ViT-L/14', device=device, jit=False)
     clip_model.eval().requires_grad_(False)
     set_requires_grad(clip_model, False)
-
-    if args.dataset=='tabletop-48':
-        from data_loader import TabletopNpyDataset
-        dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
-        test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
-        im_height = 48
-        im_width = 64
-    elif args.dataset=='tabletop-96':
-        from data_loader import TabletopNpyDataset
-        dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
-        test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
-        im_height = 96
-        im_width = 128
-    elif args.dataset=='ur5':
-        from data_loader import UR5NpyDataset
-        dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
-        test_dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
-        im_height = 96
-        im_width = 96
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
-    test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=1)
-    test_data_iterator = iter(test_dataloader)
 
     optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
 
@@ -164,10 +173,10 @@ def train():
                 ani.save(os.path.join(save_dir, f"gif_ep{ep}.gif"), dpi=100,writer=PillowWriter(fps=5))
                 print('saved image at ' + os.path.join(save_dir, f"gif_ep{ep}.gif"))
 
-            # optionally save model
-            if save_model:
-                torch.save(ddpm.state_dict(), os.path.join(save_dir, f"model_{ep}.pth"))
-                print('saved model at ' + os.path.join(save_dir, f"model_{ep}.pth"))
+                # optionally save model
+                if save_model:
+                    torch.save(ddpm.state_dict(), os.path.join(save_dir, f"model_{ep}.pth"))
+                    print('saved model at ' + os.path.join(save_dir, f"model_{ep}.pth"))
 
 
 if __name__ == "__main__":
