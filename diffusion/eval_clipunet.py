@@ -73,19 +73,25 @@ def eval(args):
 
     if args.dataset=='tabletop-48':
         from data_loader import TabletopNpyDataset
+        train_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 48
         im_width = 64
     elif args.dataset=='tabletop-96':
         from data_loader import TabletopNpyDataset
+        train_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 128
     elif args.dataset=='ur5':
         from data_loader import UR5NpyDataset
+        train_dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
         test_dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 96
+    np.random.seed(args.seed)
+    train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=5)
+    train_data_iterator = iter(train_dataloader)
     test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=1)
     test_data_iterator = iter(test_dataloader)
 
@@ -94,6 +100,32 @@ def eval(args):
         # followed by real images (bottom rows)
         with torch.no_grad():
             n_sample = 4*2
+
+            x_train = next(train_data_iterator)
+            x_real = torch.zeros([n_sample, *x_train.shape[1:]]).to(device)
+            for k in range(2):
+                for j in range(int(n_sample/2)):
+                    idx = k + (j*2)
+                    x_real[k+(j*2)] = x_train[idx]
+
+            x_real_clip = torch.zeros([n_sample, 3, 224, 224])
+            x_real_resized = F.interpolate(x_real, size=(192, 256))
+            x_real_clip[:, :, 16:-16, :] = x_real_resized[:, :, :, 16:-16]
+            x_real_clip = x_real_clip.to(device)
+            c_real = clip_model.encode_image(x_real_clip)
+            x_gen, x_gen_store = ddpm.sample(n_sample, (3, im_height, im_width), device, c_real, guide_w=guidance)
+
+            x_all = torch.cat([x_gen, x_real])
+            grid = make_grid(x_all, nrow=4)
+
+            if tag is None:
+                grid_count = len([f for f in os.listdir(save_dir) if f.startswith('image_') and f.endswith('.png')])
+                save_image(grid, os.path.join(save_dir, f"train_{grid_count}.png"))
+                print('saved image at ' + os.path.join(save_dir, f"train_{grid_count}.png"))
+            else:
+                grid_count = len([f for f in os.listdir(save_dir) if f.startswith(tag) and f.endswith('.png')])
+                save_image(grid, os.path.join(save_dir, f"train_{tag}_{grid_count}.png"))
+                print('saved image at ' + os.path.join(save_dir, f"train_{tag}_{grid_count}.png"))
 
             x_test = next(test_data_iterator)
             x_real = torch.zeros([n_sample, *x_test.shape[1:]]).to(device)
@@ -121,34 +153,35 @@ def eval(args):
                 save_image(grid, os.path.join(save_dir, f"{tag}_{grid_count}.png"))
                 print('saved image at ' + os.path.join(save_dir, f"{tag}_{grid_count}.png"))
 
-            # create gif of images evolving over time, based on x_gen_store
-            fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
-                                    sharex=True,sharey=True,figsize=(8,3))
-            def animate_diff(i, x_gen_store):
-                print(f'gif animating frame {i} of {x_gen_store.shape[0]}', end='\r')
-                plots = []
-                x_gen_clip = clip_image(x_gen_store)
-                #x_gen_norm = normalize_image(x_gen_store)
-                for row in range(2):
-                    for col in range(int(n_sample/2)):
-                        axs[row, col].clear()
-                        axs[row, col].set_xticks([])
-                        axs[row, col].set_yticks([])
-                        plots.append(axs[row, col].imshow(x_gen_clip[i,(row*2)+col].transpose([1,2,0])))
-                        #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
-                return plots
-            ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-            if tag is None:
-                ani.save(os.path.join(save_dir, f"gif_{grid_count}.gif"), dpi=100,writer=PillowWriter(fps=5))
-                print('saved image at ' + os.path.join(save_dir, f"gif_{grid_count}.gif"))
-            else:
-                ani.save(os.path.join(save_dir, f"gif_{tag}_{grid_count}.gif"), dpi=100,writer=PillowWriter(fps=5))
-                print('saved image at ' + os.path.join(save_dir, f"gif_{tag}_{grid_count}.gif"))
-
+            if args.gif:
+                # create gif of images evolving over time, based on x_gen_store
+                fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
+                                        sharex=True,sharey=True,figsize=(8,3))
+                def animate_diff(i, x_gen_store):
+                    print(f'gif animating frame {i} of {x_gen_store.shape[0]}', end='\r')
+                    plots = []
+                    x_gen_clip = clip_image(x_gen_store)
+                    #x_gen_norm = normalize_image(x_gen_store)
+                    for row in range(2):
+                        for col in range(int(n_sample/2)):
+                            axs[row, col].clear()
+                            axs[row, col].set_xticks([])
+                            axs[row, col].set_yticks([])
+                            plots.append(axs[row, col].imshow(x_gen_clip[i,(row*2)+col].transpose([1,2,0])))
+                            #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
+                    return plots
+                ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
+                if tag is None:
+                    ani.save(os.path.join(save_dir, f"gif_{grid_count}.gif"), dpi=100,writer=PillowWriter(fps=5))
+                    print('saved image at ' + os.path.join(save_dir, f"gif_{grid_count}.gif"))
+                else:
+                    ani.save(os.path.join(save_dir, f"gif_{tag}_{grid_count}.gif"), dpi=100,writer=PillowWriter(fps=5))
+                    print('saved image at ' + os.path.join(save_dir, f"gif_{tag}_{grid_count}.gif"))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--n_T", type=int, default=400)
     parser.add_argument("--n_feat", type=int, default=64)
     parser.add_argument("--n_res", type=int, default=2)
@@ -156,6 +189,7 @@ if __name__ == "__main__":
     parser.add_argument("--guide", type=float, default=0.0)
     parser.add_argument("--tag", type=str, default=None)
     parser.add_argument("--out", type=str, default='eval')
+    parser.add_argument("--gif", action='store_true')
     parser.add_argument("--model", type=str, default='clipunet_tabletop')
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--dataset", type=str, choices=['tabletop-48', 'tabletop-96', 'ur5'],
