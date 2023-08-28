@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.utils import save_image, make_grid
 
-from typing import Dict, Tuple
 from tqdm import tqdm
 from ddpm import DDPM_Vision_Condition
 from models.unet_clip import UNetModel
