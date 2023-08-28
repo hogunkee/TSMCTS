@@ -6,15 +6,13 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.utils import save_image, make_grid
 
 from typing import Dict, Tuple
 from tqdm import tqdm
-from ddpm import DDPM_Vision_Condition
-from models.unet_clip import UNetModel
-from clip_custom import clip
+from ddpm import DDPM_NC
+from models.unet import UNetModel
 
 
 def clip_image(im):
@@ -33,7 +31,6 @@ def set_requires_grad(model, value):
 
 
 def eval(args):
-    guidance = args.guide
     n_T = args.n_T
     model_channels = args.n_feat #64
     num_res_blocks = args.n_res #2
@@ -56,94 +53,32 @@ def eval(args):
             attention_resolutions=attention_resolutions,
             dropout=0.1,
             num_heads=1,
-            emb_condition_channels=0,
-            encoder_channels=768
             )
 
-    ddpm = DDPM_Vision_Condition(nn_model=unet, betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
+    ddpm = DDPM_NC(nn_model=unet, betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
     # load the model #
     print('load model from ' + model_path)
     ddpm.load_state_dict(torch.load(model_path))
     ddpm.to(device)
     ddpm.eval()
 
-    clip_model, _ = clip.load('ViT-L/14', device=device, jit=False)
-    clip_model.eval().requires_grad_(False)
-    set_requires_grad(clip_model, False)
-
     if args.dataset=='tabletop-48':
-        from data_loader import TabletopNpyDataset
-        train_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
-        test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 48
         im_width = 64
     elif args.dataset=='tabletop-96':
-        from data_loader import TabletopNpyDataset
-        train_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
-        test_dataset = TabletopNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 128
     elif args.dataset=='ur5':
-        from data_loader import UR5NpyDataset
-        train_dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
-        test_dataset = UR5NpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
         im_height = 96
         im_width = 96
-    np.random.seed(args.seed)
-    train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=5)
-    train_data_iterator = iter(train_dataloader)
-    test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=1)
-    test_data_iterator = iter(test_dataloader)
 
     for ne in range(n_eval):
         # for eval, save an image of currently generated samples (top rows)
         # followed by real images (bottom rows)
         with torch.no_grad():
             n_sample = 4*2
-
-            if not args.no_train:
-                x_train = next(train_data_iterator)
-                x_real = torch.zeros([n_sample, *x_train.shape[1:]]).to(device)
-                for k in range(2):
-                    for j in range(int(n_sample/2)):
-                        idx = k + (j*2)
-                        x_real[k+(j*2)] = x_train[idx]
-
-                x_real_clip = torch.zeros([n_sample, 3, 224, 224])
-                x_real_resized = F.interpolate(x_real, size=(192, 256))
-                x_real_clip[:, :, 16:-16, :] = x_real_resized[:, :, :, 16:-16]
-                x_real_clip = x_real_clip.to(device)
-                c_real = clip_model.encode_image(x_real_clip)
-                x_gen, x_gen_store = ddpm.sample(n_sample, (3, im_height, im_width), device, c_real, guide_w=guidance)
-
-                x_all = torch.cat([x_gen, x_real])
-                grid = make_grid(x_all, nrow=4)
-
-                if tag is None:
-                    grid_count = len([f for f in os.listdir(save_dir) if f.startswith('image_') and f.endswith('.png')])
-                    save_image(grid, os.path.join(save_dir, f"train_{grid_count}.png"))
-                    print('saved image at ' + os.path.join(save_dir, f"train_{grid_count}.png"))
-                else:
-                    grid_count = len([f for f in os.listdir(save_dir) if f.startswith(tag) and f.endswith('.png')])
-                    save_image(grid, os.path.join(save_dir, f"train_{tag}_{grid_count}.png"))
-                    print('saved image at ' + os.path.join(save_dir, f"train_{tag}_{grid_count}.png"))
-
-            x_test = next(test_data_iterator)
-            x_real = torch.zeros([n_sample, *x_test.shape[1:]]).to(device)
-            for k in range(2):
-                for j in range(int(n_sample/2)):
-                    idx = k + (j*2)
-                    x_real[k+(j*2)] = x_test[idx]
-
-            x_real_clip = torch.zeros([n_sample, 3, 224, 224])
-            x_real_resized = F.interpolate(x_real, size=(192, 256))
-            x_real_clip[:, :, 16:-16, :] = x_real_resized[:, :, :, 16:-16]
-            x_real_clip = x_real_clip.to(device)
-            c_real = clip_model.encode_image(x_real_clip)
-            x_gen, x_gen_store = ddpm.sample(n_sample, (3, im_height, im_width), device, c_real, guide_w=guidance)
-
-            x_all = torch.cat([x_gen, x_real])
-            grid = make_grid(x_all, nrow=4)
+            x_gen, x_gen_store = ddpm.sample(n_sample, (3, im_height, im_width), device)
+            grid = make_grid(x_gen, nrow=4)
 
             if tag is None:
                 grid_count = len([f for f in os.listdir(save_dir) if f.startswith('image_') and f.endswith('.png')])
@@ -187,16 +122,13 @@ if __name__ == "__main__":
     parser.add_argument("--n_feat", type=int, default=64)
     parser.add_argument("--n_res", type=int, default=2)
     parser.add_argument("--n_eval", type=int, default=10)
-    parser.add_argument("--guide", type=float, default=0.0)
     parser.add_argument("--tag", type=str, default=None)
     parser.add_argument("--out", type=str, default='eval')
     parser.add_argument("--gif", action='store_true')
-    parser.add_argument("--no_train", action='store_true')
     parser.add_argument("--model", type=str, default='clipunet_tabletop')
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--dataset", type=str, choices=['tabletop-48', 'tabletop-96', 'ur5'],
                         default='tabletop-48')
-    parser.add_argument("--data_dir", type=str, default='/disk1/hogun/tabletop_48x64')
     args = parser.parse_args()
 
     gpu = args.gpu
