@@ -142,7 +142,7 @@ def train(args):
             x_all = torch.cat([x_gen, x_real])
             grid = make_grid(x_all, nrow=4)
             save_image(grid, os.path.join(save_dir, f"image_ep{ep}.png"))
-            print('saved image at ' + os.path.join(save_dir, "image_ep{ep}.png"))
+            print('saved image at ' + os.path.join(save_dir, f"image_ep{ep}.png"))
 
             if (ep+1)%5==0 or ep == int(n_epoch-1):
                 # create gif of images evolving over time, based on x_gen_store
