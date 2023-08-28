@@ -31,7 +31,7 @@ def set_requires_grad(model, value):
         param.requires_grad = value
 
 
-def train():
+def train(args):
     n_epoch = args.n_epoch
     batch_size = args.batch_size
     n_T = args.n_T
@@ -194,5 +194,5 @@ if __name__ == "__main__":
             torch.cuda.set_device(gpu_idx)
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
 
-    train()
+    train(args)
 

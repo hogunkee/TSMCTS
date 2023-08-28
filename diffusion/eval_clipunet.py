@@ -32,12 +32,14 @@ def set_requires_grad(model, value):
         param.requires_grad = value
 
 
-def eval():
+def eval(args):
+    guidance = args.guide
     n_T = args.n_T
     model_channels = args.n_feat #64
     num_res_blocks = args.n_res #2
     attention_resolutions = (32, 16, 8)
     n_eval = args.n_eval
+    tag = args.tag
     save_dir = os.path.join('data', args.out)
     model_path = os.path.join('data', args.model)
     if not os.path.isdir(save_dir):
@@ -105,12 +107,19 @@ def eval():
             x_real_clip[:, :, 16:-16, :] = x_real_resized[:, :, :, 16:-16]
             x_real_clip = x_real_clip.to(device)
             c_real = clip_model.encode_image(x_real_clip)
-            x_gen, x_gen_store = ddpm.sample(n_sample, (3, im_height, im_width), device, c_real)
+            x_gen, x_gen_store = ddpm.sample(n_sample, (3, im_height, im_width), device, c_real, guide_w=guidance)
 
             x_all = torch.cat([x_gen, x_real])
             grid = make_grid(x_all, nrow=4)
-            save_image(grid, os.path.join(save_dir, f"image_{ne}.png"))
-            print('saved image at ' + os.path.join(save_dir, f"image_{ne}.png"))
+
+            if tag is None:
+                grid_count = len([f for f in os.listdir(save_dir) if f.startswith('image_') and f.endswith('.png')])
+                save_image(grid, os.path.join(save_dir, f"image_{grid_count}.png"))
+                print('saved image at ' + os.path.join(save_dir, f"image_{grid_count}.png"))
+            else:
+                grid_count = len([f for f in os.listdir(save_dir) if f.startswith(tag) and f.endswith('.png')])
+                save_image(grid, os.path.join(save_dir, f"{tag}_{grid_count}.png"))
+                print('saved image at ' + os.path.join(save_dir, f"{tag}_{grid_count}.png"))
 
             # create gif of images evolving over time, based on x_gen_store
             fig, axs = plt.subplots(ncols=int(n_sample/2), nrows=2,\
@@ -129,8 +138,12 @@ def eval():
                         #plots.append(axs[row, col].imshow(x_gen_norm[i,(row*2)+col].transpose([1,2,0])))
                 return plots
             ani = FuncAnimation(fig, animate_diff, fargs=[x_gen_store],  interval=200, blit=False, repeat=True, frames=x_gen_store.shape[0])    
-            ani.save(os.path.join(save_dir, f"gif_ep{ne}.gif"), dpi=100,writer=PillowWriter(fps=5))
-            print('saved image at ' + os.path.join(save_dir, f"gif_ep{ne}.gif"))
+            if tag is None:
+                ani.save(os.path.join(save_dir, f"gif_{grid_count}.gif"), dpi=100,writer=PillowWriter(fps=5))
+                print('saved image at ' + os.path.join(save_dir, f"gif_{grid_count}.gif"))
+            else:
+                ani.save(os.path.join(save_dir, f"gif_{tag}_{grid_count}.gif"), dpi=100,writer=PillowWriter(fps=5))
+                print('saved image at ' + os.path.join(save_dir, f"gif_{tag}_{grid_count}.gif"))
 
 
 
@@ -139,8 +152,9 @@ if __name__ == "__main__":
     parser.add_argument("--n_T", type=int, default=400)
     parser.add_argument("--n_feat", type=int, default=64)
     parser.add_argument("--n_res", type=int, default=2)
-    parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--n_eval", type=int, default=10)
+    parser.add_argument("--guide", type=float, default=0.0)
+    parser.add_argument("--tag", type=str, default=None)
     parser.add_argument("--out", type=str, default='eval')
     parser.add_argument("--model", type=str, default='clipunet_tabletop')
     parser.add_argument("--gpu", type=int, default=0)
@@ -157,4 +171,4 @@ if __name__ == "__main__":
             torch.cuda.set_device(gpu_idx)
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
 
-    eval()
+    eval(args)
