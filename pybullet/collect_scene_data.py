@@ -113,7 +113,10 @@ p.createMultiBody(
 
 # lets create a bunch of objects 
 object_path = '/home/gun/Desktop/pybullet-URDF-models/urdf_models/models'
-object_names = [m for m in os.listdir(object_path) if os.path.isdir(m)]
+object_names = [m for m in os.listdir(object_path) if os.path.isdir(os.path.join(object_path, m))]
+object_selected = np.random.choice(np.arange(len(object_names)), opt.nb_objects, replace=False)
+object_names = np.array(object_names)[object_selected]
+
 meshes = []
 list_vertices = []
 list_indices = []
@@ -130,7 +133,8 @@ for object_name in object_names:
 
 ids_pybullet_and_nvisii_names = []
 
-mesh_indices = np.random.choice(np.arange(len(meshes)), opt.nb_objects, replace=False)
+mesh_indices = np.arange(len(meshes))
+#mesh_indices = np.random.choice(np.arange(len(meshes)), opt.nb_objects, replace=False)
 for i, idx in enumerate(mesh_indices):
     name = f"mesh_{i}"
     obj= nvisii.entity.create(
@@ -231,9 +235,6 @@ for i in range (int(opt.nb_frames)):
     steps_per_frame = math.ceil( 1.0 / (seconds_per_step * frames_per_second) )
     for j in range(steps_per_frame):
         p.stepSimulation()
-        from pprint import pprint
-        pprint(dir(p))
-        exit()
 
     # Lets update the pose of the objects in nvisii 
     for ids in ids_pybullet_and_nvisii_names:

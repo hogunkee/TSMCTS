@@ -138,7 +138,11 @@ for object_name in object_names:
 
 ids_pybullet_and_nvisii_names = []
 
+print("mesh indices")
 mesh_indices = np.random.choice(np.arange(len(meshes)), opt.nb_objects)
+print(mesh_indices)
+mesh_indices = np.arange(len(meshes))
+print(mesh_indices)
 for i, idx in enumerate(mesh_indices):
     name = f"mesh_{i}"
     obj= nvisii.entity.create(
