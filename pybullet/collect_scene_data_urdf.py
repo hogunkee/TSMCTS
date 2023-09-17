@@ -271,7 +271,9 @@ floor_colors = np.array([
     [204,222,224]
     ]) / 255.
 floor_textures = []
-texture_files = ["Wood_BaseColor.jpg", "WoodFloor_BaseColor.jpg", "WoodPanel.png"]
+texture_files = os.listdir("texture")
+texture_files = [f for f in texture_files if f.lower().endswith('jpeg') or f.lower().endswith('jpg') or f.lower().endswith('png') or f.lower().endswith('webp')]
+#texture_files = ["Wood_BaseColor.jpg", "WoodFloor_BaseColor.jpg", "WoodPanel.png"]
 for i, tf in enumerate(texture_files):
     tex = nv.texture.create_from_file("tex-%d"%i, os.path.join("texture/", tf))
     floor_tex = nv.texture.create_hsv("floor-%d"%i, tex, hue=0, saturation=.5, value=1.0, mix=1.0)
