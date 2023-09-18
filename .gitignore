@@ -3,6 +3,7 @@
 __pycache__/
 capture/
 scene_data/
+test_scene/
 data/
 temp/
 .*.swp
