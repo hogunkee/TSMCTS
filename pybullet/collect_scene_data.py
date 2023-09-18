@@ -251,9 +251,9 @@ camera = nv.entity.create(
     )
 )
 camera.get_transform().look_at(
-    at = (0,0,0),
+    at = (0.5,0,0),
     up = (0,0,1),
-    eye = (2, 0, 4), #(4, 0, 6), #(10,0,4),
+    eye = (4, 0, 8), #(4, 0, 6), #(10,0,4),
 )
 nv.set_camera_entity(camera)
 
@@ -289,7 +289,7 @@ floor = nv.entity.create(
     material = nv.material.create("floor")
 )
 floor.get_transform().set_position((0,0,0))
-floor.get_transform().set_scale((4, 4, 4)) #10, 10, 10
+floor.get_transform().set_scale((6, 6, 6)) #10, 10, 10
 floor.get_material().set_roughness(0.1)
 floor.get_material().set_base_color((0.8, 0.87, 0.88)) #(0.5,0.5,0.5)
 
@@ -364,13 +364,23 @@ for ns in range (int(opt.nb_scenes)):
             p.resetBasePositionAndOrientation(obj_col_id, pos_hidden, [0, 0, 0, 1])
 
         if obj_col_id in selected_objects:
-            pos_sel = 5*(np.random.rand(3) - 0.5)
+            pos_sel = 4*(np.random.rand(3) - 0.5)
             pos_sel[2] = 0.5
             roll, pitch, yaw = 0, 0, 0
             if urdf_id in init_euler:
                 roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
             rot = get_rotation(roll, pitch, yaw)
             p.resetBasePositionAndOrientation(obj_col_id, pos_sel, rot)
+
+    for j in range(2000):
+        p.stepSimulation()
+        vel_linear, vel_rot = get_velocity(selected_objects)
+        stop_linear = (np.linalg.norm(vel_linear) < threshold_linear)
+        stop_rotation = (np.linalg.norm(vel_rot) < threshold_rotation)
+        if j%10==0:
+            if stop_linear and stop_rotation:
+                break
+    nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
 
     # set floor material #
     roughness = random.uniform(0.1, 0.5)
@@ -383,9 +393,18 @@ for ns in range (int(opt.nb_scenes)):
     floor.get_material().set_roughness_texture(tex)
 
     for nf in range(int(opt.nb_frames)):
+        # save current poses & rots #
+        pos_saved, rot_saved = {}, {}
+        for idx, urdf_id in enumerate(urdf_selected):
+            obj_col_id = pybullet_ids[idx]
+            if obj_col_id not in selected_objects:
+                continue
+
+            pos, rot = p.getBasePositionAndOrientation(obj_col_id)
+            pos_saved[obj_col_id] = pos
+            rot_saved[obj_col_id] = rot
+
         # set poses & rots #
-        # get frames #
-        # Lets update the pose of the objects in nv.
         targets = np.random.choice(selected_objects, 1, replace=False)
         for idx, urdf_id in enumerate(urdf_selected):
             obj_col_id = pybullet_ids[idx]
@@ -396,26 +415,42 @@ for ns in range (int(opt.nb_scenes)):
             while flag_collision:
                 # get the pose of the objects
                 pos, rot = p.getBasePositionAndOrientation(obj_col_id)
-                #print(rot)
                 collisions_before = get_contact_objects()
 
-                pos_new = 5*(np.random.rand(3) - 0.5)
+                pos_new = 4*(np.random.rand(3) - 0.5)
                 pos_new[2] = 0.5
                 roll, pitch, yaw = 0, 0, 0
                 if urdf_id in init_euler:
                     roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
                 rot = get_rotation(roll, pitch, yaw)
                 p.resetBasePositionAndOrientation(obj_col_id, pos_new, rot)
-                collisions_after = get_contact_objects()
+                collisions_after = set()
+                for _ in range(20):
+                    p.stepSimulation()
+                    collisions_after = collisions_after.union(get_contact_objects())
 
                 collisions_new = collisions_after - collisions_before
                 if len(collisions_new) > 0:
-                    print('collision')
+                    print('target:', obj_col_id)
+                    print('collisions:', collisions_new)
                     flag_collision = True
+
+                    # reset non-target objects
+                    obj_to_reset = set()
+                    for collision in collisions_new:
+                        obj1, obj2 = collision
+                        obj_to_reset.add(obj1)
+                        obj_to_reset.add(obj2)
+                    obj_to_reset = obj_to_reset - set([obj_col_id])
+                    print('reset', obj_to_reset, 'objects.')
+                    for reset_col_id in obj_to_reset:
+                        p.resetBasePositionAndOrientation(reset_col_id, pos_saved[reset_col_id], rot_saved[reset_col_id])
                 else:
                     flag_collision = False
+                    pos, rot = p.getBasePositionAndOrientation(obj_col_id)
+                    pos_saved[obj_col_id] = pos
+                    rot_saved[obj_col_id] = rot
 
-        #steps_per_frame = math.ceil( 1.0 / (seconds_per_step * frames_per_second) )
         for j in range(2000):
             p.stepSimulation()
             vel_linear, vel_rot = get_velocity(selected_objects)
