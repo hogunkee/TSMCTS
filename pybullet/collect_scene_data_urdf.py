@@ -272,7 +272,7 @@ floor_colors = np.array([
     ]) / 255.
 floor_textures = []
 texture_files = os.listdir("texture")
-texture_files = [f for f in texture_files if f.lower().endswith('jpeg') or f.lower().endswith('jpg') or f.lower().endswith('png') or f.lower().endswith('webp')]
+texture_files = [f for f in texture_files if f.lower().endswith('.png')]
 #texture_files = ["Wood_BaseColor.jpg", "WoodFloor_BaseColor.jpg", "WoodPanel.png"]
 for i, tf in enumerate(texture_files):
     tex = nv.texture.create_from_file("tex-%d"%i, os.path.join("texture/", tf))
@@ -310,23 +310,22 @@ object_path = '/home/gun/Desktop/pybullet-URDF-models/urdf_models/models'
 object_names = [m for m in os.listdir(object_path) if os.path.isdir(os.path.join(object_path, m))]
 object_names = np.random.choice(object_names, opt.nb_objects, replace=False)
 
+x = np.linspace(-3, 3, 7)
+y = np.linspace(-3, 3, 7)
+xx, yy = np.meshgrid(x, y, sparse=False)
+xx = xx.reshape(-1)
+yy = yy.reshape(-1)
+
 pybullet_ids = []
 for object_name in object_names:
     urdf_path = os.path.join(object_path, object_name, 'model.urdf')
-    obj_col_id = p.loadURDF(urdf_path, [0, 0, 0], globalScaling=5.)
+    obj_col_id = p.loadURDF(urdf_path, [xx[idx], yy[idx], 0.5], globalScaling=5.)
     pybullet_ids.append(obj_col_id)
 nv.ids = update_visual_objects(pybullet_ids, "")
-
 
 threshold_linear = 0.003
 threshold_rotation = 0.003
 pre_selected_objects = pybullet_ids 
-
-x = np.linspace(-10, 10, 7)
-y = np.linspace(-10, 10, 7)
-xx, yy = np.meshgrid(x, y, sparse=False)
-xx = xx.reshape(-1)
-yy = yy.reshape(-1)
 
 # Lets run the simulation for a few steps. 
 num_exist_frames = len([f for f in os.listdir(f"{opt.outf}") if '.png' in f])
@@ -347,14 +346,18 @@ for ns in range (int(opt.nb_scenes)):
     roughness = random.uniform(0.1, 0.5)
     floor.get_material().clear_base_color_texture()
     floor.get_material().set_roughness(roughness)
-    floor_cidx = np.random.choice(len(floor_colors)+len(floor_textures))
-    if floor_cidx < len(floor_colors):
-        floor.get_material().set_base_color(floor_colors[floor_cidx])
-    else:
-        f_cidx = floor_cidx - len(floor_colors)
-        tex, floor_tex = floor_textures[f_cidx]
-        floor.get_material().set_base_color_texture(floor_tex)
-        floor.get_material().set_roughness_texture(tex)
+    f_cidx = np.random.choice(len(floor_textures))
+    tex, floor_tex = floor_textures[f_cidx]
+    floor.get_material().set_base_color_texture(floor_tex)
+    floor.get_material().set_roughness_texture(tex)
+    #floor_cidx = np.random.choice(len(floor_colors)+len(floor_textures))
+    #if floor_cidx < len(floor_colors):
+    #    floor.get_material().set_base_color(floor_colors[floor_cidx])
+    #else:
+    #    f_cidx = floor_cidx - len(floor_colors)
+    #    tex, floor_tex = floor_textures[f_cidx]
+    #    floor.get_material().set_base_color_texture(floor_tex)
+    #    floor.get_material().set_roughness_texture(tex)
 
 
     for nf in range(int(opt.nb_frames)):

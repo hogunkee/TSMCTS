@@ -6,10 +6,10 @@ import subprocess
 import math
 import pybullet as p 
 import numpy as np
-from transform_utils import euler2quat
+from transform_utils import euler2quat, mat2quat, quat2mat
 
 opt = lambda : None
-opt.nb_objects = 10 #30 #50
+opt.nb_objects = 30 #30 #50
 opt.inscene_objects = 5
 opt.spp = 32 #64 
 opt.width = 500
@@ -18,13 +18,14 @@ opt.noise = False
 opt.frame_freq = 4 #8
 opt.nb_scenes = 2500 #25
 opt.nb_frames = 4
-opt.outf = 'scene_data'
+opt.outf = 'test_scene'
 
 def get_rotation(roll, pitch, yaw):
     euler = roll, pitch, yaw
     x, y, z, w = euler2quat(euler)
-    rot = nv.normalize(nv.quat(w, x, y, z))
-    return rot
+    return x, y, z, w
+    #rot = nv.normalize(nv.quat(w, x, y, z))
+    #return rot
 
 def set_object_pose(ids, pos, rot=None):
     if rot is None:
@@ -220,9 +221,9 @@ camera = nv.entity.create(
     )
 )
 camera.get_transform().look_at(
-    at = (0,0,0),
+    at = (1,0,0),
     up = (0,0,1),
-    eye = (2, 0, 4), #(4, 0, 6), #(10,0,4),
+    eye = (6, 0, 12), #(2, 0, 4), 
 )
 nv.set_camera_entity(camera)
 
@@ -258,20 +259,13 @@ floor = nv.entity.create(
     material = nv.material.create("floor")
 )
 floor.get_transform().set_position((0,0,0))
-floor.get_transform().set_scale((4, 4, 4)) #10, 10, 10
+floor.get_transform().set_scale((6, 6, 6)) #10, 10, 10
 floor.get_material().set_roughness(0.1)
 floor.get_material().set_base_color((0.8, 0.87, 0.88)) #(0.5,0.5,0.5)
 
-floor_colors = np.array([
-    [139,90,43],
-    [255,165,79],
-    [160,82,45],
-    [205,133,0],
-    [139,69,19],
-    [204,222,224]
-    ]) / 255.
 floor_textures = []
-texture_files = ["Wood_BaseColor.jpg", "WoodFloor_BaseColor.jpg", "WoodPanel.png"]
+texture_files = os.listdir("texture")
+texture_files = [f for f in texture_files if f.lower().endswith('.png')]
 for i, tf in enumerate(texture_files):
     tex = nv.texture.create_from_file("tex-%d"%i, os.path.join("texture/", tf))
     floor_tex = nv.texture.create_hsv("floor-%d"%i, tex, hue=0, saturation=.5, value=1.0, mix=1.0)
@@ -305,102 +299,119 @@ p.createMultiBody(
 
 # lets create a bunch of objects 
 object_path = '/home/gun/Desktop/pybullet-URDF-models/urdf_models/models'
-object_names = [m for m in os.listdir(object_path) if os.path.isdir(os.path.join(object_path, m))]
-object_names = np.random.choice(object_names, opt.nb_objects, replace=False)
+object_names = sorted([m for m in os.listdir(object_path) if os.path.isdir(os.path.join(object_path, m))])
+urdf_id_names = dict(zip(range(len(object_names)), object_names))
+print(len(urdf_id_names), 'objects can be loaded.')
+urdf_selected = np.random.choice(list(urdf_id_names.keys()), opt.nb_objects, replace=False)
+#object_names = np.random.choice(object_names, opt.nb_objects, replace=False)
 
-pybullet_ids = []
-for object_name in object_names:
-    urdf_path = os.path.join(object_path, object_name, 'model.urdf')
-    obj_col_id = p.loadURDF(urdf_path, [0, 0, 0], globalScaling=5.)
-    pybullet_ids.append(obj_col_id)
-nv.ids = update_visual_objects(pybullet_ids, "")
-
-
-threshold_linear = 0.003
-threshold_rotation = 0.003
-pre_selected_objects = pybullet_ids 
-
-x = np.linspace(-10, 10, 7)
-y = np.linspace(-10, 10, 7)
+x = np.linspace(-4, 4, 5)
+y = np.linspace(-4, 4, 6)
 xx, yy = np.meshgrid(x, y, sparse=False)
 xx = xx.reshape(-1)
 yy = yy.reshape(-1)
+
+pybullet_ids = []
+for idx, urdf_id in enumerate(urdf_selected):
+    object_name = urdf_id_names[urdf_id]
+    urdf_path = os.path.join(object_path, object_name, 'model.urdf')
+    obj_col_id = p.loadURDF(urdf_path, [xx[idx], yy[idx], 0.5], globalScaling=5.)
+    pybullet_ids.append(obj_col_id)
+nv.ids = update_visual_objects(pybullet_ids, "")
+
+threshold_linear = 0.003
+threshold_rotation = 0.003
+
+roughness = random.uniform(0.1, 0.5)
+floor.get_material().clear_base_color_texture()
+floor.get_material().set_roughness(roughness)
+f_cidx = np.random.choice(len(floor_textures))
+tex, floor_tex = floor_textures[f_cidx]
+floor.get_material().set_base_color_texture(floor_tex)
+floor.get_material().set_roughness_texture(tex)
+
+init_euler = {}
+init_euler[2] = [0, 0, 1]
+init_euler[4] = [0, 0, -1]
+init_euler[7] = [1, 0, 0]
+init_euler[8] = [1, 0, 0]
+init_euler[9] = [1, 0, 0]
+init_euler[10] = [1, 0, -1]
+init_euler[11] = [1, 0, -1]
+init_euler[12] = [0, 0, -1]
+init_euler[13] = [0, 0, 1]
+init_euler[14] = [0, 0, -1]
+init_euler[17] = [1, 0, -1]
+init_euler[20] = [0, 0, -1]
+init_euler[22] = [0, 0, -1]
+init_euler[24] = [0, 0, 1]
+init_euler[25] = [0, 0, -1]
+init_euler[26] = [0, 0, 2]
+init_euler[27] = [0, 0, 2]
+init_euler[28] = [0, 0, 2]
+init_euler[30] = [1, 0, -1]
+init_euler[31] = [1, 0, -1]
+init_euler[33] = [0, 0, 1]
+init_euler[36] = [0, 0, 2]
+init_euler[37] = [0, 0, 2]
+init_euler[38] = [1, 0, -1]
+init_euler[39] = [0, 0, 1]
+init_euler[40] = [0, 0, 2]
+init_euler[42] = [0, 0, -1]
+init_euler[43] = [0, 0, 1]
+init_euler[44] = [1, 0, -1]
+init_euler[46] = [0, 0, 2]
+init_euler[48] = [0, 0, -1]
+init_euler[54] = [0, 0, 1]
+init_euler[58] = [1, 0, 0]
+init_euler[60] = [0, 0, -1]
+init_euler[61] = [0, 0, -1]
+init_euler[65] = [0, 0, 2]
+init_euler[66] = [0, 0, 2]
+init_euler[67] = [0, 0, 2]
+init_euler[68] = [0, 0, 1]
+init_euler[69] = [0, 0, -1]
+init_euler[70] = [0, 0, -1]
+init_euler[71] = [0, 0, 2]
+init_euler[73] = [0, 0, 1]
+init_euler[74] = [0, -1, -1]
+init_euler[75] = [0, 0, 2]
+init_euler[79] = [0, 0, 2]
+init_euler[80] = [0, 0, 1]
+init_euler[81] = [0, 0, -1]
+init_euler[82] = [0, 0, 1]
+init_euler[83] = [0, 0, 1]
+init_euler[90] = [0, 0, 2]
+init_euler[93] = [0, 0, 1]
 
 # Lets run the simulation for a few steps. 
 num_exist_frames = len([f for f in os.listdir(f"{opt.outf}") if '.png' in f])
 for ns in range (int(opt.nb_scenes)):
     # set objects #
-    selected_objects = np.random.choice(pybullet_ids, opt.inscene_objects, replace=False)
-    for idx, obj in enumerate(pre_selected_objects):
-        pos_hidden = [xx[idx], yy[idx], -1]
-        p.resetBasePositionAndOrientation(obj, pos_hidden, [0, 0, 0, 1])
-        #set_object_pose(obj, pos_hidden, rot=[1, 0, 0, 0])
-
-    for idx, obj in enumerate(selected_objects):
-        pos_sel = 5*(np.random.rand(3) - 0.5)
-        pos_sel[2] = 1
-        p.resetBasePositionAndOrientation(obj, pos_sel, [0, 0, 0, 1])
-        #set_object_pose(obj, pos_sel, rot=[1, 0, 0, 0])
-
-    roughness = random.uniform(0.1, 0.5)
-    floor.get_material().clear_base_color_texture()
-    floor.get_material().set_roughness(roughness)
-    floor_cidx = np.random.choice(len(floor_colors)+len(floor_textures))
-    if floor_cidx < len(floor_colors):
-        floor.get_material().set_base_color(floor_colors[floor_cidx])
-    else:
-        f_cidx = floor_cidx - len(floor_colors)
-        tex, floor_tex = floor_textures[f_cidx]
-        floor.get_material().set_base_color_texture(floor_tex)
-        floor.get_material().set_roughness_texture(tex)
-
-
-    for nf in range(int(opt.nb_frames)):
-        # set poses & rots #
-        # get frames #
-        # Lets update the pose of the objects in nv.
-        targets = np.random.choice(selected_objects, 1, replace=False)
-        for pybullet_id in targets:
-            flag_collision = True
-            while flag_collision:
-                # get the pose of the objects
-                pos, rot = p.getBasePositionAndOrientation(pybullet_id)
-                print(rot)
-                collisions_before = get_contact_objects()
-
-                pos_new = 5*(np.random.rand(3) - 0.5)
-                pos_new[2] = 1
-                p.resetBasePositionAndOrientation(pybullet_id, pos_new, [0, 0, 0, 1])
-                #set_object_pose(ids, pos_new, rot=[1, 0, 0, 0])
-                collisions_after = get_contact_objects()
-
-                collisions_new = collisions_after - collisions_before
-                if len(collisions_new) > 0:
-                    print('collision')
-                    flag_collision = True
-                else:
-                    flag_collision = False
-
-        #steps_per_frame = math.ceil( 1.0 / (seconds_per_step * frames_per_second) )
-        for j in range(2000):
-            p.stepSimulation()
-            vel_linear, vel_rot = get_velocity(selected_objects)
-            stop_linear = (np.linalg.norm(vel_linear) < threshold_linear)
-            stop_rotation = (np.linalg.norm(vel_rot) < threshold_rotation)
-            if j%10==0:
-                if stop_linear and stop_rotation:
-                    break
-        nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
-        #sync_object_poses(selected_objects)
-
+    for idx, urdf_id in enumerate(urdf_selected):
+        obj_col_id = pybullet_ids[idx]
         print(f'rendering frame {str(i).zfill(5)}/{str(opt.nb_frames).zfill(5)}')
         nv.render_to_file(
             width=int(opt.width), 
             height=int(opt.height), 
             samples_per_pixel=int(opt.spp),
-            file_path=f"{opt.outf}/{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.png"
+            file_path=f"{opt.outf}/{str(ns * opt.nb_objects + idx).zfill(5)}.png"
         )
-    pre_selected_objects = selected_objects
+
+        print(idx, urdf_id, obj_col_id)
+        pos = [xx[idx], yy[idx], 0.5]
+        roll, pitch, yaw = 0, 0, 0
+        if urdf_id in init_euler:
+            roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
+        rot = get_rotation(roll, pitch, yaw)
+        p.resetBasePositionAndOrientation(obj_col_id, pos, rot)#[0, 0, 0, 1])
+        print(pos)
+
+        for j in range(200):
+            p.stepSimulation()
+        nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
+
+
 
 p.disconnect()
 nv.deinitialize()
