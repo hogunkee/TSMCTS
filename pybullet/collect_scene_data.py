@@ -387,17 +387,25 @@ for ns in range (int(opt.nb_scenes)):
         # get frames #
         # Lets update the pose of the objects in nv.
         targets = np.random.choice(selected_objects, 1, replace=False)
-        for pybullet_id in targets:
+        for idx, urdf_id in enumerate(urdf_selected):
+            obj_col_id = pybullet_ids[idx]
+            if obj_col_id not in targets:
+                continue
+
             flag_collision = True
             while flag_collision:
                 # get the pose of the objects
-                pos, rot = p.getBasePositionAndOrientation(pybullet_id)
+                pos, rot = p.getBasePositionAndOrientation(obj_col_id)
                 #print(rot)
                 collisions_before = get_contact_objects()
 
                 pos_new = 5*(np.random.rand(3) - 0.5)
                 pos_new[2] = 0.5
-                p.resetBasePositionAndOrientation(pybullet_id, pos_new, [0, 0, 0, 1])
+                roll, pitch, yaw = 0, 0, 0
+                if urdf_id in init_euler:
+                    roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
+                rot = get_rotation(roll, pitch, yaw)
+                p.resetBasePositionAndOrientation(obj_col_id, pos_new, rot)
                 collisions_after = get_contact_objects()
 
                 collisions_new = collisions_after - collisions_before
