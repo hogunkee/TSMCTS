@@ -20,7 +20,7 @@ opt.noise = False
 opt.frame_freq = 4 #8
 opt.nb_scenes = 2500 #25
 opt.nb_frames = 4
-opt.outf = 'scene_data'
+opt.outf = 'test_scene' #'scene_data'
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -153,7 +153,8 @@ pre_selected_objects = pybullet_ids
 
 # Lets run the simulation for a few steps. 
 num_exist_frames = len([f for f in os.listdir(f"{opt.outf}") if '.png' in f])
-for ns in range (int(opt.nb_scenes)):
+ns = 0
+while ns < opt.nb_scenes:
     # set floor material #
     roughness = random.uniform(0.1, 0.5)
     floor.get_material().clear_base_color_texture()
@@ -173,7 +174,7 @@ for ns in range (int(opt.nb_scenes)):
             p.resetBasePositionAndOrientation(obj_col_id, pos_hidden, [0, 0, 0, 1])
 
         init_positions = generate_scene('random', opt.inscene_objects)
-        if i, obj_col_id in enumerate(selected_objects):
+        for i, obj_col_id in enumerate(selected_objects):
             pos_sel = init_positions[i]
             #pos_sel = 4*(np.random.rand(3) - 0.5)
             #pos_sel[2] = 0.6
@@ -191,7 +192,10 @@ for ns in range (int(opt.nb_scenes)):
         if j%10==0:
             if stop_linear and stop_rotation:
                 break
-    if j==1999: continue
+
+    if j==1999: 
+        pre_selected_objects = selected_objects
+        continue
     nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
 
     obj_to_repose = []
@@ -203,7 +207,7 @@ for ns in range (int(opt.nb_scenes)):
             if obj_col_id not in selected_objects:
                 continue
             if obj_col_id in obj_to_repose:
-                pose_repose = generate_scene('random', 1)[0]
+                pos_repose = generate_scene('random', 1)[0]
                 #pos_repose = 4*(np.random.rand(3) - 0.5)
                 #pos_repose[2] = 0.6
                 roll, pitch, yaw = 0, 0, 0
@@ -309,7 +313,7 @@ for ns in range (int(opt.nb_scenes)):
                     break
         nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
 
-        print(f'rendering frame {str(i).zfill(5)}/{str(opt.nb_frames).zfill(5)}')
+        print(f'rendering scene {str(ns).zfill(5)}-{str(nf)}', end='\r')
         nv.render_to_file(
             width=int(opt.width), 
             height=int(opt.height), 
@@ -318,6 +322,7 @@ for ns in range (int(opt.nb_scenes)):
         )
         nf += 1
     pre_selected_objects = selected_objects
+    ns += 1
 
 p.disconnect()
 nv.deinitialize()
