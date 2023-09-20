@@ -253,7 +253,7 @@ camera = nv.entity.create(
 camera.get_transform().look_at(
     at = (0.5,0,0),
     up = (0,0,1),
-    eye = (4, 0, 8), #(4, 0, 6), #(10,0,4),
+    eye = (3, 0, 6), #(4, 0, 6), #(10,0,4),
 )
 nv.set_camera_entity(camera)
 
@@ -348,40 +348,15 @@ for idx, urdf_id in enumerate(urdf_selected):
     pybullet_ids.append(obj_col_id)
 nv.ids = update_visual_objects(pybullet_ids, "")
 
+#threshold_pose = 0.05
+threshold_rotation = 0.01
 threshold_linear = 0.003
-threshold_rotation = 0.003
+threshold_angular = 0.003
 pre_selected_objects = pybullet_ids 
 
 # Lets run the simulation for a few steps. 
 num_exist_frames = len([f for f in os.listdir(f"{opt.outf}") if '.png' in f])
 for ns in range (int(opt.nb_scenes)):
-    # set objects #
-    selected_objects = np.random.choice(pybullet_ids, opt.inscene_objects, replace=False)
-    for idx, urdf_id in enumerate(urdf_selected):
-        obj_col_id = pybullet_ids[idx]
-        if obj_col_id in pre_selected_objects:
-            pos_hidden = [xx[idx], yy[idx], -1]
-            p.resetBasePositionAndOrientation(obj_col_id, pos_hidden, [0, 0, 0, 1])
-
-        if obj_col_id in selected_objects:
-            pos_sel = 4*(np.random.rand(3) - 0.5)
-            pos_sel[2] = 0.5
-            roll, pitch, yaw = 0, 0, 0
-            if urdf_id in init_euler:
-                roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
-            rot = get_rotation(roll, pitch, yaw)
-            p.resetBasePositionAndOrientation(obj_col_id, pos_sel, rot)
-
-    for j in range(2000):
-        p.stepSimulation()
-        vel_linear, vel_rot = get_velocity(selected_objects)
-        stop_linear = (np.linalg.norm(vel_linear) < threshold_linear)
-        stop_rotation = (np.linalg.norm(vel_rot) < threshold_rotation)
-        if j%10==0:
-            if stop_linear and stop_rotation:
-                break
-    nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
-
     # set floor material #
     roughness = random.uniform(0.1, 0.5)
     floor.get_material().clear_base_color_texture()
@@ -392,7 +367,76 @@ for ns in range (int(opt.nb_scenes)):
     floor.get_material().set_base_color_texture(floor_tex)
     floor.get_material().set_roughness_texture(tex)
 
-    for nf in range(int(opt.nb_frames)):
+    # set objects #
+    selected_objects = np.random.choice(pybullet_ids, opt.inscene_objects, replace=False)
+    for idx, urdf_id in enumerate(urdf_selected):
+        obj_col_id = pybullet_ids[idx]
+        if obj_col_id in pre_selected_objects:
+            pos_hidden = [xx[idx], yy[idx], -1]
+            p.resetBasePositionAndOrientation(obj_col_id, pos_hidden, [0, 0, 0, 1])
+
+        if obj_col_id in selected_objects:
+            pos_sel = 4*(np.random.rand(3) - 0.5)
+            pos_sel[2] = 0.6
+            roll, pitch, yaw = 0, 0, 0
+            if urdf_id in init_euler:
+                roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
+            rot = get_rotation(roll, pitch, yaw)
+            p.resetBasePositionAndOrientation(obj_col_id, pos_sel, rot)
+
+    for j in range(2000):
+        p.stepSimulation()
+        vel_linear, vel_rot = get_velocity(selected_objects)
+        stop_linear = (np.linalg.norm(vel_linear) < threshold_linear)
+        stop_rotation = (np.linalg.norm(vel_rot) < threshold_angular)
+        if j%10==0:
+            if stop_linear and stop_rotation:
+                break
+    nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
+
+    obj_to_repose = []
+    count_scene_init = 0
+    while True:
+        # re-positioning objects #
+        for idx, urdf_id in enumerate(urdf_selected):
+            obj_col_id = pybullet_ids[idx]
+            if obj_col_id not in selected_objects:
+                continue
+            if obj_col_id in obj_to_repose:
+                pos_repose = 4*(np.random.rand(3) - 0.5)
+                pos_repose[2] = 0.6
+                roll, pitch, yaw = 0, 0, 0
+                if urdf_id in init_euler:
+                    roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
+                rot = get_rotation(roll, pitch, yaw)
+                p.resetBasePositionAndOrientation(obj_col_id, pos_repose, rot)
+        # check collisions #
+        obj_to_repose = []
+        for idx, urdf_id in enumerate(urdf_selected):
+            obj_col_id = pybullet_ids[idx]
+            if obj_col_id not in selected_objects:
+                continue
+            pos, rot = p.getBasePositionAndOrientation(obj_col_id)
+            roll, pitch, yaw = 0, 0, 0
+            if urdf_id in init_euler:
+                roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
+            rot_init = get_rotation(roll, pitch, yaw)
+            rot_diff = np.linalg.norm(np.array(rot) - np.array(rot_init))
+            if rot_diff > threshold_rotation:
+                obj_to_repose.append(obj_col_id)
+        if len(obj_to_repose)==0:
+            break
+        count_scene_init += 1
+        if count_scene_init > 10:
+            break
+    # if fails to initialize the scene, skip the current objects set
+    if count_scene_init > 10:
+        continue
+
+
+    #for nf in range(int(opt.nb_frames)):
+    nf = 0
+    while nf < int(opt.nb_frames):
         # save current poses & rots #
         pos_saved, rot_saved = {}, {}
         for idx, urdf_id in enumerate(urdf_selected):
@@ -412,27 +456,26 @@ for ns in range (int(opt.nb_scenes)):
                 continue
 
             flag_collision = True
+            count_scene_repose = 0
             while flag_collision:
                 # get the pose of the objects
                 pos, rot = p.getBasePositionAndOrientation(obj_col_id)
                 collisions_before = get_contact_objects()
 
                 pos_new = 4*(np.random.rand(3) - 0.5)
-                pos_new[2] = 0.5
+                pos_new[2] = 0.6
                 roll, pitch, yaw = 0, 0, 0
                 if urdf_id in init_euler:
                     roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
                 rot = get_rotation(roll, pitch, yaw)
                 p.resetBasePositionAndOrientation(obj_col_id, pos_new, rot)
                 collisions_after = set()
-                for _ in range(20):
+                for _ in range(200):
                     p.stepSimulation()
                     collisions_after = collisions_after.union(get_contact_objects())
 
                 collisions_new = collisions_after - collisions_before
                 if len(collisions_new) > 0:
-                    print('target:', obj_col_id)
-                    print('collisions:', collisions_new)
                     flag_collision = True
 
                     # reset non-target objects
@@ -442,7 +485,6 @@ for ns in range (int(opt.nb_scenes)):
                         obj_to_reset.add(obj1)
                         obj_to_reset.add(obj2)
                     obj_to_reset = obj_to_reset - set([obj_col_id])
-                    print('reset', obj_to_reset, 'objects.')
                     for reset_col_id in obj_to_reset:
                         p.resetBasePositionAndOrientation(reset_col_id, pos_saved[reset_col_id], rot_saved[reset_col_id])
                 else:
@@ -450,12 +492,17 @@ for ns in range (int(opt.nb_scenes)):
                     pos, rot = p.getBasePositionAndOrientation(obj_col_id)
                     pos_saved[obj_col_id] = pos
                     rot_saved[obj_col_id] = rot
+                count_scene_repose += 1
+                if count_scene_repose > 10:
+                    break
+            if count_scene_repose > 10:
+                continue
 
         for j in range(2000):
             p.stepSimulation()
             vel_linear, vel_rot = get_velocity(selected_objects)
             stop_linear = (np.linalg.norm(vel_linear) < threshold_linear)
-            stop_rotation = (np.linalg.norm(vel_rot) < threshold_rotation)
+            stop_rotation = (np.linalg.norm(vel_rot) < threshold_angular)
             if j%10==0:
                 if stop_linear and stop_rotation:
                     break
@@ -468,6 +515,7 @@ for ns in range (int(opt.nb_scenes)):
             samples_per_pixel=int(opt.spp),
             file_path=f"{opt.outf}/{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.png"
         )
+        nf += 1
     pre_selected_objects = selected_objects
 
 p.disconnect()
