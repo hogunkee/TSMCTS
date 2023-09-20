@@ -436,6 +436,7 @@ for ns in range (int(opt.nb_scenes)):
 
     #for nf in range(int(opt.nb_frames)):
     nf = 0
+    targets = np.random.choice(selected_objects, opt.nb_frames, replace=False)
     while nf < int(opt.nb_frames):
         # save current poses & rots #
         pos_saved, rot_saved = {}, {}
@@ -449,10 +450,10 @@ for ns in range (int(opt.nb_scenes)):
             rot_saved[obj_col_id] = rot
 
         # set poses & rots #
-        targets = np.random.choice(selected_objects, 1, replace=False)
+        target = targets[nf]
         for idx, urdf_id in enumerate(urdf_selected):
             obj_col_id = pybullet_ids[idx]
-            if obj_col_id not in targets:
+            if obj_col_id != target:
                 continue
 
             flag_collision = True
