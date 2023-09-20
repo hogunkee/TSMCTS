@@ -1,6 +1,7 @@
 import os
-import pybullet as p 
+import numpy as np
 import nvisii as nv
+import pybullet as p 
 from transform_utils import euler2quat
 
 init_euler = {}
@@ -56,6 +57,13 @@ init_euler[82] = [0, 0, 1]
 init_euler[83] = [0, 0, 1]
 init_euler[90] = [0, 0, 2]
 init_euler[93] = [0, 0, 1]
+
+
+def generate_scene(scene_type, num_objects):
+    if scene_type=='random':
+        positions = 4*(np.random.rand(num_objects, 3) - 0.5)
+        positions[:, 2] = 0.6
+    return positions
 
 def get_rotation(roll, pitch, yaw):
     euler = roll, pitch, yaw
@@ -208,3 +216,4 @@ def update_visual_objects(object_ids, pkg_path, nv_objects=None):
                 )
             # print(visualGeometryType)
     return nv_objects
+
