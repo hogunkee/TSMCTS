@@ -13,6 +13,7 @@ from scene_utils import get_rotation, get_contact_objects, get_velocity, update_
 opt = lambda : None
 opt.nb_objects = 20
 opt.inscene_objects = 5
+opt.scene_type = 'random' # 'line'
 opt.spp = 32 #64 
 opt.width = 500
 opt.height = 500 
@@ -173,7 +174,7 @@ while ns < opt.nb_scenes:
             pos_hidden = [xx[idx], yy[idx], -1]
             p.resetBasePositionAndOrientation(obj_col_id, pos_hidden, [0, 0, 0, 1])
 
-        init_positions = generate_scene('random', opt.inscene_objects)
+        init_positions = generate_scene(opt.scene_type, opt.inscene_objects)
         for i, obj_col_id in enumerate(selected_objects):
             pos_sel = init_positions[i]
             #pos_sel = 4*(np.random.rand(3) - 0.5)

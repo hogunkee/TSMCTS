@@ -63,6 +63,11 @@ def generate_scene(scene_type, num_objects):
     if scene_type=='random':
         positions = 4*(np.random.rand(num_objects, 3) - 0.5)
         positions[:, 2] = 0.6
+    elif scene_type=='line':
+        x1, x2, y1, y2 = 4*(np.random.rand(4) - 0.5)
+        xs = np.linspace(x1, x2, num_objects)
+        ys = np.linspace(y1, y2, num_objects)
+        positions = np.concatenate([xs, ys]).reshape(-1, 2)
     return positions
 
 def get_rotation(roll, pitch, yaw):
