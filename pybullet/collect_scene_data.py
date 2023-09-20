@@ -12,8 +12,8 @@ from scene_utils import get_rotation, get_contact_objects, get_velocity, update_
 
 opt = lambda : None
 opt.nb_objects = 20
-opt.inscene_objects = 5
-opt.scene_type = 'random' # 'line'
+opt.inscene_objects = 4 #5
+opt.scene_type = 'line' # 'random' or 'line'
 opt.spp = 32 #64 
 opt.width = 500
 opt.height = 500 
@@ -146,8 +146,8 @@ for idx, urdf_id in enumerate(urdf_selected):
     pybullet_ids.append(obj_col_id)
 nv.ids = update_visual_objects(pybullet_ids, "")
 
-#threshold_pose = 0.05
-threshold_rotation = 0.01
+threshold_pose = 0.07
+threshold_rotation = 0.15
 threshold_linear = 0.003
 threshold_angular = 0.003
 pre_selected_objects = pybullet_ids 
@@ -167,80 +167,119 @@ while ns < opt.nb_scenes:
     floor.get_material().set_roughness_texture(tex)
 
     # set objects #
+    count_scene_trials = 0
     selected_objects = np.random.choice(pybullet_ids, opt.inscene_objects, replace=False)
-    for idx, urdf_id in enumerate(urdf_selected):
-        obj_col_id = pybullet_ids[idx]
-        if obj_col_id in pre_selected_objects:
-            pos_hidden = [xx[idx], yy[idx], -1]
-            p.resetBasePositionAndOrientation(obj_col_id, pos_hidden, [0, 0, 0, 1])
-
-        init_positions = generate_scene(opt.scene_type, opt.inscene_objects)
-        for i, obj_col_id in enumerate(selected_objects):
-            pos_sel = init_positions[i]
-            #pos_sel = 4*(np.random.rand(3) - 0.5)
-            #pos_sel[2] = 0.6
-            roll, pitch, yaw = 0, 0, 0
-            if urdf_id in init_euler:
-                roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
-            rot = get_rotation(roll, pitch, yaw)
-            p.resetBasePositionAndOrientation(obj_col_id, pos_sel, rot)
-
-    for j in range(2000):
-        p.stepSimulation()
-        vel_linear, vel_rot = get_velocity(selected_objects)
-        stop_linear = (np.linalg.norm(vel_linear) < threshold_linear)
-        stop_rotation = (np.linalg.norm(vel_rot) < threshold_angular)
-        if j%10==0:
-            if stop_linear and stop_rotation:
-                break
-
-    if j==1999: 
-        pre_selected_objects = selected_objects
-        continue
-    nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
-
-    obj_to_repose = []
-    count_scene_init = 0
     while True:
-        # re-positioning objects #
+        init_positions = generate_scene(opt.scene_type, opt.inscene_objects)
+        init_rotations = []
         for idx, urdf_id in enumerate(urdf_selected):
             obj_col_id = pybullet_ids[idx]
-            if obj_col_id not in selected_objects:
-                continue
-            if obj_col_id in obj_to_repose:
-                pos_repose = generate_scene('random', 1)[0]
-                #pos_repose = 4*(np.random.rand(3) - 0.5)
-                #pos_repose[2] = 0.6
+            if obj_col_id in pre_selected_objects:
+                pos_hidden = [xx[idx], yy[idx], -1]
+                p.resetBasePositionAndOrientation(obj_col_id, pos_hidden, [0, 0, 0, 1])
+
+            if obj_col_id in selected_objects:
+                sidx = np.where(selected_objects==obj_col_id)[0][0]
+                pos_sel = init_positions[sidx]
                 roll, pitch, yaw = 0, 0, 0
                 if urdf_id in init_euler:
                     roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
                 rot = get_rotation(roll, pitch, yaw)
-                p.resetBasePositionAndOrientation(obj_col_id, pos_repose, rot)
-        # check collisions #
-        obj_to_repose = []
-        for idx, urdf_id in enumerate(urdf_selected):
-            obj_col_id = pybullet_ids[idx]
-            if obj_col_id not in selected_objects:
-                continue
-            pos, rot = p.getBasePositionAndOrientation(obj_col_id)
-            roll, pitch, yaw = 0, 0, 0
-            if urdf_id in init_euler:
-                roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
-            rot_init = get_rotation(roll, pitch, yaw)
-            rot_diff = np.linalg.norm(np.array(rot) - np.array(rot_init))
-            if rot_diff > threshold_rotation:
-                obj_to_repose.append(obj_col_id)
-        if len(obj_to_repose)==0:
+                init_rotations.append(rot)
+                p.resetBasePositionAndOrientation(obj_col_id, pos_sel, rot)
+        init_rotations = np.array(init_rotations)
+
+        init_feasible = True
+        for j in range(2000):
+            p.stepSimulation()
+            if j%10==0:
+                current_poses = []
+                current_rotations = []
+                for idx, urdf_id in enumerate(urdf_selected):
+                    obj_col_id = pybullet_ids[idx]
+                    if obj_col_id not in selected_objects:
+                        continue
+                    pos, rot = p.getBasePositionAndOrientation(obj_col_id)
+                    current_poses.append(pos)
+                    current_rotations.append(rot)
+
+                current_poses = np.array(current_poses)
+                current_rotations = np.array(current_rotations)
+                pos_diff = np.linalg.norm(current_poses[:, :2] - init_positions[:, :2], axis=1)
+                rot_diff = np.linalg.norm(current_rotations - init_rotations, axis=1)
+                if (pos_diff > threshold_pose).any() or (rot_diff > threshold_rotation).any():
+                    init_feasible = False
+                    break
+                vel_linear, vel_rot = get_velocity(selected_objects)
+                stop_linear = (np.linalg.norm(vel_linear) < threshold_linear)
+                stop_rotation = (np.linalg.norm(vel_rot) < threshold_angular)
+                if stop_linear and stop_rotation:
+                    break
+        if j==1999:
+            init_feasible = False
+        if init_feasible:
             break
-        count_scene_init += 1
-        if count_scene_init > 10:
+        count_scene_trials += 1
+        if count_scene_trials > 5:
             break
-    # if fails to initialize the scene, skip the current objects set
-    if count_scene_init > 10:
+
+    if not init_feasible: #j==1999: 
+        pre_selected_objects = selected_objects
         continue
+    nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
+
+    nf = 0
+    print(f'rendering scene {str(ns).zfill(5)}-{str(nf)}', end='\r')
+    nv.render_to_file(
+        width=int(opt.width), 
+        height=int(opt.height), 
+        samples_per_pixel=int(opt.spp),
+        file_path=f"{opt.outf}/{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.png"
+    )
+    nf += 1
+
+    if False:
+        obj_to_repose = []
+        count_scene_init = 0
+        while True:
+            # re-positioning objects #
+            for idx, urdf_id in enumerate(urdf_selected):
+                obj_col_id = pybullet_ids[idx]
+                if obj_col_id not in selected_objects:
+                    continue
+                if obj_col_id in obj_to_repose:
+                    pos_repose = generate_scene('random', 1)[0]
+                    #pos_repose = 4*(np.random.rand(3) - 0.5)
+                    #pos_repose[2] = 0.6
+                    roll, pitch, yaw = 0, 0, 0
+                    if urdf_id in init_euler:
+                        roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
+                    rot = get_rotation(roll, pitch, yaw)
+                    p.resetBasePositionAndOrientation(obj_col_id, pos_repose, rot)
+            # check collisions #
+            obj_to_repose = []
+            for idx, urdf_id in enumerate(urdf_selected):
+                obj_col_id = pybullet_ids[idx]
+                if obj_col_id not in selected_objects:
+                    continue
+                pos, rot = p.getBasePositionAndOrientation(obj_col_id)
+                roll, pitch, yaw = 0, 0, 0
+                if urdf_id in init_euler:
+                    roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
+                rot_init = get_rotation(roll, pitch, yaw)
+                rot_diff = np.linalg.norm(np.array(rot) - np.array(rot_init))
+                if rot_diff > threshold_rotation:
+                    obj_to_repose.append(obj_col_id)
+            if len(obj_to_repose)==0:
+                break
+            count_scene_init += 1
+            if count_scene_init > 10:
+                break
+        # if fails to initialize the scene, skip the current objects set
+        if count_scene_init > 10:
+            continue
 
     #for nf in range(int(opt.nb_frames)):
-    nf = 0
     targets = np.random.choice(selected_objects, opt.nb_frames, replace=False)
     while nf < int(opt.nb_frames):
         # save current poses & rots #

@@ -64,10 +64,15 @@ def generate_scene(scene_type, num_objects):
         positions = 4*(np.random.rand(num_objects, 3) - 0.5)
         positions[:, 2] = 0.6
     elif scene_type=='line':
-        x1, x2, y1, y2 = 4*(np.random.rand(4) - 0.5)
+        distance_enough = False
+        while not distance_enough:
+            x1, x2, y1, y2 = 4*(np.random.rand(4) - 0.5)
+            distance_enough = (np.linalg.norm([x1 - x2, y1 - y2]) > 1.5) \
+                                and (np.linalg.norm([x1 - x2, y1 - y2]) < 2.5)
         xs = np.linspace(x1, x2, num_objects)
         ys = np.linspace(y1, y2, num_objects)
-        positions = np.concatenate([xs, ys]).reshape(-1, 2)
+        zs = np.ones(num_objects) * 0.6
+        positions = np.concatenate([xs, ys, zs]).reshape(3, num_objects).T
     return positions
 
 def get_rotation(roll, pitch, yaw):
