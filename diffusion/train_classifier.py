@@ -49,8 +49,10 @@ def train(args):
         model = resnet(pretrained=True)
         for param in model.parameters():
             param.requires_grad = False
+        model_name = 'finetune'
     else:
         model = resnet(pretrained=False)
+        model_name = 'noft'
     # replace the last fc layer #
     fc_in_features = model.fc.in_features
     model.fc = nn.Sequential(
@@ -88,7 +90,8 @@ def train(args):
                 # update weights
                 optimizer.step()
                 # print progress
-                acc = (y_pred.round() == Y_batch).float().mean()
+                indices = torch.logical_or(Y_batch==0, Y_batch==1)
+                acc = (y_pred.round() == Y_batch)[indices].float().mean()
                 bar.set_postfix(
                     loss=float(loss),
                     acc=float(acc)
@@ -96,29 +99,37 @@ def train(args):
 
         # evaluate accuracy at end of each epoch
         model.eval()
-        accs = []
+        matchings = []
+        #accs = []
         for X_val, Y_val in test_dataloader:
             X_val = preprocess(X_val).to(device)
             Y_val = Y_val[:, 0].to(device)
             y_pred = model(X_val)[:, 0]
-            acc = (y_pred.round() == Y_val).float().mean()
-            acc = float(acc)
-            accs.append(acc)
-        accuracy = np.mean(accs)
+            
+            indices = torch.logical_or(Y_val==0, Y_val==1)
+            matching = (y_pred.round() == Y_val).float()
+            matchings.append(matching)
+            #acc = (y_pred.round() == Y_val).float().mean()
+            #acc = float(acc)
+            #accs.append(acc)
+        matchings = np.concatenate(matchings, axis=0)
+        print(matchings)
+        accuracy = np.mean(matchings)
+        #accuracy = np.mean(accs)
         if accuracy > best_accuracy:
             best_accuracy = accuracy
             best_weights = copy.deepcopy(model.state_dict())
 
         # optionally save model
         if save_model and (epoch+1)%save_freq==0:
-            torch.save(model.state_dict(), os.path.join(save_dir, f"model_{epoch}.pth"))
-            print('saved model at ' + os.path.join(save_dir, f"model_{epoch}.pth"))
+            torch.save(model.state_dict(), os.path.join(save_dir, f"{model_name}_{epoch}.pth"))
+            print('saved model at ' + os.path.join(save_dir, f"{model_name}_{epoch}.pth"))
 
     # restore model and return best accuracy
     #model.load_state_dict(best_weights)
     if save_model:
-        torch.save(best_weights, os.path.join(save_dir, f"model_best.pth"))
-        print('saved model at ' + os.path.join(save_dir, f"model_best.pth"))
+        torch.save(best_weights, os.path.join(save_dir, f"{model_name}_best.pth"))
+        print('saved model at ' + os.path.join(save_dir, f"{model_name}_best.pth"))
     return best_accuracy
 
 
