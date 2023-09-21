@@ -100,22 +100,16 @@ def train(args):
         # evaluate accuracy at end of each epoch
         model.eval()
         matchings = []
-        #accs = []
         for X_val, Y_val in test_dataloader:
             X_val = preprocess(X_val).to(device)
             Y_val = Y_val[:, 0].to(device)
             y_pred = model(X_val)[:, 0]
-            
             indices = torch.logical_or(Y_val==0, Y_val==1)
-            matching = (y_pred.round() == Y_val).float()
+            matching = (y_pred.round() == Y_val).float().detach().cpu().numpy()
             matchings.append(matching)
-            #acc = (y_pred.round() == Y_val).float().mean()
-            #acc = float(acc)
-            #accs.append(acc)
         matchings = np.concatenate(matchings, axis=0)
-        print(matchings)
         accuracy = np.mean(matchings)
-        #accuracy = np.mean(accs)
+        print("Validation accuracy:", accuracy)
         if accuracy > best_accuracy:
             best_accuracy = accuracy
             best_weights = copy.deepcopy(model.state_dict())
