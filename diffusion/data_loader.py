@@ -285,7 +285,7 @@ class PybulletNpyDataset(Dataset):
 
         # label
         label_idx = infile_idx % self.num_duplication
-        label = self.labels[label_idx]
+        label = torch.from_numpy(self.labels[label_idx:label_idx+1]).type(torch.float)
         return i, label
 
     def __len__(self):
@@ -300,7 +300,7 @@ class PybulletNpyDataset(Dataset):
         #print('load %d-th npy file.' %dnum)
         buff_i = []
         for rgb_file in self.rgb_list:
-            patch_i = np.load(os.path.join(self.data_dir, rgb_file))
+            patch_i = np.load(os.path.join(self.data_dir, rgb_file))[:, :, :, :3]
             buff_i.append(patch_i)
         self.buff_i = buff_i
 

@@ -1,10 +1,12 @@
 import argparse
+import copy
 import os
 import numpy as np
 from tqdm import tqdm
 from data_loader import PybulletNpyDataset
 
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.models import resnet18, resnet34, resnet50
@@ -26,15 +28,17 @@ def train(args):
         os.makedirs(save_dir)
     save_model = True #False
     save_freq = 5
-    device = "cuda:0"
 
     # dataloader #
+    print("Loading data...")
     dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
     test_dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
+    test_dataset.fsize = 400
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
 
     # model #
+    print("Create a ResNet model.")
     if args.model=='resnet-18':
         resnet = resnet18
     elif args.model=='resnet-34':
@@ -55,32 +59,36 @@ def train(args):
     )
 
     if torch.cuda.is_available():
-        model.to('cuda')
+        device = "cuda:0"
+    else:
+        device = "cpu"
+    model.to(device)
 
     # loss function and optimizer #
     loss_fn = nn.BCELoss()  # binary cross entropy
-    optimizer = optim.Adam(model.parameters(), lr=lrate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lrate)
  
     # Hold the best model
     best_accuracy = - np.inf   # init to negative infinity
     best_weights = None
  
-    for epoch in range(n_epochs):
+    for epoch in range(n_epoch):
         model.train()
-        with tqdm.tqdm(dataloader, unit="batch", mininterval=0, disable=True) as bar:
+        with tqdm(dataloader) as bar:
             bar.set_description(f"Epoch {epoch}")
             for X_batch, Y_batch in bar:
-                X_batch = preprocess(X_batch)
+                X_batch = preprocess(X_batch).to(device)
+                Y_batch = Y_batch[:, 0].to(device)
                 # forward pass
-                y_pred = model(X_batch)
-                loss = loss_fn(y_pred, y_batch)
+                y_pred = model(X_batch)[:, 0]
+                loss = loss_fn(y_pred, Y_batch)
                 # backward pass
                 optimizer.zero_grad()
                 loss.backward()
                 # update weights
                 optimizer.step()
                 # print progress
-                acc = (y_pred.round() == y_batch).float().mean()
+                acc = (y_pred.round() == Y_batch).float().mean()
                 bar.set_postfix(
                     loss=float(loss),
                     acc=float(acc)
@@ -90,8 +98,9 @@ def train(args):
         model.eval()
         accs = []
         for X_val, Y_val in test_dataloader:
-            X_val = preprocess(X_val)
-            y_pred = model(X_val)
+            X_val = preprocess(X_val).to(device)
+            Y_val = Y_val[:, 0].to(device)
+            y_pred = model(X_val)[:, 0]
             acc = (y_pred.round() == Y_val).float().mean()
             acc = float(acc)
             accs.append(acc)
@@ -116,7 +125,7 @@ def train(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_epoch", type=int, default=30)
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=100)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--out", type=str, default='classification')
     parser.add_argument("--gpu", type=int, default=0)
@@ -133,7 +142,8 @@ if __name__ == "__main__":
             torch.cuda.set_device(gpu_idx)
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
 
+    print("Training starts.")
     best_accur = train(args)
-    print("Train finished.")
+    print("Training finished.")
     print("Best accuracy:", best_accur)
 
