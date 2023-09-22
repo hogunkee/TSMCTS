@@ -111,6 +111,7 @@ def update_visual_objects(object_ids, pkg_path, nv_objects=None):
         nv_objects = { }
     for object_id in object_ids:
         for idx, visual in enumerate(p.getVisualShapeData(object_id)):
+
             # Extract visual data from pybullet
             objectUniqueId = visual[0]
             linkIndex = visual[1]
@@ -226,4 +227,48 @@ def update_visual_objects(object_ids, pkg_path, nv_objects=None):
                 )
             # print(visualGeometryType)
     return nv_objects
+
+def remove_visual_objects(object_ids, pkg_path):
+    # object ids are in pybullet engine
+    # pkg_path is for loading the object geometries
+    for object_id in object_ids:
+        for idx, visual in enumerate(p.getVisualShapeData(object_id)):
+
+            # Extract visual data from pybullet
+            objectUniqueId = visual[0]
+            linkIndex = visual[1]
+            visualGeometryType = visual[2]
+            dimensions = visual[3]
+            meshAssetFileName = visual[4]
+            local_visual_frame_position = visual[5]
+            local_visual_frame_orientation = visual[6]
+            rgbaColor = visual[7]
+
+            if linkIndex == -1:
+                dynamics_info = p.getDynamicsInfo(object_id,-1)
+                inertial_frame_position = dynamics_info[3]
+                inertial_frame_orientation = dynamics_info[4]
+                base_state = p.getBasePositionAndOrientation(objectUniqueId)
+                world_link_frame_position = base_state[0]
+                world_link_frame_orientation = base_state[1]    
+                m1 = nv.translate(nv.mat4(1), nv.vec3(inertial_frame_position[0], inertial_frame_position[1], inertial_frame_position[2]))
+                m1 = m1 * nv.mat4_cast(nv.quat(inertial_frame_orientation[3], inertial_frame_orientation[0], inertial_frame_orientation[1], inertial_frame_orientation[2]))
+                m2 = nv.translate(nv.mat4(1), nv.vec3(world_link_frame_position[0], world_link_frame_position[1], world_link_frame_position[2]))
+                m2 = m2 * nv.mat4_cast(nv.quat(world_link_frame_orientation[3], world_link_frame_orientation[0], world_link_frame_orientation[1], world_link_frame_orientation[2]))
+                m = nv.inverse(m1) * m2
+                q = nv.quat_cast(m)
+                world_link_frame_position = m[3]
+                world_link_frame_orientation = q
+            else:
+                linkState = p.getLinkState(objectUniqueId, linkIndex)
+                world_link_frame_position = linkState[4]
+                world_link_frame_orientation = linkState[5]
+            
+            # Name to use for components
+            object_name = f"{objectUniqueId}_{linkIndex}_{idx}"
+            nv.transform.remove(object_name)
+            nv.material.remove(object_name)
+            nv.mesh.remove(object_name)
+            nv.entity.remove(object_name)
+    return None
 
