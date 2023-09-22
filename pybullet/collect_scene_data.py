@@ -238,47 +238,6 @@ while ns < opt.nb_scenes:
     )
     nf += 1
 
-    if False:
-        obj_to_repose = []
-        count_scene_init = 0
-        while True:
-            # re-positioning objects #
-            for idx, urdf_id in enumerate(urdf_selected):
-                obj_col_id = pybullet_ids[idx]
-                if obj_col_id not in selected_objects:
-                    continue
-                if obj_col_id in obj_to_repose:
-                    pos_repose = generate_scene('random', 1)[0]
-                    #pos_repose = 4*(np.random.rand(3) - 0.5)
-                    #pos_repose[2] = 0.6
-                    roll, pitch, yaw = 0, 0, 0
-                    if urdf_id in init_euler:
-                        roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
-                    rot = get_rotation(roll, pitch, yaw)
-                    p.resetBasePositionAndOrientation(obj_col_id, pos_repose, rot)
-            # check collisions #
-            obj_to_repose = []
-            for idx, urdf_id in enumerate(urdf_selected):
-                obj_col_id = pybullet_ids[idx]
-                if obj_col_id not in selected_objects:
-                    continue
-                pos, rot = p.getBasePositionAndOrientation(obj_col_id)
-                roll, pitch, yaw = 0, 0, 0
-                if urdf_id in init_euler:
-                    roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
-                rot_init = get_rotation(roll, pitch, yaw)
-                rot_diff = np.linalg.norm(np.array(rot) - np.array(rot_init))
-                if rot_diff > threshold_rotation:
-                    obj_to_repose.append(obj_col_id)
-            if len(obj_to_repose)==0:
-                break
-            count_scene_init += 1
-            if count_scene_init > 10:
-                break
-        # if fails to initialize the scene, skip the current objects set
-        if count_scene_init > 10:
-            continue
-
     #for nf in range(int(opt.nb_frames)):
     targets = np.random.choice(selected_objects, opt.nb_frames, replace=False)
     while nf < int(opt.nb_frames):
