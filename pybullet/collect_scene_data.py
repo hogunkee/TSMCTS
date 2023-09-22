@@ -148,7 +148,7 @@ elif opt.obj=='test':
 print(len(urdf_id_names), 'objects can be loaded.')
 
 pre_spawned_objects = None
-for _ in range(opt.nb_randomset):
+for nset in range(opt.nb_randomset):
     # remove spawned objects before #
     if not pre_spawned_objects is None:
         for idx, urdf_id in enumerate(pre_spawned_objects):
@@ -259,7 +259,7 @@ for _ in range(opt.nb_randomset):
         nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
 
         nf = 0
-        print(f'rendering scene {str(ns).zfill(5)}-{str(nf)}', end='\r')
+        print(f'rendering scene {str(nset)}-{str(ns).zfill(5)}-{str(nf)}', end='\r')
         nv.render_to_file(
             width=int(opt.width), 
             height=int(opt.height), 
@@ -269,7 +269,7 @@ for _ in range(opt.nb_randomset):
         nf += 1
 
         #for nf in range(int(opt.nb_frames)):
-        targets = np.random.choice(selected_objects, opt.nb_frames, replace=False)
+        targets = np.random.choice(selected_objects, opt.nb_frames-1, replace=False)
         while nf < int(opt.nb_frames):
             # save current poses & rots #
             pos_saved, rot_saved = {}, {}
@@ -283,7 +283,7 @@ for _ in range(opt.nb_randomset):
                 rot_saved[obj_col_id] = rot
 
             # set poses & rots #
-            target = targets[nf]
+            target = targets[nf-1]
             for idx, urdf_id in enumerate(urdf_selected):
                 obj_col_id = pybullet_ids[idx]
                 if obj_col_id != target:
@@ -342,7 +342,7 @@ for _ in range(opt.nb_randomset):
                         break
             nv.ids = update_visual_objects(pybullet_ids, "", nv.ids)
 
-            print(f'rendering scene {str(ns).zfill(5)}-{str(nf)}', end='\r')
+            print(f'rendering scene {str(nset)}-{str(ns).zfill(5)}-{str(nf)}', end='\r')
             nv.render_to_file(
                 width=int(opt.width), 
                 height=int(opt.height), 
