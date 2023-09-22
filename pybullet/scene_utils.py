@@ -228,47 +228,34 @@ def update_visual_objects(object_ids, pkg_path, nv_objects=None):
             # print(visualGeometryType)
     return nv_objects
 
-def remove_visual_objects(object_ids, pkg_path):
-    # object ids are in pybullet engine
+def remove_visual_objects(nv_objects):
     # pkg_path is for loading the object geometries
-    for object_id in object_ids:
-        for idx, visual in enumerate(p.getVisualShapeData(object_id)):
+    for object_name in nv_objects:
+        #entity = nv_objects[object_name].entities[0]
+        for entity in nv_objects[object_name].entities:
+            material = entity.get_material().get_name()
+            mesh = entity.get_mesh().get_name()
+            transform = entity.get_transform().get_name()
 
-            # Extract visual data from pybullet
-            objectUniqueId = visual[0]
-            linkIndex = visual[1]
-            visualGeometryType = visual[2]
-            dimensions = visual[3]
-            meshAssetFileName = visual[4]
-            local_visual_frame_position = visual[5]
-            local_visual_frame_orientation = visual[6]
-            rgbaColor = visual[7]
+            nv.material.remove(material)
+            nv.mesh.remove(mesh)
+            nv.transform.remove(transform)
 
-            if linkIndex == -1:
-                dynamics_info = p.getDynamicsInfo(object_id,-1)
-                inertial_frame_position = dynamics_info[3]
-                inertial_frame_orientation = dynamics_info[4]
-                base_state = p.getBasePositionAndOrientation(objectUniqueId)
-                world_link_frame_position = base_state[0]
-                world_link_frame_orientation = base_state[1]    
-                m1 = nv.translate(nv.mat4(1), nv.vec3(inertial_frame_position[0], inertial_frame_position[1], inertial_frame_position[2]))
-                m1 = m1 * nv.mat4_cast(nv.quat(inertial_frame_orientation[3], inertial_frame_orientation[0], inertial_frame_orientation[1], inertial_frame_orientation[2]))
-                m2 = nv.translate(nv.mat4(1), nv.vec3(world_link_frame_position[0], world_link_frame_position[1], world_link_frame_position[2]))
-                m2 = m2 * nv.mat4_cast(nv.quat(world_link_frame_orientation[3], world_link_frame_orientation[0], world_link_frame_orientation[1], world_link_frame_orientation[2]))
-                m = nv.inverse(m1) * m2
-                q = nv.quat_cast(m)
-                world_link_frame_position = m[3]
-                world_link_frame_orientation = q
-            else:
-                linkState = p.getLinkState(objectUniqueId, linkIndex)
-                world_link_frame_position = linkState[4]
-                world_link_frame_orientation = linkState[5]
-            
-            # Name to use for components
-            object_name = f"{objectUniqueId}_{linkIndex}_{idx}"
-            nv.transform.remove(object_name)
-            nv.material.remove(object_name)
-            nv.mesh.remove(object_name)
-            nv.entity.remove(object_name)
+            entity.clear_material()
+            entity.clear_mesh()
+            entity.clear_transform()
+            e_name = entity.get_name()
+            nv.entity.remove(e_name)
     return None
 
+def clear_scene():
+    nv.camera.clear_all()
+    nv.light.clear_all()
+    nv.mesh.clear_all()
+    nv.material.clear_all()
+    nv.volume.clear_all()
+    nv.transform.clear_all()
+    nv.texture.clear_all()
+    nv.entity.clear_all()
+    nv.clear_all()
+    return
