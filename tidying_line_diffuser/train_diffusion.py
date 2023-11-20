@@ -14,13 +14,15 @@ from datasets.datasets import DiffusionDataset
 from datasets.transform import Transform
 from models import Encoder, Decoder, ConditionalDiffusion, AttentionMask
 
-from torch.utils.tensorboard import SummaryWriter
+import wandb
+#from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 
 def train():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_pth', type=str, default='/data/codes/tidying_line/train')
+    parser.add_argument('--data_pth', type=str, default='data/')
+    #'/data/codes/tidying_line/train')
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--latent_dim', type=int, default=64)
     parser.add_argument('--n_timesteps', type=int, default=1000)
@@ -28,13 +30,20 @@ def train():
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--updates_per_epoch', type=int, default=10000)
     parser.add_argument('--validation_steps', type=int, default=10)
+    parser.add_argument('--wandb_off', action='store_true')
     args = parser.parse_args()
 
-    exp_name = 'diffusion'
+    now = datetime.datetime.now()
+    exp_name = 'diffusion_%s' %(now.strftime("%m%d_%H%M"))
     log_dir = os.path.join('logs', exp_name)
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
-    writer = SummaryWriter(log_dir)
+    if not wandb_off:
+        wandb.init(project="instruct-pix2pix")
+        wandb.run.name = exp_name
+        wandb.config.update(args)
+        wandb.run.save()
+    #writer = SummaryWriter(log_dir)
     checkpoint_dir = os.path.join('checkpoints', exp_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -87,7 +96,10 @@ def train():
             optimizer.step()
             pbar.update(1)
 
-            writer.add_scalar('diffusion/train_loss', loss, n_updates)
+            if not wandb_off:
+                eplog = {'diffusion/train_loss': loss}
+                wandb.log(eplog, n_updates)
+                #writer.add_scalar('diffusion/train_loss', loss, n_updates)
 
             if n_updates % args.updates_per_epoch == 0:
                 pbar.close()
@@ -114,16 +126,22 @@ def train():
                         if len(validation_losses) > args.validation_steps:
                             break
                 validation_loss = np.mean(validation_losses)
-                writer.add_scalar('diffusion/val_loss', validation_loss, n_updates)
                 with torch.no_grad():
                     feature_recon = diffusion(cond[:1])
                     img_recon = decoder(feature_recon)
                     img = decoder(feature[:1])
                 img = make_grid(torch.cat([img, img_recon], dim=0), normalize=True, range=(-1, 1))
-                writer.add_image('diffusion/img', img, n_updates)
-                
                 mask_img = resize(mask)
-                writer.add_image('diffusion/mask', mask_img, n_updates)
+                if not wandb_off:
+                    eplog = {
+                            'diffusion/val_loss': validation_loss,
+                            'diffusion/img': wandb.Image(img),
+                            'diffusion/mask': wandb.Image(mask_img),
+                            }
+                    wandb.log(eplog, n_updates)
+                    #writer.add_scalar('diffusion/val_loss', validation_loss, n_updates)
+                    #writer.add_image('diffusion/img', img, n_updates)
+                    #writer.add_image('diffusion/mask', mask_img, n_updates)
 
                 state_dict = {
                     'diffusion': diffusion.state_dict(),

@@ -14,26 +14,35 @@ from datasets.datasets import DiffusionDataset
 from datasets.transform import Transform
 from models import Encoder, Decoder
 
-from torch.utils.tensorboard import SummaryWriter
+import wandb
+#from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 
 def train():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_pth', type=str, default='/data/codes/tidying_line/train')
+    parser.add_argument('--data_pth', type=str, default='data/')
+    #'/data/codes/tidying_line/train')
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--latent_dim', type=int, default=64)
     parser.add_argument('--beta', type=float, default=1e-4)
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--updates_per_epoch', type=int, default=10000)
     parser.add_argument('--validation_steps', type=int, default=10)
+    parser.add_argument('--wandb_off', action='store_true')
     args = parser.parse_args()
 
-    exp_name = 'encoder'
+    now = datetime.datetime.now()
+    exp_name = 'encoder_%s' %(now.strftime("%m%d_%H%M"))
     log_dir = os.path.join('logs', exp_name)
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
-    writer = SummaryWriter(log_dir)
+    if not wandb_off:
+        wandb.init(project="instruct-pix2pix")
+        wandb.run.name = exp_name
+        wandb.config.update(args)
+        wandb.run.save()
+    #writer = SummaryWriter(log_dir)
     checkpoint_dir = os.path.join('checkpoints', exp_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -73,16 +82,26 @@ def train():
             optimizer.step()
             pbar.update(1)
 
-            writer.add_scalar('encoder/train_loss', loss, n_updates)
-            writer.add_scalar('encoder/train_recon_loss', recon_loss, n_updates)
-            writer.add_scalar('encoder/train_prior_loss', prior_loss, n_updates)
+            if not wandb_off:
+                eplog = {
+                        'encoder/train_loss': loss,
+                        'encoder/train_recon_loss': recon_loss,
+                        'encoder/train_prior_loss': prior_loss,
+                        }
+                wandb.log(eplog, n_updates)
+                #writer.add_scalar('encoder/train_loss', loss, n_updates)
+                #writer.add_scalar('encoder/train_recon_loss', recon_loss, n_updates)
+                #writer.add_scalar('encoder/train_prior_loss', prior_loss, n_updates)
 
             if n_updates % args.updates_per_epoch == 0:
                 pbar.close()
                 epoch += 1
                 with torch.no_grad():
                     img = make_grid(torch.cat([x[:8], x_recon[:8]], dim=0), normalize=True, range=(-1, 1))
-                    writer.add_image('train/img', img, n_updates)
+                    if not wandb_off:
+                        eplog = {'encoder/train_image': wandb.Image(img)}
+                        wandb.log(eplog, n_updates)
+                        #writer.add_image('train/img', img, n_updates)
 
                     validation_losses = []
                     for batch in val_data_loader:
@@ -98,9 +117,15 @@ def train():
                         if len(validation_losses) > args.validation_steps:
                             break
                 img = make_grid(torch.cat([x[:8], x_recon[:8]], dim=0), normalize=True, range=(-1, 1))
-                writer.add_image('val/img', img, n_updates)
                 validation_loss = np.mean(validation_losses)
-                writer.add_scalar('diffusion/val_loss', validation_loss, n_updates)
+                if not wandb_off:
+                    eplog = {
+                            'encoder/val_loss': validation_loss,
+                            'encoder/val_image': wandb.Image(img),
+                            }
+                    wandb.log(eplog, n_updates)
+                    #writer.add_image('val/img', img, n_updates)
+                    #writer.add_scalar('diffusion/val_loss', validation_loss, n_updates)
 
                 state_dict = {
                     'encoder': encoder.state_dict(),
