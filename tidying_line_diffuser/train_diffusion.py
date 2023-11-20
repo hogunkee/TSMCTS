@@ -39,6 +39,7 @@ def train():
     log_dir = os.path.join('logs', exp_name)
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
+    wandb_off = args.wandb_off
     if not wandb_off:
         wandb.init(project="instruct-pix2pix")
         wandb.run.name = exp_name
