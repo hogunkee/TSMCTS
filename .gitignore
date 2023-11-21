@@ -11,3 +11,5 @@ temp/
 *.mp4
 .*.swp
 .DS_Store
+checkpoints/
+wandb/

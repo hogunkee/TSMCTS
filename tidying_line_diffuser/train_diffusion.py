@@ -24,6 +24,7 @@ def train():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_pth', type=str, default='data/')
     #'/data/codes/tidying_line/train')
+    parser.add_argument('--encoder_pth', type=str, default='1120_1902')
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--latent_dim', type=int, default=64)
     parser.add_argument('--n_timesteps', type=int, default=1000)
@@ -64,7 +65,7 @@ def train():
 
     encoder = Encoder(output_dim=args.latent_dim).to(device)
     decoder = Decoder(input_dim=args.latent_dim).to(device)
-    state_dict = torch.load('checkpoints/encoder/checkpoint_best.pt')
+    state_dict = torch.load('checkpoints/encoder_%s/checkpoint_best.pt' %args.encoder_pth)
     encoder.load_state_dict(state_dict['encoder'])
     decoder.load_state_dict(state_dict['decoder'])
 
