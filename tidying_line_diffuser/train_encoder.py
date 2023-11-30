@@ -23,11 +23,12 @@ from tqdm import tqdm
 def train():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_pth', type=str, default='data/')
-    #'/data/codes/tidying_line/train')
+    # '/data/codes/tidying_line/train')
+    parser.add_argument('--ckpt_dir', type=str, default='/home/gun/ssd/disk/PreferenceDiffusion/tidying-line-diffusion')
     parser.add_argument('--batch_size', type=int, default=8)
-    parser.add_argument('--latent_dim', type=int, default=64)
+    parser.add_argument('--latent_dim', type=int, default=16) #64
     parser.add_argument('--beta', type=float, default=1e-4)
-    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--epochs', type=int, default=10) #100
     parser.add_argument('--updates_per_epoch', type=int, default=10000)
     parser.add_argument('--validation_steps', type=int, default=10)
     parser.add_argument('--wandb_off', action='store_true')
@@ -45,7 +46,7 @@ def train():
         wandb.config.update(args)
         wandb.run.save()
     #writer = SummaryWriter(log_dir)
-    checkpoint_dir = os.path.join('checkpoints', exp_name)
+    checkpoint_dir = os.path.join(args.ckpt_dir, exp_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     data = np.load(os.path.join(args.data_pth, 'resized.npy'))
