@@ -6,6 +6,7 @@ import subprocess
 import math
 import pybullet as p 
 import numpy as np
+from matplotlib import pyplot as plt
 from transform_utils import euler2quat, mat2quat, quat2mat
 from scene_utils import init_euler, generate_scene
 from scene_utils import get_rotation, get_contact_objects, get_velocity
@@ -13,7 +14,7 @@ from scene_utils import update_visual_objects
 from scene_utils import remove_visual_objects, clear_scene
 
 opt = lambda : None
-opt.nb_objects = 20
+opt.nb_objects = 12 #20
 opt.inscene_objects = 4 #5
 opt.scene_type = 'line' # 'random' or 'line'
 opt.spp = 32 #64 
@@ -22,7 +23,7 @@ opt.height = 500
 opt.noise = False
 opt.nb_scenes = 1000 #2500 #25
 opt.nb_frames = 5
-opt.outf = '/home/gun/ssd/disk/ur5_tidying_data/pybullet_single_bg2/images'
+opt.outf = '/home/gun/ssd/disk/ur5_tidying_data/pybullet_single_bg/images'
 opt.nb_randomset = 50 #20
 opt.obj = 'train' #'train' or 'test'
 
@@ -40,6 +41,9 @@ nv.initialize(headless=False, lazy_updates=True)
 
 # Setup bullet physics stuff
 physicsClient = p.connect(p.GUI) # non-graphical version
+
+def get_bounding_box(segmap):
+    return
 
 def initialize_nvisii_scene():
     if not opt.noise is True: 
@@ -265,7 +269,7 @@ for nset in range(opt.nb_randomset):
             width=int(opt.width), 
             height=int(opt.height), 
             samples_per_pixel=int(opt.spp),
-            file_path=f"{opt.outf}/{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.png"
+            file_path=f"{opt.outf}/rgb_{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.png"
         )
         d = nv.render_data(
             width=int(opt.width),
@@ -276,6 +280,7 @@ for nset in range(opt.nb_randomset):
             options='depth',
         )
         depth = np.array(d).reshape([int(opt.height), int(opt.width), -1])[:, :, 0]
+        np.save(f"{opt.outf}/depth_{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.npy", depth)
         entity_id = nv.render_data(
             width=int(opt.width),
             height=int(opt.height),
@@ -284,9 +289,14 @@ for nset in range(opt.nb_randomset):
             bounce=0,
             options='entity_id',
         )
-        print(set(entity_id))
-        e = np.array(entity_id).reshape([int(opt.height), int(opt.width), -1])
-        np.save(f"{opt.outf}/{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.npy", depth)
+        entity = np.array(entity_id).reshape([int(opt.height), int(opt.width), -1])[:,:,0]
+        segmap = np.zeros_like(entity)
+        for s, obj in enumerate(sorted(selected_objects)):
+            segmap[entity==(obj+2)] = s+1
+        np.save(f"{opt.outf}/seg_{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.npy", segmap)
+        # bbox = get_bounding_box(segmap)
+        # with open(f"{opt.outf}/bounding_boxes.csv", "wb") as f:
+        #     f.write(bbox)
         nf += 1
 
         #for nf in range(int(opt.nb_frames)):
@@ -368,7 +378,7 @@ for nset in range(opt.nb_randomset):
                 width=int(opt.width), 
                 height=int(opt.height), 
                 samples_per_pixel=int(opt.spp),
-                file_path=f"{opt.outf}/{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.png"
+                file_path=f"{opt.outf}/rgb_{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.png"
             )
             d = nv.render_data(
                 width=int(opt.width),
@@ -379,7 +389,20 @@ for nset in range(opt.nb_randomset):
                 options='depth',
             )
             depth = np.array(d).reshape([int(opt.height), int(opt.width), -1])[:, :, 0]
-            np.save(f"{opt.outf}/{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.npy", depth)
+            np.save(f"{opt.outf}/depth_{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.npy", depth)
+            entity_id = nv.render_data(
+                width=int(opt.width),
+                height=int(opt.height),
+                start_frame=0,
+                frame_count=5,
+                bounce=0,
+                options='entity_id',
+            )
+            entity = np.array(entity_id).reshape([int(opt.height), int(opt.width), -1])[:, :, 0]
+            segmap = np.zeros_like(entity)
+            for s, obj in enumerate(sorted(selected_objects)):
+                segmap[entity == (obj + 2)] = s + 1
+            np.save(f"{opt.outf}/seg_{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.npy", segmap)
             nf += 1
         pre_selected_objects = selected_objects
         ns += 1
