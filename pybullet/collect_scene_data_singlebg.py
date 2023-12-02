@@ -276,6 +276,16 @@ for nset in range(opt.nb_randomset):
             options='depth',
         )
         depth = np.array(d).reshape([int(opt.height), int(opt.width), -1])[:, :, 0]
+        entity_id = nv.render_data(
+            width=int(opt.width),
+            height=int(opt.height),
+            start_frame=0,
+            frame_count=5,
+            bounce=0,
+            options='entity_id',
+        )
+        print(set(entity_id))
+        e = np.array(entity_id).reshape([int(opt.height), int(opt.width), -1])
         np.save(f"{opt.outf}/{str(num_exist_frames + ns * opt.nb_frames + nf).zfill(5)}.npy", depth)
         nf += 1
 
