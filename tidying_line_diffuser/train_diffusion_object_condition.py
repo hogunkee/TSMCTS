@@ -51,8 +51,9 @@ def train():
     checkpoint_dir = os.path.join(args.ckpt_dir, exp_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    data = np.load(os.path.join(args.data_pth, 'resized.npy'))
-    dataset = DiffusionDataset(data)
+    rgb_data = np.load(os.path.join(args.data_pth, 'rgb.npy'))
+    segmap_data = np.load(os.path.join(args.data_pth, 'segmap.npy'))
+    dataset = DiffusionDataset(rgb_data, segmap_data)
     val_data_size = int(0.05 * len(dataset))
     train_dataset, val_dataset = random_split(dataset, (len(dataset) - val_data_size, val_data_size))
     train_data_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=1, drop_last=True)

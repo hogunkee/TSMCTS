@@ -11,3 +11,15 @@ class DiffusionDataset(Dataset):
 
     def __getitem__(self, item):
         return self.data[item]
+
+
+class CondDiffusionDataset(Dataset):
+    def __init__(self, rgb, segmap, resolution=128):
+        self.rgb = np.reshape(rgb, (-1, resolution, resolution, 3))
+        self.segmap = np.reshape(segmap, (-1, resolution, resolution))
+
+    def __len__(self):
+        return len(self.rgb)
+
+    def __getitem__(self, item):
+        return self.rgb[item], self.segmap[item]
