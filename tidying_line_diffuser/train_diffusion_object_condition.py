@@ -106,7 +106,7 @@ def train():
                 wandb.log(eplog, n_updates)
                 #writer.add_scalar('diffusion/train_loss', loss, n_updates)
 
-            if n_updates % args.updates_per_epoch == 0:
+            if (n_updates+1) % args.updates_per_epoch == 0:
                 pbar.close()
                 epoch += 1
                 with torch.no_grad():
