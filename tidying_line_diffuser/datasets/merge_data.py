@@ -12,7 +12,7 @@ merge_rgb_data = False
 merge_segmentation_data = True
 
 if merge_rgb_data:
-    rgb_list = [f for f in os.listdir(image_path) if f.startswith('rgb_') and f.endswith('.png')]
+    rgb_list = [f for f in sorted(os.listdir(image_path)) if f.startswith('rgb_') and f.endswith('.png')]
     rgb_npy_list = []
     for _r in tqdm(rgb_list):
         rgb = np.array(Image.open(os.path.join(image_path, _r)))[:, :, :3]
@@ -23,7 +23,7 @@ if merge_rgb_data:
     np.save(os.path.join(out_path, 'rgb_%d.npy'%res), rgb_concat)
 
 if merge_segmentation_data:
-    seg_list = [f for f in os.listdir(image_path) if f.startswith('seg_') and f.endswith('.npy')]
+    seg_list = [f for f in sorted(os.listdir(image_path)) if f.startswith('seg_') and f.endswith('.npy')]
     seg_npy_list = []
     for _s in tqdm(seg_list):
         segmap = np.load(os.path.join(image_path, _s))
