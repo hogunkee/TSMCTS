@@ -14,9 +14,9 @@ class DiffusionDataset(Dataset):
 
 
 class CondDiffusionDataset(Dataset):
-    def __init__(self, rgb, segmap, resolution=128):
+    def __init__(self, rgb, segmap, resolution=128, cond_resolution=16):
         self.rgb = np.reshape(rgb, (-1, resolution, resolution, 3))
-        self.segmap = np.reshape(segmap, (-1, resolution, resolution))
+        self.segmap = np.reshape(segmap, (-1, cond_resolution, cond_resolution))
 
     def __len__(self):
         return len(self.rgb)

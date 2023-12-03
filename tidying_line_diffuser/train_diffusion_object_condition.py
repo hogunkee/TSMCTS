@@ -11,21 +11,21 @@ from torch.nn.utils import clip_grad_norm_
 from torchvision.utils import make_grid
 from torchvision.transforms import Resize
 
-from datasets.datasets import DiffusionDataset
+from datasets.datasets import CondDiffusionDataset
 from datasets.transform import Transform
 from models import Encoder, Decoder, ConditionalDiffusion, AttentionMask
 
 import wandb
 #from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-
+import time
 
 def train():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_pth', type=str, default='data/')
     #'/data/codes/tidying_line/train')
     parser.add_argument('--ckpt_dir', type=str, default='/home/gun/ssd/disk/PreferenceDiffusion/tidying-line-diffusion')
-    parser.add_argument('--encoder_pth', type=str, default='1120_1902')
+    parser.add_argument('--encoder_pth', type=str, default='1129_1701')
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--latent_dim', type=int, default=16) #64
     parser.add_argument('--n_timesteps', type=int, default=1000)
@@ -51,9 +51,9 @@ def train():
     checkpoint_dir = os.path.join(args.ckpt_dir, exp_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    rgb_data = np.load(os.path.join(args.data_pth, 'rgb.npy'))
-    segmap_data = np.load(os.path.join(args.data_pth, 'segmap.npy'))
-    dataset = DiffusionDataset(rgb_data, segmap_data)
+    rgb_data = np.load(os.path.join(args.data_pth, 'rgb_128.npy'))
+    segmap_data = np.load(os.path.join(args.data_pth, 'segmap_16.npy'))
+    dataset = CondDiffusionDataset(rgb_data, segmap_data)
     val_data_size = int(0.05 * len(dataset))
     train_dataset, val_dataset = random_split(dataset, (len(dataset) - val_data_size, val_data_size))
     train_data_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=1, drop_last=True)
@@ -79,20 +79,20 @@ def train():
     pbar = tqdm(total=args.updates_per_epoch, desc='Epoch 0')
     while n_updates < total_updates:
         for batch in train_data_loader:
-            x = batch.to(device)
+            x, masks = batch
+            x = x.to(device)
+            masks = masks.to(device)
             x = transform(x.transpose(2, 3).transpose(1, 2))
             with torch.no_grad():
                 posterior, _ = encoder(x, compute_loss=False)
                 feature = posterior.mean
                 assert torch.max(feature) <= 1.
-            # mask = attention_mask(feature)
-            cond = torch.zeros_like(feature)
-            for i in range(args.n_masks):
-                x_i, y_i = np.random.randint(0, 16, size=2)
-                cond[:, :, x_i, y_i] = feature[:, :, x_i, y_i]
-                # cond_ = (feature * mask[:, i, :, :].unsqueeze(1))
-                # cond_ = mask[:, i, :, :].unsqueeze(1) * torch.sum(cond_, dim=(2, 3), keepdim=True)
-                # cond += cond_
+
+            cond = (masks != 0).to(torch.float32).view(-1, 1, 16, 16) * feature
+            # cond = torch.zeros_like(feature)
+            # b, y, x = torch.where(masks != 0)
+            # for i in range(len(b)):
+            #     cond[b[i], :, y[i], x[i]] = feature[b[i], :, y[i], x[i]]
             loss = diffusion.loss(feature, cond)
 
             optimizer.zero_grad()
@@ -112,20 +112,15 @@ def train():
                 with torch.no_grad():
                     validation_losses = []
                     for batch in val_data_loader:
-                        x = batch.to(device)
+                        x, masks = batch
+                        x = x.to(device)
+                        masks = masks.to(device)
                         x = transform(x.transpose(2, 3).transpose(1, 2))
                         posterior, _ = encoder(x, compute_loss=False)
                         feature = posterior.mean
-                        # mask = attention_mask(feature)
-                        cond = torch.zeros_like(feature)
-                        mask = torch.zeros_like(feature[0, :3, :, :])
-                        for i in range(args.n_masks):
-                            x_i, y_i = np.random.randint(0, 16, size=2)
-                            mask[:, x_i, y_i] = 1.
-                            cond[:, :, x_i, y_i] = feature[:, :, x_i, y_i]
-                            # cond_ = (feature * mask[:, i, :, :].unsqueeze(1))
-                            # cond_ = mask[:, i, :, :].unsqueeze(1) * torch.sum(cond_, dim=(2, 3), keepdim=True)
-                            # cond += cond_
+
+                        cond = (masks != 0).to(torch.float32).view(-1, 1, 16, 16) * feature
+                        mask = (masks != 0).to(torch.float32).view(-1, 1, 16, 16).repeat(1, 3, 1, 1)
                         loss = diffusion.loss(feature, cond)
                         validation_losses.append(loss.item())
                         if len(validation_losses) > args.validation_steps:
