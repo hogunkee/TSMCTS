@@ -11,7 +11,6 @@ from torch.nn.utils import clip_grad_norm_
 from torchvision.utils import make_grid
 from torchvision.transforms import Resize
 
-from datasets.datasets import DiffusionDataset
 from datasets.transform import Transform
 from models import Encoder, Decoder
 
@@ -31,6 +30,7 @@ def train():
     parser.add_argument('--epochs', type=int, default=10) #100
     parser.add_argument('--updates_per_epoch', type=int, default=10000)
     parser.add_argument('--validation_steps', type=int, default=10)
+    parser.add_argument('--remove_bg', action='store_true')
     parser.add_argument('--wandb_off', action='store_true')
     args = parser.parse_args()
 
@@ -49,8 +49,14 @@ def train():
     checkpoint_dir = os.path.join(args.ckpt_dir, exp_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    data = np.load(os.path.join(args.data_pth, 'resized.npy'))
-    dataset = DiffusionDataset(data)
+    data = np.load(os.path.join(args.data_pth, 'rgb_128.npy'))
+    if args.remove_bg:
+        from datasets.datasets import DiffusionDatasetNoBG
+        mask_data = np.load(os.path.join(args.data_pth, 'segmap_128.npy'))
+        dataset = DiffusionDatasetNoBG(data, mask_data)
+    else:
+        from datasets.datasets import DiffusionDataset
+        dataset = DiffusionDataset(data)
     val_data_size = int(0.05 * len(dataset))
     train_dataset, val_dataset = random_split(dataset, (len(dataset) - val_data_size, val_data_size))
     train_data_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=4, drop_last=True)
