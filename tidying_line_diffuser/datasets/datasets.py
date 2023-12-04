@@ -21,7 +21,7 @@ class DiffusionDatasetNoBG(Dataset):
 
     def preprocess(self):
         mask = (self.mask!=0).astype(float)
-        self.rgb = self.rgb * mask
+        self.rgb = self.rgb * mask.reshape(-1, 128, 128, 1)
         self.mask = mask
     
     def __len__(self):
