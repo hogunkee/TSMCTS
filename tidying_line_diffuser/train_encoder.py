@@ -102,7 +102,7 @@ def train():
                 #writer.add_scalar('encoder/train_recon_loss', recon_loss, n_updates)
                 #writer.add_scalar('encoder/train_prior_loss', prior_loss, n_updates)
 
-            if n_updates % args.updates_per_epoch == 0:
+            if (n_updates+1) % args.updates_per_epoch == 0:
                 pbar.close()
                 epoch += 1
                 with torch.no_grad():
