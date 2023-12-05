@@ -76,7 +76,7 @@ def train():
     pbar = tqdm(total=args.updates_per_epoch, desc='Epoch 0')
     while n_updates < total_updates:
         for batch in train_data_loader:
-            x = batch.to(device)
+            x = batch.to(torch.float32).to(device)
             x = transform(x.transpose(2, 3).transpose(1, 2))
             posterior, prior_loss = encoder(x)
             z = posterior.rsample()
@@ -114,7 +114,7 @@ def train():
 
                     validation_losses = []
                     for batch in val_data_loader:
-                        x = batch.to(device)
+                        x = batch.to(torch.float32).to(device)
                         x = transform(x.transpose(2, 3).transpose(1, 2))
                         posterior, prior_loss = encoder(x)
                         z = posterior.rsample()
