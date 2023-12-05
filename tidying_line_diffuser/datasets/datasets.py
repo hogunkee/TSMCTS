@@ -48,6 +48,7 @@ class CondDiffusionDatasetNoBG(Dataset):
         self.rgb = np.reshape(rgb, (-1, resolution, resolution, 3))
         self.mask = np.reshape(mask, (-1, resolution, resolution))
         self.segmap = np.reshape(segmap, (-1, cond_resolution, cond_resolution))
+        self.preprocess()
 
     def preprocess(self):
         mask = (self.mask!=0).astype(float)
