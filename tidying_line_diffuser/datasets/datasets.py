@@ -28,7 +28,7 @@ class DiffusionDatasetNoBG(Dataset):
         return len(self.rgb)
 
     def __getitem__(self, item):
-        return self.rgb[item], self.mask[item]
+        return self.rgb[item]
 
 
 class CondDiffusionDataset(Dataset):
