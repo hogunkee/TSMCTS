@@ -77,13 +77,15 @@ def train():
     while n_updates < total_updates:
         for batch in train_data_loader:
             x, mask = batch
+            x = transform(x.permute((0, 3, 1, 2)))
+            #x = transform(x.transpose(2, 3).transpose(1, 2))
             x = x.to(torch.float32).to(device)
-            x = transform(x.transpose(2, 3).transpose(1, 2))
             posterior, prior_loss = encoder(x)
             z = posterior.rsample()
             x_recon = decoder(z)
             if args.remove_bg:
                 mask = mask.to(device)
+                mask = mask.permute((0, 3, 1, 2))
                 recon_loss = ((x_recon - x)*mask).pow(2).mean()
             else:
                 recon_loss = (x_recon - x).pow(2).mean()
@@ -120,13 +122,15 @@ def train():
                     validation_losses = []
                     for batch in val_data_loader:
                         x, mask = batch
+                        x = transform(x.permute((0, 3, 1, 2)))
+                        #x = transform(x.transpose(2, 3).transpose(1, 2))
                         x = x.to(torch.float32).to(device)
-                        x = transform(x.transpose(2, 3).transpose(1, 2))
                         posterior, prior_loss = encoder(x)
                         z = posterior.rsample()
                         x_recon = decoder(z)
                         if args.remove_bg:
                             mask = mask.to(device)
+                            mask = mask.permute((0, 3, 1, 2))
                             recon_loss = ((x_recon - x)*mask).pow(2).mean()
                         else:
                             recon_loss = (x_recon - x).pow(2).mean()
