@@ -76,12 +76,17 @@ def train():
     pbar = tqdm(total=args.updates_per_epoch, desc='Epoch 0')
     while n_updates < total_updates:
         for batch in train_data_loader:
-            x = batch.to(torch.float32).to(device)
+            x, mask = batch
+            x = x.to(torch.float32).to(device)
             x = transform(x.transpose(2, 3).transpose(1, 2))
             posterior, prior_loss = encoder(x)
             z = posterior.rsample()
             x_recon = decoder(z)
-            recon_loss = (x_recon - x).pow(2).mean()
+            if args.remove_bg:
+                mask = mask.to(device)
+                recon_loss = ((x_recon - x)*mask).pow(2).mean()
+            else:
+                recon_loss = (x_recon - x).pow(2).mean()
 
             loss = recon_loss + args.beta * prior_loss
 
@@ -114,12 +119,17 @@ def train():
 
                     validation_losses = []
                     for batch in val_data_loader:
-                        x = batch.to(torch.float32).to(device)
+                        x, mask = batch
+                        x = x.to(torch.float32).to(device)
                         x = transform(x.transpose(2, 3).transpose(1, 2))
                         posterior, prior_loss = encoder(x)
                         z = posterior.rsample()
                         x_recon = decoder(z)
-                        recon_loss = (x_recon - x).pow(2).mean()
+                        if args.remove_bg:
+                            mask = mask.to(device)
+                            recon_loss = ((x_recon - x)*mask).pow(2).mean()
+                        else:
+                            recon_loss = (x_recon - x).pow(2).mean()
 
                         loss = recon_loss + args.beta * prior_loss
                         validation_losses.append(loss.item())
