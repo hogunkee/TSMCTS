@@ -32,11 +32,12 @@ def train():
     parser.add_argument('--updates_per_epoch', type=int, default=10000)
     parser.add_argument('--validation_steps', type=int, default=10)
     parser.add_argument('--remove_bg', action='store_true')
+    parser.add_argument('--cond_type', type=str, default='point')
     parser.add_argument('--wandb_off', action='store_true')
     args = parser.parse_args()
 
     now = datetime.datetime.now()
-    exp_name = 'diffusion_%s' %(now.strftime("%m%d_%H%M"))
+    exp_name = 'diffusion_%s_%s' %(args.cond_type, now.strftime("%m%d_%H%M"))
     log_dir = os.path.join('logs', exp_name)
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
@@ -84,16 +85,30 @@ def train():
     pbar = tqdm(total=args.updates_per_epoch, desc='Epoch 0')
     while n_updates < total_updates:
         for batch in train_data_loader:
-            x, masks = batch
-            x = x.to(device)
+            x, masks, _ = batch
+            x = transform(x.permute((0, 3, 1, 2)))
+            x = x.to(torch.float32).to(device)
             masks = masks.to(device)
-            x = transform(x.transpose(2, 3).transpose(1, 2))
             with torch.no_grad():
                 posterior, _ = encoder(x, compute_loss=False)
                 feature = posterior.mean
                 assert torch.max(feature) <= 1.
 
-            cond = (masks != 0).to(torch.float32).view(-1, 1, 16, 16) * feature
+            if args.cond_type=='point':
+                cond = (masks != 0).to(torch.float32).view(-1, 1, 16, 16) * feature
+            elif args.cond_type=='mask':
+                cond = torch.zeros_like(feature)
+                for m in range(1, 4): # int(masks.max())
+                    feature_m = (masks==m).view(-1, 1, 16, 16) * feature
+                    feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16, 16).sum((2, 3))
+                    cond += (masks==m).view(-1, 1, 16, 16) * feature_m_mean.view(-1, 16, 1, 1)
+            elif args.cond_type=='bbox':
+                cond = torch.zeros_like(feature)
+                for m in range(1, 4):  # int(masks.max())
+                    feature_m = (masks == m).view(-1, 1, 16, 16) * feature
+                    feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16, 16).sum(
+                        (2, 3))
+                    cond += (masks == m).view(-1, 1, 16, 16) * feature_m_mean.view(-1, 16, 1, 1)
             # cond = torch.zeros_like(feature)
             # b, y, x = torch.where(masks != 0)
             # for i in range(len(b)):
@@ -117,24 +132,44 @@ def train():
                 with torch.no_grad():
                     validation_losses = []
                     for batch in val_data_loader:
-                        x, masks = batch
-                        x = x.to(device)
+                        x, masks, _ = batch
+                        x = transform(x.permute((0, 3, 1, 2)))
+                        x = x.to(torch.float32).to(device)
                         masks = masks.to(device)
-                        x = transform(x.transpose(2, 3).transpose(1, 2))
                         posterior, _ = encoder(x, compute_loss=False)
                         feature = posterior.mean
 
                         cond = (masks != 0).to(torch.float32).view(-1, 1, 16, 16) * feature
-                        mask = (masks != 0).to(torch.float32).view(-1, 1, 16, 16).repeat(1, 3, 1, 1)
+                        if args.cond_type == 'point':
+                            cond = (masks != 0).to(torch.float32).view(-1, 1, 16, 16) * feature
+                        elif args.cond_type == 'mask':
+                            cond = torch.zeros_like(feature)
+                            for m in range(1, 4):  # int(masks.max())
+                                feature_m = (masks == m).view(-1, 1, 16, 16) * feature
+                                feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16,
+                                                                                                             16).sum(
+                                    (2, 3))
+                                cond += (masks == m).view(-1, 1, 16, 16) * feature_m_mean.view(-1, 16, 1, 1)
+                        elif args.cond_type == 'bbox':
+                            cond = torch.zeros_like(feature)
+                            for m in range(1, 4):  # int(masks.max())
+                                feature_m = (masks == m).view(-1, 1, 16, 16) * feature
+                                feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16,
+                                                                                                             16).sum(
+                                    (2, 3))
+                                cond += (masks == m).view(-1, 1, 16, 16) * feature_m_mean.view(-1, 16, 1, 1)
+
                         loss = diffusion.loss(feature, cond)
                         validation_losses.append(loss.item())
                         if len(validation_losses) > args.validation_steps:
                             break
+
                 validation_loss = np.mean(validation_losses)
                 with torch.no_grad():
                     feature_recon = diffusion(cond[:1])
                     img_recon = decoder(feature_recon)
                     img = decoder(feature[:1])
+                    mask = (masks != 0).to(torch.float32).view(-1, 1, 16, 16).repeat(1, 3, 1, 1)
                 img = make_grid(torch.cat([img, img_recon], dim=0), normalize=True, range=(-1, 1))
                 mask_img = resize(mask)
                 if not wandb_off:

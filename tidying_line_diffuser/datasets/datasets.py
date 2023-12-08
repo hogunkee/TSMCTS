@@ -10,7 +10,7 @@ class DiffusionDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, item):
-        return self.data[item], None
+        return self.data[item], []
 
 
 class DiffusionDatasetNoBG(Dataset):
@@ -40,7 +40,7 @@ class CondDiffusionDataset(Dataset):
         return len(self.rgb)
 
     def __getitem__(self, item):
-        return self.rgb[item], self.segmap[item], None
+        return self.rgb[item], self.segmap[item], []
 
 
 class CondDiffusionDatasetNoBG(Dataset):
