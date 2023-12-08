@@ -99,15 +99,17 @@ def train():
             elif args.cond_type=='mask':
                 cond = torch.zeros_like(feature)
                 for m in range(1, 4): # int(masks.max())
-                    feature_m = (masks==m).view(-1, 1, 16, 16) * feature
-                    feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16, 16).sum((2, 3))
-                    cond += (masks==m).view(-1, 1, 16, 16) * feature_m_mean.view(-1, 16, 1, 1)
+                    mask_m = (masks == m).to(torch.float32).view(-1, 1, 16, 16)
+                    count_m = mask_m.sum((2, 3))
+                    feature_m = mask_m * feature
+                    feature_m_mean = feature_m.sum((2, 3)) / count_m
+                    feature_m_mean = torch.where(count_m==0, torch.zeros_like(feature_m_mean), feature_m_mean)
+                    cond += mask_m * feature_m_mean.view(-1, 16, 1, 1)
             elif args.cond_type=='bbox':
                 cond = torch.zeros_like(feature)
                 for m in range(1, 4):  # int(masks.max())
                     feature_m = (masks == m).view(-1, 1, 16, 16) * feature
-                    feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16, 16).sum(
-                        (2, 3))
+                    feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16, 16).sum((2, 3))
                     cond += (masks == m).view(-1, 1, 16, 16) * feature_m_mean.view(-1, 16, 1, 1)
             # cond = torch.zeros_like(feature)
             # b, y, x = torch.where(masks != 0)
@@ -145,18 +147,17 @@ def train():
                         elif args.cond_type == 'mask':
                             cond = torch.zeros_like(feature)
                             for m in range(1, 4):  # int(masks.max())
-                                feature_m = (masks == m).view(-1, 1, 16, 16) * feature
-                                feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16,
-                                                                                                             16).sum(
-                                    (2, 3))
-                                cond += (masks == m).view(-1, 1, 16, 16) * feature_m_mean.view(-1, 16, 1, 1)
+                                mask_m = (masks == m).to(torch.float32).view(-1, 1, 16, 16)
+                                count_m = mask_m.sum((2, 3))
+                                feature_m = mask_m * feature
+                                feature_m_mean = feature_m.sum((2, 3)) / count_m
+                                feature_m_mean = torch.where(count_m == 0, torch.zeros_like(feature_m_mean), feature_m_mean)
+                                cond += mask_m * feature_m_mean.view(-1, 16, 1, 1)
                         elif args.cond_type == 'bbox':
                             cond = torch.zeros_like(feature)
                             for m in range(1, 4):  # int(masks.max())
                                 feature_m = (masks == m).view(-1, 1, 16, 16) * feature
-                                feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16,
-                                                                                                             16).sum(
-                                    (2, 3))
+                                feature_m_mean = feature_m.sum((2, 3)) / (masks == m).to(torch.float32).view(-1, 1, 16, 16).sum((2, 3))
                                 cond += (masks == m).view(-1, 1, 16, 16) * feature_m_mean.view(-1, 16, 1, 1)
 
                         loss = diffusion.loss(feature, cond)
