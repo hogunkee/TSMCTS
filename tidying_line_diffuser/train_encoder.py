@@ -31,6 +31,7 @@ def train():
     parser.add_argument('--updates_per_epoch', type=int, default=10000)
     parser.add_argument('--validation_steps', type=int, default=10)
     parser.add_argument('--remove_bg', action='store_true')
+    parser.add_argument('--recon_mask', action='store_true')
     parser.add_argument('--wandb_off', action='store_true')
     args = parser.parse_args()
 
@@ -83,7 +84,7 @@ def train():
             posterior, prior_loss = encoder(x)
             z = posterior.rsample()
             x_recon = decoder(z)
-            if args.remove_bg:
+            if args.remove_bg and args.recon_mask:
                 mask = mask.to(device)
                 mask = mask.permute((0, 3, 1, 2))
                 recon_loss = ((x_recon - x)*mask).pow(2).mean()
@@ -128,7 +129,7 @@ def train():
                         posterior, prior_loss = encoder(x)
                         z = posterior.rsample()
                         x_recon = decoder(z)
-                        if args.remove_bg:
+                        if args.remove_bg and args.recon_mask:
                             mask = mask.to(device)
                             mask = mask.permute((0, 3, 1, 2))
                             recon_loss = ((x_recon - x)*mask).pow(2).mean()
