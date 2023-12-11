@@ -63,10 +63,9 @@ class CondDiffusionDatasetNoBG(Dataset):
 
 
 class TargetCondDiffusionDataset(Dataset):
-    def __init__(self, rgb, segmap, resolution=128, cond_resolution=16, num_duplication=4):
+    def __init__(self, rgb, segmap, resolution=128, cond_resolution=16, num_duplication=5):
         self.rgb = np.reshape(rgb, (-1, resolution, resolution, 3))
         self.segmap = np.reshape(segmap, (-1, cond_resolution, cond_resolution))
-        self.preprocess()
 
         self.num_duplication = num_duplication
         self.hash_augment = self.get_augmentation()
@@ -91,7 +90,7 @@ class TargetCondDiffusionDataset(Dataset):
 
 
 class TargetCondDiffusionDatasetNoBG(Dataset):
-    def __init__(self, rgb, segmap, mask, resolution=128, cond_resolution=16, num_duplication=4):
+    def __init__(self, rgb, segmap, mask, resolution=128, cond_resolution=16, num_duplication=5):
         self.rgb = np.reshape(rgb, (-1, resolution, resolution, 3))
         self.mask = np.reshape(mask, (-1, resolution, resolution, 1))
         self.segmap = np.reshape(segmap, (-1, cond_resolution, cond_resolution))
