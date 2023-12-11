@@ -86,7 +86,7 @@ class TargetCondDiffusionDataset(Dataset):
         idx1 = item // len(self.hash_augment)
         idx2 = item % len(self.hash_augment)
         source_idx, target_idx = self.num_duplication * idx1 + self.hash_augment[idx2]
-        return self.rgb[source_idx], self.rgb[target_idx], self.segmap[target_idx]
+        return self.rgb[source_idx], self.segmap[source_idx], self.rgb[target_idx], self.segmap[target_idx]
 
 
 class TargetCondDiffusionDatasetNoBG(Dataset):
@@ -120,4 +120,4 @@ class TargetCondDiffusionDatasetNoBG(Dataset):
         idx1 = item // len(self.hash_augment)
         idx2 = item % len(self.hash_augment)
         source_idx, target_idx = self.num_duplication * idx1 + self.hash_augment[idx2]
-        return self.rgb[source_idx], self.rgb[target_idx], self.segmap[target_idx]
+        return self.rgb[source_idx], self.segmap[source_idx], self.rgb[target_idx], self.segmap[target_idx]
