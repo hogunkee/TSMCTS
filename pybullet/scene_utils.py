@@ -60,9 +60,10 @@ init_euler[93] = [0, 0, 1]
 
 
 def generate_scene(scene_type, num_objects):
+    z_default = 0.6
     if scene_type=='random':
         positions = 4*(np.random.rand(num_objects, 3) - 0.5)
-        positions[:, 2] = 0.6
+        positions[:, 2] = z_default
     elif scene_type=='line':
         distance_enough = False
         while not distance_enough:
@@ -71,7 +72,24 @@ def generate_scene(scene_type, num_objects):
                                 and (np.linalg.norm([x1 - x2, y1 - y2]) < 2.5)
         xs = np.linspace(x1, x2, num_objects)
         ys = np.linspace(y1, y2, num_objects)
-        zs = np.ones(num_objects) * 0.6
+        zs = np.ones(num_objects) * z_default
+        positions = np.concatenate([xs, ys, zs]).reshape(3, num_objects).T
+    return positions
+
+def generate_scene_at_center(scene_type, num_objects):
+    z_default = 0.6
+    if scene_type=='random':
+        positions = 4*(np.random.rand(num_objects, 3) - 0.5)
+        positions[:, 2] = z_default
+    elif scene_type=='line':
+        distance_enough = False
+        while not distance_enough:
+            x1, x2, y1, y2 = 2.5 * (np.random.rand(4) - 0.5)
+            distance_enough = (np.linalg.norm([x1 - x2, y1 - y2]) > 1.5) \
+                                and (np.linalg.norm([x1 - x2, y1 - y2]) < 2.5)
+        xs = np.linspace(x1, x2, num_objects)
+        ys = np.linspace(y1, y2, num_objects)
+        zs = np.ones(num_objects) * z_default
         positions = np.concatenate([xs, ys, zs]).reshape(3, num_objects).T
     return positions
 
