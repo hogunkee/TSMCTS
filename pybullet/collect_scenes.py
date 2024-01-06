@@ -1,4 +1,5 @@
 import os 
+import copy
 import nvisii as nv
 import random
 import colorsys
@@ -26,6 +27,7 @@ class TabletopScenes(object):
         # Create a camera
         self.camera = None
         self.set_camera_pose(eye=(3, 0, 6))
+        self.set_grid()
 
         self.initialize_nvisii_scene()
         self.initialize_pybullet_scene()
@@ -82,7 +84,7 @@ class TabletopScenes(object):
             material = nv.material.create("floor")
         )
         floor.get_transform().set_position((0,0,0))
-        floor.get_transform().set_scale((8, 8, 8))
+        floor.get_transform().set_scale((6, 6, 6))
         floor.get_material().set_roughness(0.1)
         floor.get_material().set_base_color((0.8, 0.87, 0.88)) #(0.5,0.5,0.5)
 
@@ -129,7 +131,14 @@ class TabletopScenes(object):
         )    
         return
 
-    def clear(self)
+    def set_grid(self):
+        x = np.linspace(-4, 4, 6)
+        y = np.linspace(-4, 4, 6)
+        xx, yy = np.meshgrid(x, y, sparse=False)
+        self.xx = xx.reshape(-1)
+        self.yy = yy.reshape(-1)
+
+    def clear(self):
         # remove spawned objects before #
         for idx, urdf_id in enumerate(self.spawned_objects):
             obj_col_id = pybullet_ids[idx]
@@ -137,6 +146,8 @@ class TabletopScenes(object):
         #remove_visual_objects(nv.ids)
         clear_scene()
         self.spawned_objects = None
+        self.pre_selected_objects = []
+        self.current_pybullet_ids = []
 
     def close(self):
         nv.deinitialize()
@@ -205,31 +216,25 @@ class TabletopScenes(object):
         return urdf_selected
 
     def spawn_objects(self, urdf_selected):
-        self.spawned_objects = urdf_selected
-
-        x = np.linspace(-4, 4, 6)
-        y = np.linspace(-4, 4, 6)
-        xx, yy = np.meshgrid(x, y, sparse=False)
-        xx = xx.reshape(-1)
-        yy = yy.reshape(-1)
+        self.spawned_objects = copy.deepcopy(urdf_selected)
 
         pybullet_ids = []
         for idx, urdf_id in enumerate(urdf_selected):
             (object_name, object_type) = self.urdf_id_names[urdf_id]
             if object_type=='pybullet':
-                urdf_path = os.path.join(pybullet_object_path, object_name, 'model.urdf')
+                urdf_path = os.path.join(self.opt.pybullet_object_path, object_name, 'model.urdf')
             else:
-                urdf_path = os.path.join(ycb_object_path, object_name, 'poisson', 'model.urdf')
+                urdf_path = os.path.join(self.opt.ycb_object_path, object_name, 'poisson', 'model.urdf')
                 if object_name.startswith('022_windex_bottle') or object_name.startswith('023_wine_glass') or object_name.startswith('049_'):
-                    urdf_path = os.path.join(ycb_object_path, object_name, 'tsdf', 'model.urdf')
+                    urdf_path = os.path.join(self.opt.ycb_object_path, object_name, 'tsdf', 'model.urdf')
                 else:
-                    urdf_path = os.path.join(ycb_object_path, object_name, 'poisson', 'model.urdf')
-            obj_col_id = p.loadURDF(urdf_path, [xx[idx], yy[idx], 0.5], globalScaling=5.)
+                    urdf_path = os.path.join(self.opt.ycb_object_path, object_name, 'poisson', 'model.urdf')
+            obj_col_id = p.loadURDF(urdf_path, [self.xx[idx], self.yy[idx], 0.5], globalScaling=5.)
             pybullet_ids.append(obj_col_id)
-        nv.ids = update_visual_objects(pybullet_ids, "")
 
-        self.pre_selected_objects = pybullet_ids 
-        self.current_pyullet_ids = pybullet_ids
+        nv.ids = update_visual_objects(pybullet_ids, "")
+        self.pre_selected_objects = copy.deepcopy(pybullet_ids)
+        self.current_pybullet_ids = copy.deepcopy(pybullet_ids)
 
     def set_floor(self, texture_id=-1):
         # set floor material #
@@ -238,15 +243,15 @@ class TabletopScenes(object):
         self.floor.get_material().set_roughness(roughness)
 
         if texture_id==-1: # random texture #
-            f_cidx = np.random.choice(len(floor_textures))
-            stex, floor_tex = self.floor_textures[f_cidx]
+            f_cidx = np.random.choice(len(self.floor_textures))
+            tex, floor_tex = self.floor_textures[f_cidx]
         else:
             tex, floor_tex = self.floor_textures[texture_id]
         self.floor.get_material().set_base_color_texture(floor_tex)
         self.floor.get_material().set_roughness_texture(tex)
 
     def arrange_objects(self, scene_idx, urdf_selected):
-        pybullet_ids = self.current_pybullet_ids
+        pybullet_ids = copy.deepcopy(self.current_pybullet_ids)
 
         # set objects #
         count_scene_trials = 0
@@ -259,9 +264,8 @@ class TabletopScenes(object):
                 obj_col_id = pybullet_ids[idx]
                 # hide objects placed on the table #
                 if obj_col_id in self.pre_selected_objects:
-                    pos_hidden = [xx[idx], yy[idx], -1]
+                    pos_hidden = [self.xx[idx], self.yy[idx], -1]
                     p.resetBasePositionAndOrientation(obj_col_id, pos_hidden, [0, 0, 0, 1])
-                    self.pre_selected_objects = []
 
                 # place new objects #
                 if obj_col_id in selected_objects:
@@ -273,12 +277,13 @@ class TabletopScenes(object):
                     rot = get_rotation(roll, pitch, yaw)
                     init_rotations.append(rot)
                     p.resetBasePositionAndOrientation(obj_col_id, pos_sel, rot)
+            self.pre_selected_objects = []
             init_rotations = np.array(init_rotations)
 
             # check feasibility #
             init_feasible = False 
             j = 0
-            while j<2000 or not init_feasible:
+            while j<2000 and not init_feasible:
                 p.stepSimulation()
                 if j%10==0:
                     current_poses = []
@@ -306,7 +311,7 @@ class TabletopScenes(object):
             if count_scene_trials > 5:
                 break
 
-        self.pre_selected_objects = selected_objects
+        self.pre_selected_objects = copy.deepcopy(selected_objects)
         # if failed to place objects robustly #
         if not init_feasible:
             return False
@@ -316,8 +321,9 @@ class TabletopScenes(object):
 
 
     def messup_objects(self, obj_idx, scene_idx, urdf_selected):
-        selected_objects = self.pre_selected_objects
-        targets = np.random.choice(selected_objects, self.opt.nb_frames-1, replace=False)
+        pybullet_ids = copy.deepcopy(self.current_pybullet_ids)
+        selected_objects = copy.deepcopy(self.pre_selected_objects)
+
         # save current poses & rots #
         pos_saved, rot_saved = {}, {}
         for obj_col_id in selected_objects:
@@ -326,7 +332,7 @@ class TabletopScenes(object):
             rot_saved[obj_col_id] = rot
 
         # set poses & rots #
-        target_col_id = targets[obj_idx]
+        target_col_id = selected_objects[obj_idx]
         idx = pybullet_ids.index(target_col_id)
         urdf_id = urdf_selected[idx]
         place_feasible = False
@@ -421,7 +427,7 @@ if __name__=='__main__':
     opt.noise = False
     opt.nb_scenes = 1000 #2500 #25
     opt.nb_frames = 5
-    opt.outf = '/home/gun/ssd/disk/ur5_tidying_data/test_scripts/images'
+    opt.outf = '/home/gun/ssd/disk/ur5_tidying_data/line-shape/images'
     opt.nb_randomset = 50 #20
     opt.dataset = 'train' #'train' or 'test'
     opt.objectset = 'pybullet' #'pybullet'/'ycb'/'all'
@@ -437,11 +443,11 @@ if __name__=='__main__':
     ts = TabletopScenes(opt)
     for nset in range(opt.nb_randomset):
         urdf_selected = ts.select_objects(opt.nb_objects)
+        ts.spawn_objects(urdf_selected)
         ns = 0
         while ns < opt.nb_scenes:
             num_exist_frames = len([f for f in os.listdir(f"{opt.outf}") if '.png' in f])
             ts.set_floor(texture_id=-1)
-            ts.spawn_objects(urdf_selected)
 
             # 1. Spawn objects in a 'Line' shape #
             nf = 0
@@ -452,13 +458,16 @@ if __name__=='__main__':
                 continue
 
             # 2. Move each object to a random place #
+            nf = 1
             while nf < int(opt.nb_frames):
-                nf += 1
                 print(f'rendering scene {str(nset)}-{str(ns).zfill(5)}-{str(nf)}', end='\r')
                 scene_idx = num_exist_frames + ns * opt.nb_frames + nf
                 success_placement = ts.messup_objects(nf-1, scene_idx, urdf_selected)
                 if not success_placement:
                     nf -= 1
                     continue
+                nf += 1
+        ts.clear()
+    ts.close()
 
     
