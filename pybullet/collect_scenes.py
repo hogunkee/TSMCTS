@@ -139,12 +139,13 @@ class TabletopScenes(object):
         self.yy = yy.reshape(-1)
 
     def clear(self):
+        pybullet_ids = copy.deepcopy(self.current_pybullet_ids)
         # remove spawned objects before #
         for idx, urdf_id in enumerate(self.spawned_objects):
             obj_col_id = pybullet_ids[idx]
             p.removeBody(obj_col_id)
-        #remove_visual_objects(nv.ids)
-        clear_scene()
+        remove_visual_objects(nv.ids)
+        #clear_scene()
         self.spawned_objects = None
         self.pre_selected_objects = []
         self.current_pybullet_ids = []
@@ -425,10 +426,10 @@ if __name__=='__main__':
     opt.width = 500
     opt.height = 500 
     opt.noise = False
-    opt.nb_scenes = 1000 #2500 #25
+    opt.nb_scenes = 1000
     opt.nb_frames = 5
     opt.outf = '/home/gun/ssd/disk/ur5_tidying_data/line-shape/images'
-    opt.nb_randomset = 50 #20
+    opt.nb_randomset = 20
     opt.dataset = 'train' #'train' or 'test'
     opt.objectset = 'pybullet' #'pybullet'/'ycb'/'all'
     opt.pybullet_object_path = '/home/gun/Desktop/pybullet-URDF-models/urdf_models/models'
@@ -444,9 +445,9 @@ if __name__=='__main__':
     for nset in range(opt.nb_randomset):
         urdf_selected = ts.select_objects(opt.nb_objects)
         ts.spawn_objects(urdf_selected)
+        num_exist_frames = len([f for f in os.listdir(f"{opt.outf}") if '.png' in f])
         ns = 0
         while ns < opt.nb_scenes:
-            num_exist_frames = len([f for f in os.listdir(f"{opt.outf}") if '.png' in f])
             ts.set_floor(texture_id=-1)
 
             # 1. Spawn objects in a 'Line' shape #
@@ -464,9 +465,9 @@ if __name__=='__main__':
                 scene_idx = num_exist_frames + ns * opt.nb_frames + nf
                 success_placement = ts.messup_objects(nf-1, scene_idx, urdf_selected)
                 if not success_placement:
-                    nf -= 1
                     continue
                 nf += 1
+            ns += 1
         ts.clear()
     ts.close()
 
