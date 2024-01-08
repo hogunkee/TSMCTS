@@ -26,7 +26,7 @@ class TabletopScenes(object):
 
         # Create a camera
         self.camera = None
-        self.set_camera_pose(eye=(3, 0, 6))
+        self.set_camera_pose(eye=(0.6, 0, 1.2)) #(3, 0, 6))
         self.set_grid()
 
         self.initialize_nvisii_scene()
@@ -41,7 +41,7 @@ class TabletopScenes(object):
         self.current_pybullet_ids = []
 
 
-    def set_camera_pose(self, eye, at=(0.5, 0, 0), up=(0, 0, 1)):
+    def set_camera_pose(self, eye, at=(0.1, 0, 0), up=(0, 0, 1)):
         if self.camera is None:
             self.camera = nv.entity.create(
                 name = "camera",
@@ -64,7 +64,7 @@ class TabletopScenes(object):
         nv.set_dome_light_intensity(1.0)
 
         # atmospheric thickness makes the sky go orange, almost like a sunset
-        nv.set_dome_light_sky(sun_position=(10,10,10), atmosphere_thickness=1.0, saturation=1.0)
+        nv.set_dome_light_sky(sun_position=(6,6,6), atmosphere_thickness=1.0, saturation=1.0)
 
         # add a sun light
         sun = nv.entity.create(
@@ -73,7 +73,7 @@ class TabletopScenes(object):
             transform = nv.transform.create("sun"),
             light = nv.light.create("sun")
         )
-        sun.get_transform().set_position((10,10,10))
+        sun.get_transform().set_position((6,6,6))
         sun.get_light().set_temperature(5780)
         sun.get_light().set_intensity(1000)
 
@@ -84,7 +84,7 @@ class TabletopScenes(object):
             material = nv.material.create("floor")
         )
         floor.get_transform().set_position((0,0,0))
-        floor.get_transform().set_scale((6, 6, 6))
+        floor.get_transform().set_scale((1, 1, 1)) #(6, 6, 6)
         floor.get_material().set_roughness(0.1)
         floor.get_material().set_base_color((0.8, 0.87, 0.88)) #(0.5,0.5,0.5)
 
@@ -132,8 +132,8 @@ class TabletopScenes(object):
         return
 
     def set_grid(self):
-        x = np.linspace(-4, 4, 6)
-        y = np.linspace(-4, 4, 6)
+        x = np.linspace(-0.8, 0.8, 5)
+        y = np.linspace(-0.8, 0.8, 5)
         xx, yy = np.meshgrid(x, y, sparse=False)
         self.xx = xx.reshape(-1)
         self.yy = yy.reshape(-1)
@@ -230,7 +230,7 @@ class TabletopScenes(object):
                     urdf_path = os.path.join(self.opt.ycb_object_path, object_name, 'tsdf', 'model.urdf')
                 else:
                     urdf_path = os.path.join(self.opt.ycb_object_path, object_name, 'poisson', 'model.urdf')
-            obj_col_id = p.loadURDF(urdf_path, [self.xx[idx], self.yy[idx], 0.5], globalScaling=5.)
+            obj_col_id = p.loadURDF(urdf_path, [self.xx[idx], self.yy[idx], 0.15], globalScaling=1.) #5.
             pybullet_ids.append(obj_col_id)
 
         nv.ids = update_visual_objects(pybullet_ids, "")
@@ -343,8 +343,8 @@ class TabletopScenes(object):
             pos, rot = p.getBasePositionAndOrientation(target_col_id)
             collisions_before = get_contact_objects()
 
-            pos_new = 4*(np.random.rand(3) - 0.5)
-            pos_new[2] = 0.6
+            pos_new = 0.9*(np.random.rand(3) - 0.5)
+            pos_new[2] = 0.15
             roll, pitch, yaw = 0, 0, 0
             if urdf_id in init_euler:
                 roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
