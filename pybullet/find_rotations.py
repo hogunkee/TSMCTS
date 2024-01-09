@@ -16,7 +16,7 @@ opt.noise = False
 #opt.outf = '/home/gun/ssd/disk/ur5_tidying_data/line-shape/images'
 #opt.nb_randomset = 20
 opt.dataset = 'train' #'train' or 'test'
-opt.objectset = 'pybullet' #'pybullet'/'ycb'/'all'
+opt.objectset = 'ycb' #'pybullet'/'ycb'/'all'
 opt.pybullet_object_path = '/home/gun/Desktop/pybullet-URDF-models/urdf_models/models'
 opt.ycb_object_path = '/home/gun/ssd/disk/YCB_dataset'
 
@@ -32,14 +32,17 @@ for i in range(5):
         object_type, object_index = uid.split('-')
         pos_new = [ts.xx[idx], ts.yy[idx], 0.25]
         if uid in ts.init_euler:
+            print(uid, 'in init_euler.')
             roll, pitch, yaw = np.array(ts.init_euler[uid]) * np.pi / 2
         else:
+            print(uid, 'not in init_euler.')
             roll, pitch, yaw = 0, 0, 0
         rot_new = get_rotation(roll, pitch, yaw)
         p.resetBasePositionAndOrientation(obj_col_id, pos_new, rot_new)
         
         for _ in range(200):
             p.stepSimulation()
+        nv.ids = update_visual_objects(ts.current_pybullet_ids, "", nv.ids)
 
         x = input("Press X to exit.")
         if x.lower()=="x":
