@@ -9,7 +9,7 @@ import pybullet as p
 import numpy as np
 from matplotlib import pyplot as plt
 from transform_utils import euler2quat, mat2quat, quat2mat
-from scene_utils import init_euler, generate_scene
+from scene_utils import get_init_euler, generate_scene
 from scene_utils import get_rotation, get_contact_objects, get_velocity
 from scene_utils import update_visual_objects 
 from scene_utils import remove_visual_objects, clear_scene
@@ -31,6 +31,7 @@ class TabletopScenes(object):
 
         self.initialize_nvisii_scene()
         self.initialize_pybullet_scene()
+        self.init_euler = get_init_euler()
         self.urdf_id_names = self.load_objects(opt.dataset, opt.objectset)
 
         self.threshold = {'pose': 0.07,
@@ -166,45 +167,44 @@ class TabletopScenes(object):
         for eo in exclusion_list:
             ycb_object_names.remove(eo)
 
-        pybullet_train_objects = pybullet_object_names[:80]
-        pybullet_test_objects = pybullet_object_names[80:]
-        ycb_train_objects = ycb_object_names[:80]
-        ycb_test_objects = ycb_object_names[80:]
+        pybullet_split = 80
+        pybullet_ids = ['pybullet-%d'%p for p in range(len(pybullet_object_names))]
+        ycb_split = 80
+        ycb_ids = ['ycb-%d'%y for y in range(len(ycb_object_names))]
+        # urdf_id_names
+        # key: {object_type}-{index} - e.g., 'pybullet-0'
+        # value: {object_name} - e.g., 'black_marker'
         if dataset=='train':
             if objectset=='pybullet':
                 urdf_id_names = dict(zip(
-                    range(len(pybullet_train_objects)), 
-                    zip(pybullet_train_objects, ['pybullet'] * len(pybullet_train_objects))
+                    pybullet_ids[:pybullet_split], 
+                    pybullet_object_names[:pybullet_split]
                     ))
             elif objectset=='ycb':
                 urdf_id_names = dict(zip(
-                    range(len(ycb_train_objects)), 
-                    zip(ycb_train_objects, ['ycb'] * len(ycb_train_objects))
+                    ycb_ids[:ycb_split], 
+                    ycb_object_names[:ycb_split]
                     ))
             elif objectset=='all':
                 urdf_id_names = dict(zip(
-                    range(len(pybullet_train_objects)+len(ycb_train_objects)), 
-                    zip(pybullet_train_objects + ycb_train_objects, 
-                        ['pybullet'] * len(pybullet_train_objects) + ['ycb'] * len(ycb_train_objects)
-                        )
+                    pybullet_ids[:pybullet_split] + ycb_ids[:ycb_split],
+                    pybullet_object_names[:pybullet_split] + ycb_object_names[:ycb_split]
                     ))
         elif dataset=='test':
             if objectset=='pybullet':
                 urdf_id_names = dict(zip(
-                    range(len(pybullet_test_objects)), 
-                    zip(pybullet_test_objects, ['pybullet'] * len(pybullet_test_objects))
+                    pybullet_ids[pybullet_split:], 
+                    pybullet_object_names[pybullet_split:]
                     ))
             elif objectset=='ycb':
                 urdf_id_names = dict(zip(
-                    range(len(ycb_test_objects)), 
-                    zip(ycb_test_objects, ['ycb'] * len(ycb_test_objects))
+                    ycb_ids[ycb_split:], 
+                    ycb_object_names[ycb_split:]
                     ))
             elif objectset=='all':
                 urdf_id_names = dict(zip(
-                    range(len(pybullet_test_objects)+len(ycb_test_objects)), 
-                    zip(pybullet_test_objects + ycb_test_objects, 
-                        ['pybullet'] * len(pybullet_test_objects) + ['ycb'] * len(ycb_test_objects)
-                        )
+                    pybullet_ids[pybullet_split:] + ycb_ids[ycb_split:],
+                    pybullet_object_names[pybullet_split:] + ycb_object_names[ycb_split:]
                     ))
         print('-'*60)
         print(len(urdf_id_names), 'objects can be loaded.')
@@ -221,7 +221,9 @@ class TabletopScenes(object):
 
         pybullet_ids = []
         for idx, urdf_id in enumerate(urdf_selected):
-            (object_name, object_type) = self.urdf_id_names[urdf_id]
+            object_type = urdf_id.split('-')[0]
+            object_name = self.urdf_id_names[urdf_id]
+            #(object_name, object_type) = self.urdf_id_names[urdf_id]
             if object_type=='pybullet':
                 urdf_path = os.path.join(self.opt.pybullet_object_path, object_name, 'model.urdf')
             else:
@@ -273,8 +275,8 @@ class TabletopScenes(object):
                     sidx = np.where(selected_objects==obj_col_id)[0][0]
                     pos_sel = init_positions[sidx]
                     roll, pitch, yaw = 0, 0, 0
-                    if urdf_id in init_euler:
-                        roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
+                    if urdf_id in self.init_euler:
+                        roll, pitch, yaw = np.array(self.init_euler[urdf_id]) * np.pi / 2
                     rot = get_rotation(roll, pitch, yaw)
                     init_rotations.append(rot)
                     p.resetBasePositionAndOrientation(obj_col_id, pos_sel, rot)
@@ -346,8 +348,8 @@ class TabletopScenes(object):
             pos_new = 0.9*(np.random.rand(3) - 0.5)
             pos_new[2] = 0.15
             roll, pitch, yaw = 0, 0, 0
-            if urdf_id in init_euler:
-                roll, pitch, yaw = np.array(init_euler[urdf_id]) * np.pi / 2
+            if urdf_id in self.init_euler:
+                roll, pitch, yaw = np.array(self.init_euler[urdf_id]) * np.pi / 2
             rot = get_rotation(roll, pitch, yaw)
             p.resetBasePositionAndOrientation(target_col_id, pos_new, rot)
             collisions_after = set()
