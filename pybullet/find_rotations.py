@@ -1,6 +1,6 @@
 import numpy as np
 import pybullet as p 
-from scene_utils import get_rotation
+from scene_utils import update_visual_objects, get_rotation
 from collect_scenes import TabletopScenes
 
 opt = lambda : None
