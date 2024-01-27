@@ -13,3 +13,5 @@ temp/
 .DS_Store
 checkpoints/
 wandb/
+samples/
+images/
