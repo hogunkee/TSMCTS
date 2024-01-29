@@ -31,9 +31,9 @@ def train(args):
 
     # dataloader #
     print("Loading data...")
-    dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'train'))
-    test_dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'test'))
-    test_dataset.fsize = 400
+    dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'train'), num_duplication=5)
+    test_dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'test'), num_duplication=5)
+    test_dataset.fsize = 500
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
 
@@ -52,7 +52,7 @@ def train(args):
         model_name = 'finetune'
     else:
         model = resnet(pretrained=False)
-        model_name = 'noft'
+        model_name = 'rmbg' #'nobg'
     # replace the last fc layer #
     fc_in_features = model.fc.in_features
     model.fc = nn.Sequential(
@@ -134,7 +134,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--out", type=str, default='classification')
     parser.add_argument("--gpu", type=int, default=0)
-    parser.add_argument("--data_dir", type=str, default='/ssd/disk/ur5_tidying_data/pybullet_line')
+    parser.add_argument("--data_dir", type=str, default='/ssd/disk/ur5_tidying_data/pybullet_remove_bg')
     parser.add_argument("--finetune", action="store_true")
     parser.add_argument("--model", type=str, default='resnet-18')
     args = parser.parse_args()

@@ -10,7 +10,7 @@ class PybulletNpyDataset(Dataset):
         self.augmentation = augmentation
         self.buff_i = None
         self.num_duplication = num_duplication
-        self.fsize = 2000
+        self.fsize = 900
 
         self.find_npydata(self.data_dir)
         #self.current_fidx = 0
