@@ -52,12 +52,12 @@ def train(args):
         model_name = 'finetune'
     else:
         model = resnet(pretrained=False)
-        model_name = 'rmbg' #'nobg'
+        model_name = 'mse_nobg' #'nobg'
     # replace the last fc layer #
     fc_in_features = model.fc.in_features
     model.fc = nn.Sequential(
         nn.Linear(fc_in_features, 1),
-        nn.Sigmoid()
+        #nn.Sigmoid()
     )
 
     if torch.cuda.is_available():
@@ -67,7 +67,7 @@ def train(args):
     model.to(device)
 
     # loss function and optimizer #
-    loss_fn = nn.BCELoss()  # binary cross entropy
+    loss_fn = nn.MSELoss() #BCELoss()  # binary cross entropy
     optimizer = torch.optim.Adam(model.parameters(), lr=lrate)
  
     # Hold the best model
@@ -105,7 +105,7 @@ def train(args):
             Y_val = Y_val[:, 0].to(device)
             y_pred = model(X_val)[:, 0]
             indices = torch.logical_or(Y_val==0, Y_val==1)
-            matching = (y_pred.round() == Y_val).float().detach().cpu().numpy()
+            matching = (y_pred.round()==Y_val)[indices].float().detach().cpu().numpy()
             matchings.append(matching)
         matchings = np.concatenate(matchings, axis=0)
         accuracy = np.mean(matchings)
@@ -134,7 +134,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--out", type=str, default='classification')
     parser.add_argument("--gpu", type=int, default=0)
-    parser.add_argument("--data_dir", type=str, default='/ssd/disk/ur5_tidying_data/pybullet_remove_bg')
+    parser.add_argument("--data_dir", type=str, default='/ssd/disk/ur5_tidying_data/pybullet_single_bg')
     parser.add_argument("--finetune", action="store_true")
     parser.add_argument("--model", type=str, default='resnet-18')
     args = parser.parse_args()

@@ -6,6 +6,7 @@ import copy
 import math
 import random
 import numpy as np
+import cv2
 from PIL import Image
 from matplotlib import pyplot as plt
 
@@ -45,7 +46,15 @@ class ObjectInfo():
         masks, centers = [], []
         for o in range(1, self.num_obj+1):
             # get the segmentation mask of each object #
-            mask = Image.fromarray(255*(segmap==o).astype(np.uint8))
+            mask = (segmap==o).astype(float)
+            if mask.sum()<100:
+                kernel = np.ones((2, 2), np.uint8)
+                mask = cv2.dilate(cv2.erode(mask, kernel), kernel)
+            else:
+                kernel = np.ones((3, 3), np.uint8)
+                mask = cv2.dilate(cv2.erode(mask, kernel), kernel)
+            mask = np.round(mask).astype(np.uint8)
+            mask = Image.fromarray(255 * mask)
             masks.append(mask)
             # get the center of each object #
             py, px = np.where(segmap==o)
@@ -59,12 +68,14 @@ class ObjectInfo():
         #new_rgb = Image.fromarray(np.zeros([RESOLUTION, RESOLUTION, 4], dtype=np.uint8))
         for o in range(1, self.num_obj+1):
             py, px = np.where(table==o)
+            if len(py)==0 or len(px)==0:
+                continue
             py, px = py[0], px[0]
             cy, cx = self.centers[o-1]
             ty, tx = np.array([py, px]) * self.res_ratio + self.offset - np.array([cy, cx])
             ty, tx = np.array([ty, tx]).astype(int)
             new_rgb.paste(self.rgb, (tx, ty), self.masks[o-1])
-        return np.array(new_rgb)
+        return np.array(new_rgb)[:, :, :3] / 255.
     
     def segmap2grid(self, segmap):
         new_table = np.zeros([RESOLUTION, RESOLUTION])
@@ -207,7 +218,7 @@ class MCTS():
             if action not in node.children:
                 newNode = TreeNode(node.state.takeAction(action), node)
                 node.children[action] = newNode
-                if len(node.children) == 50:
+                if len(node.children) == 100:
                 #if len(actions) == len(node.children):
                     node.isFullyExpanded = True
                 return newNode
@@ -239,7 +250,8 @@ if __name__=='__main__':
     for o, p in enumerate(poses):
         random_table[p[0], p[1]] = o+1
 
-    data_dir = '../samples/'
+    #data_dir = '../samples/'
+    data_dir = '/ssd/disk/ur5_tidying_data/pybullet_single_bg/images'
     rgb_list = sorted([os.path.join(data_dir, r) for r in os.listdir(data_dir) if r.startswith('rgb')])
     seg_list = sorted([os.path.join(data_dir, s) for s in os.listdir(data_dir) if s.startswith('seg')])
     init_rgb = np.array(Image.open(rgb_list[0]))
