@@ -21,6 +21,28 @@ class Squeeze(nn.Module):
 
     def forward(self, x):
         return x.squeeze(dim=self.dim)
+    
+
+def block3x3(in_channels, out_channels, stride=1, activation='relu'):
+    layers = [
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels)
+            ]
+    if activation == 'relu':
+        layers.append(nn.ReLU(inplace=True))
+    elif activation == 'leaky_relu':
+        layers.append(nn.LeakyReLU(0.2, inplace=True))
+    return nn.Sequential(*layers)
+    
+
+def resnet(num_blocks, in_channels, out_channels, hidden_dim=16, output_activation=None, stride=1):
+    layers = []
+    layers.append(block3x3(in_channels, hidden_dim, stride, 'relu'))
+    for _ in range(1, num_blocks-1):
+        layers.append(block3x3(hidden_dim, 2*hidden_dim, stride, 'relu'))
+        hidden_dim = 2*hidden_dim
+    layers.append(block3x3(hidden_dim, out_channels, stride, activation=output_activation))
+    return nn.Sequential(*layers)
 
 
 def mlp(dims, activation=nn.ReLU, output_activation=None, squeeze_output=False):
