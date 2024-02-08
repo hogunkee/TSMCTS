@@ -4,8 +4,11 @@ import cv2
 import time
 import random
 import numpy as np
-import torch
+from PIL import Image
 from matplotlib import pyplot as plt
+
+import torch
+import torch.nn as nn
 
 
 class Renderer(object):
@@ -19,8 +22,8 @@ class Renderer(object):
         self.numObjects = int(np.max(segmentation))
         self.ratio, self.offset = self.getRatio()
         self.masks, self.centers = self.getMasks(segmentation)
-        self.objectPatches, self.objectMasks = self.getObjectPatches(rgbImage, segmentation)
         self.rgb = np.copy(rgbImage)
+        self.objectPatches, self.objectMasks = self.getObjectPatches()
         self.segmap = np.copy(segmentation)
         table = self.getTable(segmentation)
         return table
@@ -56,10 +59,11 @@ class Renderer(object):
         for o in range(self.numObjects):
             mask = self.masks[o]
             cy, cx = self.centers[o]
-            objPatch = np.zeros(self.cropSize)
+            objPatch = np.zeros([*self.cropSize, 3])
             objPatch[:, :] = self.rgb[ 
                         int(cy-self.cropSize[0]/2):int(cy+self.cropSize[0]/2), 
-                        int(cx-self.cropSize[1]/2):int(cx+self.cropSize[1]/2)
+                        int(cx-self.cropSize[1]/2):int(cx+self.cropSize[1]/2),
+                        :3
                         ]
             objMask = np.zeros(self.cropSize)
             objMask[:, :] = mask[ 
@@ -71,8 +75,8 @@ class Renderer(object):
         return objPatches, objMasks
 
     def getRGB(self, table, remove=None):
-        newRgb =np.zeros_like(np.array(self.rgb))
-        for o in range(1, self.num_obj+1):
+        newRgb = np.zeros_like(np.array(self.rgb))[:, :, :3]
+        for o in range(1, self.numObjects+1):
             if remove is not None:
                 if o==remove:
                     continue
@@ -84,12 +88,12 @@ class Renderer(object):
             newRgb[
                     int(ty-self.cropSize[0]/2):int(ty+self.cropSize[0]/2),
                     int(tx-self.cropSize[1]/2):int(tx+self.cropSize[1]/2)
-                    ] += self.objectPatches[o] * self.objectMasks[o]
-        return np.array(newRgb)[:, :, :3]
+                    ] += (self.objectPatches[o-1] * self.objectMasks[o-1][:, :, None]).astype(np.uint8)
+        return np.array(newRgb)
 
     def getTable(self, segmap):
         newTable = np.zeros([self.tableSize[0], self.tableSize[1]])
-        for o in range(1, self.num_obj+1):
+        for o in range(1, self.numObjects+1):
             center = self.centers[o-1]
             gy, gx = ((np.array(center) - self.offset) // self.ratio).astype(int)
             newTable[gy, gx] = o
@@ -119,7 +123,7 @@ class Node(object):
         self.actionCandidates = []
     
     def takeAction(self, move):
-        obj, py, px = self.convert_action(move)
+        obj, py, px = move #self.convert_action(move)
         newTable = copy.deepcopy(self.table)
         newTable[newTable==obj] = 0
         newTable[py, px] = obj
@@ -127,6 +131,9 @@ class Node(object):
     
     def setActions(self, actionCandidates):
         self.actionCandidates = actionCandidates
+
+    def isFullyExpanded(self):
+        return len(self.children)!=0 and (self.children)==len(self.actionCandidates)
 
     def __str__(self):
         s=[]
@@ -162,6 +169,7 @@ class MCTS(object):
             self.domain = 'image'
         self.explorationConstant = explorationConstant
 
+        self.treePolicy = treePolicy
         self.maxDepth = maxDepth
         if rolloutPolicy=='random':
             self.rollout = self.randomPolicy
@@ -173,8 +181,9 @@ class MCTS(object):
         self.thresholdV = 0.5
         self.QNet = None
         self.VNet = None
+        self.batchSize = 32
     
-    def reset(rgbImage, segmentation):
+    def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
         return table
 
@@ -218,17 +227,18 @@ class MCTS(object):
     def expand(self, node):
         while True:
             actions = self.getPossibleActions(node, self.treePolicy)
+            assert actions is not None
             action = random.choice(actions)
             if len(action)==1:
                 action = self.renderer.convertAction(action)
-            if action not in node.children:
-                newNode = Node(node.takeAction(action), node, self.renderer.numObjcts)
-                node.children[action] = newNode
+            if tuple(action) not in node.children:
+                newNode = Node(self.renderer.numObjects, node.takeAction(action), node)
+                node.children[tuple(action)] = newNode
                 return newNode
 
     def getReward(self, table):
         rgb = self.renderer.getRGB(table)
-        s = torch.Tensor(rgb).cuda()
+        s = torch.Tensor(rgb[None, :]).permute([0,3,1,2]).cuda()
         reward = self.VNet(s).cpu().detach().numpy()[0]
         return reward
 
@@ -240,7 +250,7 @@ class MCTS(object):
 
     def executeRound(self):
         node = self.selectNode(self.root)
-        reward = self.rollout(node.state)
+        reward = self.rollout(node)
         self.backpropogate(node, reward)
 
     def getBestChild(self, node, explorationValue):
@@ -254,9 +264,9 @@ class MCTS(object):
                 bestNodes = [child]
             elif nodeValue == bestValue:
                 bestNodes.append(child)
-        return random.choice(bestNodes)
+        return np.random.choice(bestNodes)
 
-    def getPossibleActions(self, node, policy='Random', needValues=False):
+    def getPossibleActions(self, node, policy='random', needValues=False):
         if policy=='Q':
             if len(node.actionCandidates)==0:
                 actionCandidates = []
@@ -267,8 +277,8 @@ class MCTS(object):
                     objPatch = self.renderer.objectPatches[o]
                     states.append(rgbWoTarget)
                     objectPatches.append(objPatch)
-                s = torch.Tensor(states).cuda()
-                p = torch.Tensor(objectPatches).cuda()
+                s = torch.Tensor(np.array(states)).permute([0,3,1,2]).cuda()
+                p = torch.Tensor(np.array(objectPatches)).permute([0,3,1,2]).cuda()
                 QHeatmap = self.QNet(s, p).cpu().detach().numpy()
                 for o, py, px in np.where(QHeatmap > self.thresholdQ):
                     actionCandidates.append((o, py, px))
@@ -286,7 +296,7 @@ class MCTS(object):
                 for action in allPossibleActions:
                     nextState = self.renderer.getRGB(node.takeAction(action))
                     nextStates.append(nextState)
-                s = torch.Tensor(nextStates).cuda()
+                s = torch.Tensor(np.array(nextStates)).permute([0,3,1,2]).cuda()
                 values = self.VNet(s).cpu().detach().numpy()
                 possibleIdx = values > self.thresholdV
                 node.setActions(allPossibleActions[possibleIdx])
@@ -295,8 +305,10 @@ class MCTS(object):
             else:
                 return node.actionCandidates
             
-        elif policy=='Random':
+        elif policy=='random':
             if len(node.actionCandidates)==0:
+                nb = self.renderer.numObjects
+                th, tw = self.renderer.tableSize
                 allPossibleActions = np.array(np.meshgrid(
                                     np.arange(nb), np.arange(th), np.arange(tw)
                                     )).T.reshape(-1, 3)
@@ -335,8 +347,17 @@ class MCTS(object):
             newNode = Node(self.renderer.numObjects, newTable)
             node = newNode
             states.append(self.renderer.getRGB(node.table))
-        s = torch.Tensor(states).cuda()
-        rewards = self.VNet(s).cpu().detach().numpy()
+        s = torch.Tensor(np.array(states)).permute([0,3,1,2]).cuda()
+        rewards = []
+        numBatches = len(states)//self.batchSize
+        if len(states)%self.batchSize > 0:
+            numBatches += 1
+        for b in range(numBatches):
+            batchS = s[b*self.batchSize:(b+1)*self.batchSize]
+            batchRewards = self.VNet(batchS).cpu().detach().numpy()
+            rewards.append(batchRewards)
+        rewards = np.concatenate(rewards)
+        #rewards = self.VNet(s).cpu().detach().numpy()
         maxReward = np.max(rewards)
         return maxReward
 
@@ -345,21 +366,21 @@ class MCTS(object):
         while not self.isTerminal(node)[0]:
             try:
                 actions = self.getPossibleActions(node, 'Q')
-                action = random.choice(actions)
+                action = np.random.choice(actions)
             except IndexError:
                 raise Exception("Non-terminal state has no possible actions: " + str(state))
             newTable = node.takeAction(action)
             newNode = Node(self.renderer.numObjects, newTable)
             node = newNode
             states.append(self.renderer.getRGB(node.table))
-        s = torch.Tensor(states).cuda()
+        s = torch.Tensor(np.array(states)).permute([0,3,1,2]).cuda()
         rewards = self.VNet(s).cpu().detach().numpy()
         maxReward = np.max(rewards)
         return maxReward
 
     def greedyPolicyWithV(self, node):
         state = self.renderer.getRGB(node.table)
-        s = torch.Tensor(state).cuda()
+        s = torch.Tensor(state).permute([0,3,1,2]).cuda()
         value = self.VNet(s).cpu().detach().numpy()[0]
         values = [value]
         while not self.isTerminal(node)[0]:
@@ -387,11 +408,30 @@ if __name__=='__main__':
     renderer = Renderer(tableSize=(10, 10), imageSize=initRgb.shape[:2], cropSize=(48, 48))
     # plt.imshow(initSeg)
     # plt.show()
-    searcher = MCTS(timeLimit=2000, renderer=renderer, maxDepth=8,
+    searcher = MCTS(iterationLimit=2000, renderer=renderer, maxDepth=8,
                     rolloutPolicy='random', treePolicy='random')
     initTable = searcher.reset(initRgb, initSeg)
     print(initTable)
     table = initTable
+
+    # torch simple convolution layer network
+    vnet = nn.Sequential(
+        nn.Conv2d(3, 32, 3, 1),
+        nn.ReLU(),
+        nn.MaxPool2d(2),
+        nn.Conv2d(32, 64, 3, 1),
+        nn.ReLU(),
+        nn.MaxPool2d(2),
+        nn.Conv2d(64, 64, 3, 1),
+        nn.ReLU(),
+        nn.MaxPool2d(2),
+        nn.Flatten(),
+        nn.Linear(64*60*60, 512),
+        nn.ReLU(),
+        nn.Linear(512, 1),
+        nn.Sigmoid()
+    ).cuda()
+    searcher.setVNet(vnet)
 
     print("--------------------------------")    
     for s in range(10):
@@ -405,8 +445,8 @@ if __name__=='__main__':
         print("Best Child: \n %s"%nextTable)
         print("--------------------------------")    
         tableRgb = renderer.getRGB(nextTable)
-        plt.imshow(tableRgb)
-        plt.show()
+        # plt.imshow(tableRgb)
+        # plt.show()
         table = copy.deepcopy(nextTable)
         terminal, reward = searcher.isTerminal(None, table, checkReward=True)
         if terminal:
