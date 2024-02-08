@@ -249,12 +249,20 @@ numJoints = p.getNumJoints(kukaId)
 if (numJoints != 7):
   exit()
 
-cubeId1 = p.loadURDF("cube.urdf", [1, 1, 2])
-cubeId2 = p.loadURDF("cube.urdf", [-1, -1, 2])
-cubeId3 = p.loadURDF("cube.urdf", [1, -1, 2])
+ig_path = '/ssd/disk/ig_dataset/objects'
+ids = []
+for i, object_name in enumerate(os.listdir(ig_path)[:5]):
+    object_subname = os.listdir(os.path.join(ig_path, object_name))[0]
+    urdf_path = os.path.join(ig_path, object_name, object_subname, '%s.urdf'%object_subname)
+    obj_id = p.loadURDF(urdf_path, [i, 1, 2])
+    ids.append(obj_id)
+#cubeId1 = p.loadURDF("cube.urdf", [1, 1, 2])
+#cubeId2 = p.loadURDF("cube.urdf", [-1, -1, 2])
+#cubeId3 = p.loadURDF("cube.urdf", [1, -1, 2])
 
 # Keep track of the cube objects
-nv_objects = update_visual_objects([planeId, kukaId, cubeId1, cubeId2, cubeId3], "")
+nv_objects = update_visual_objects([planeId, kukaId] + ids, "")
+#nv_objects = update_visual_objects([planeId, kukaId, cubeId1, cubeId2, cubeId3], "")
 
 #lower limits for null space
 ll = [-.967, -2, -2.96, 0.19, -2.96, -2.09, -3.05]
@@ -289,7 +297,8 @@ while 1:
   t = t + 0.01
 
   # Periodically update nvisii components to match pybullet
-  update_visual_objects([planeId, kukaId, cubeId1, cubeId2, cubeId3], ".", nv_objects)
+  update_visual_objects([planeId, kukaId] + ids, ".", nv_objects)
+  #update_visual_objects([planeId, kukaId, cubeId1, cubeId2, cubeId3], ".", nv_objects)
 
   if (useSimulation):
     p.stepSimulation()    

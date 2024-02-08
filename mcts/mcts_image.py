@@ -7,11 +7,12 @@ import math
 import random
 import numpy as np
 import cv2
+import itertools
 from PIL import Image
 from matplotlib import pyplot as plt
 
 NUM_OBJ = 4
-RESOLUTION = 10
+RESOLUTION = 6 #10
 
 def randomPolicy(state):
     while not state.isTerminal():
@@ -90,7 +91,7 @@ class State():
     def __init__(self, table=None):
         if table is None:
             table = np.zeros([RESOLUTION, RESOLUTION], dtype=int)
-        self.table = table
+        self.table = table.astype(int)
         self.num_moves = self.num_objects * RESOLUTION * RESOLUTION
 
     def takeAction(self, move_idx):
@@ -117,11 +118,14 @@ class State():
 
     def getReward(self):
         r = 0.0
-        alignment = ' '.join([str(o) for o in range(1, self.num_objects+1)])
-        if alignment in str(self.table) or alignment[::-1] in str(self.table):
-            r = 1.0
-        if alignment in str(self.table.T) or alignment[::-1] in str(self.table.T):
-            r = 1.0
+        #alignment = ' '.join([str(o) for o in range(1, self.num_objects+1)])
+        alignments = itertools.permutations(range(1, self.num_objects+1))
+        for alignment in alignments:
+            alignment = ' '.join([str(a) for a in alignment])
+            if alignment in str(self.table): # or alignment[::-1] in str(self.table):
+                r = 1.0
+            if alignment in str(self.table.T): # or alignment[::-1] in str(self.table.T):
+                r = 1.0
         return r
 
     def __repr__(self):
@@ -218,7 +222,7 @@ class MCTS():
             if action not in node.children:
                 newNode = TreeNode(node.state.takeAction(action), node)
                 node.children[action] = newNode
-                if len(node.children) == 100:
+                if len(node.children) == 120:
                 #if len(actions) == len(node.children):
                     node.isFullyExpanded = True
                 return newNode
@@ -254,8 +258,8 @@ if __name__=='__main__':
     data_dir = '/ssd/disk/ur5_tidying_data/pybullet_single_bg/images'
     rgb_list = sorted([os.path.join(data_dir, r) for r in os.listdir(data_dir) if r.startswith('rgb')])
     seg_list = sorted([os.path.join(data_dir, s) for s in os.listdir(data_dir) if s.startswith('seg')])
-    init_rgb = np.array(Image.open(rgb_list[0]))
-    init_seg = np.flip(np.load(seg_list[0]), 0)
+    init_rgb = np.array(Image.open(rgb_list[13]))
+    init_seg = np.flip(np.load(seg_list[13]), 0)
     obj_info = ObjectInfo(init_rgb, init_seg)
 
     plt.imshow(init_seg)
@@ -263,8 +267,13 @@ if __name__=='__main__':
     init_table = obj_info.segmap2grid(init_seg)
 
     state = State(init_table)
-    #searcher = MCTS(iterationLimit=10000)
-    searcher = MCTS(timeLimit=2000)
+    table_rgb = obj_info.grid2rgb(state.table)
+    plt.imshow(table_rgb)
+    plt.show()
+    #s = 0
+    #plt.savefig('step-%d.png'%s)
+    searcher = MCTS(iterationLimit=3000)
+    #searcher = MCTS(timeLimit=2000)
     print("--------------------------------")    
     print("Initial State:")
     print(state)
@@ -272,8 +281,8 @@ if __name__=='__main__':
         #bestAction = searcher.search(initialState=state)
         resultDict = searcher.search(initialState=state, needDetails=True)
         print("Num Children: %d"%len(searcher.root.children))
-        for i, c in enumerate(searcher.root.children):
-            print(i, convert_action(c), searcher.root.children[c])
+        #for i, c in enumerate(searcher.root.children):
+        #    print(i, convert_action(c), searcher.root.children[c])
         action = resultDict['action']
         print("Best Action:", convert_action(action))
         next_state = state.takeAction(resultDict['action'])
@@ -282,6 +291,8 @@ if __name__=='__main__':
         table_rgb = obj_info.grid2rgb(next_state.table)
         plt.imshow(table_rgb)
         plt.show()
+        #s += 1
+        #plt.savefig('step-%d.png'%s)
         state = copy.deepcopy(next_state)
         if state.isTerminal():
             print("Arrived at the final state:")

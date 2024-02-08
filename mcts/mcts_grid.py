@@ -157,7 +157,7 @@ class MCTS():
             if action not in node.children:
                 newNode = TreeNode(node.state.takeAction(action), node)
                 node.children[action] = newNode
-                if len(node.children) == 50:
+                if len(node.children) == 100:
                 #if len(actions) == len(node.children):
                     node.isFullyExpanded = True
                 return newNode
@@ -190,16 +190,17 @@ if __name__=='__main__':
         random_table[p[0], p[1]] = o+1
 
     state = State(random_table)
-    searcher = MCTS(iterationLimit=10000) #,timeLimit=10000)
+    searcher = MCTS(iterationLimit=2000) #,timeLimit=10000)
     print("--------------------------------")    
     print("Initial State:")
     print(state)
+    print("--------------------------------")    
     for s in range(10):
         #bestAction = searcher.search(initialState=state)
         resultDict = searcher.search(initialState=state, needDetails=True)
         print("Num Children: %d"%len(searcher.root.children))
-        for i, c in enumerate(searcher.root.children):
-            print(i, convert_action(c), searcher.root.children[c])
+        #for i, c in enumerate(searcher.root.children):
+        #    print(i, convert_action(c), searcher.root.children[c])
         action = resultDict['action']
         print("Best Action:", convert_action(action))
         next_state = state.takeAction(resultDict['action'])

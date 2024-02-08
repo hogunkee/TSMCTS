@@ -15,3 +15,5 @@ checkpoints/
 wandb/
 samples/
 images/
+
+step-*.png
