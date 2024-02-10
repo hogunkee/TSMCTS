@@ -31,9 +31,15 @@ def train(args):
 
     # dataloader #
     print("Loading data...")
-    dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'train'), num_duplication=5)
-    test_dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'test'), num_duplication=5)
-    test_dataset.fsize = 500
+    if args.dataset=='tabletop':
+        dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'train'), 
+                        remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+        test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test'), 
+                        remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    elif args.dataset=='pybullet':
+        dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'train'), num_duplication=5)
+        test_dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'test'), num_duplication=5)
+        test_dataset.fsize = 500
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
 
@@ -52,7 +58,11 @@ def train(args):
         model_name = 'finetune'
     else:
         model = resnet(pretrained=False)
-        model_name = 'mse_nobg' #'nobg'
+        # {view}_{remove_bg}_{label_type}_{loss}
+        model_name = args.view.replace('_', '')
+        model_name += 'nobg_' if args.remove_bg else 'bg_'
+        model_name += args.label_type
+        model_name += args.loss
     # replace the last fc layer #
     fc_in_features = model.fc.in_features
     model.fc = nn.Sequential(
@@ -67,7 +77,10 @@ def train(args):
     model.to(device)
 
     # loss function and optimizer #
-    loss_fn = nn.MSELoss() #BCELoss()  # binary cross entropy
+    if args.loss=='mse':
+        loss_fn = nn.MSELoss()
+    elif args.loss=='bce':
+        loss_fn = BCELoss()  # binary cross entropy
     optimizer = torch.optim.Adam(model.parameters(), lr=lrate)
  
     # Hold the best model
@@ -129,13 +142,22 @@ def train(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    # Training
     parser.add_argument("--n_epoch", type=int, default=30)
     parser.add_argument("--batch_size", type=int, default=100)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--out", type=str, default='classification')
     parser.add_argument("--gpu", type=int, default=0)
-    parser.add_argument("--data_dir", type=str, default='/ssd/disk/ur5_tidying_data/pybullet_single_bg')
     parser.add_argument("--finetune", action="store_true")
+    parser.add_argument("--loss", type=str, default='mse')
+    # Dataset
+    parser.add_argument("--dataset", type=str, default='tabletop')
+    parser.add_argument("--data_dir", type=str, default='/ssd/disk/TableTidyingUp/dataset_template')
+    #parser.add_argument("--data_dir", type=str, default='/ssd/disk/ur5_tidying_data/pybullet_single_bg')
+    parser.add_argument("--remove_bg", action="store_true") # default: False
+    parser.add_argument("--label_type", type=str, default='linspace') # linspace / binary
+    parser.add_argument("--view", type=str, default='top') # top / front_top
+    # etc
     parser.add_argument("--model", type=str, default='resnet-18')
     args = parser.parse_args()
 
