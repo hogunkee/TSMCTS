@@ -3,7 +3,7 @@ import copy
 import os
 import numpy as np
 from tqdm import tqdm
-from data_loader import PybulletNpyDataset
+from data_loader import PybulletNpyDataset, TabletopTemplateDataset
 
 import torch
 import torch.nn as nn
@@ -27,15 +27,17 @@ def train(args):
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
     save_model = True #False
-    save_freq = 5
+    save_freq = args.save_freq
 
     # dataloader #
     print("Loading data...")
     if args.dataset=='tabletop':
         dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'train'), 
                         remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
-        test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test'), 
+        test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-seen_template'),
                         remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+        print('len(dataset):', len(dataset))
+        print('len(test_dataset):', len(test_dataset))
     elif args.dataset=='pybullet':
         dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'train'), num_duplication=5)
         test_dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'test'), num_duplication=5)
@@ -60,8 +62,8 @@ def train(args):
         model = resnet(pretrained=False)
         # {view}_{remove_bg}_{label_type}_{loss}
         model_name = args.view.replace('_', '')
-        model_name += 'nobg_' if args.remove_bg else 'bg_'
-        model_name += args.label_type
+        model_name += '_nobg_' if args.remove_bg else '_bg_'
+        model_name += args.label_type + '_'
         model_name += args.loss
     # replace the last fc layer #
     fc_in_features = model.fc.in_features
@@ -129,14 +131,14 @@ def train(args):
 
         # optionally save model
         if save_model and (epoch+1)%save_freq==0:
-            torch.save(model.state_dict(), os.path.join(save_dir, f"{model_name}_{epoch}.pth"))
-            print('saved model at ' + os.path.join(save_dir, f"{model_name}_{epoch}.pth"))
+            torch.save(model.state_dict(), os.path.join(save_dir, f"{model_name}-{epoch}.pth"))
+            print('saved model at ' + os.path.join(save_dir, f"{model_name}-{epoch}.pth"))
 
     # restore model and return best accuracy
     #model.load_state_dict(best_weights)
     if save_model:
-        torch.save(best_weights, os.path.join(save_dir, f"{model_name}_best.pth"))
-        print('saved model at ' + os.path.join(save_dir, f"{model_name}_best.pth"))
+        torch.save(best_weights, os.path.join(save_dir, f"{model_name}-best.pth"))
+        print('saved model at ' + os.path.join(save_dir, f"{model_name}-best.pth"))
     return best_accuracy
 
 
@@ -144,12 +146,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # Training
     parser.add_argument("--n_epoch", type=int, default=30)
-    parser.add_argument("--batch_size", type=int, default=100)
+    parser.add_argument("--batch_size", type=int, default=16) #100
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--out", type=str, default='classification')
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--finetune", action="store_true")
     parser.add_argument("--loss", type=str, default='mse')
+    parser.add_argument("--save_freq", type=int, default=1) #5
     # Dataset
     parser.add_argument("--dataset", type=str, default='tabletop')
     parser.add_argument("--data_dir", type=str, default='/ssd/disk/TableTidyingUp/dataset_template')

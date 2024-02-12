@@ -1,5 +1,7 @@
 import os
 import numpy as np
+from PIL import Image
+
 import torch
 from torch.utils.data import Dataset
 
@@ -50,7 +52,7 @@ class PybulletNpyDataset(Dataset):
         self.buff_i = buff_i
 
 class TabletopTemplateDataset(Dataset):
-    def __init__(self, data_dir='/ssd/disk/TabletopTidyingUp/dataset_template/train', remove_bg=True, label_type='linspace', view='top'):
+    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', remove_bg=True, label_type='linspace', view='top'):
         super().__init__()
         self.data_dir = data_dir
         self.remove_bg = remove_bg
@@ -74,15 +76,22 @@ class TabletopTemplateDataset(Dataset):
             for template in sorted(os.listdir(scene_path)):
                 template_path = os.path.join(scene_path, template)
                 trajectories = sorted(os.listdir(template_path))
-                num_traj = len(trajectories)
-                if self.label_type=='linspace':
-                    labels = np.linspace(1, 0, num_traj)
-                elif self.label_type=='binary':
-                    labels = [1] + [0] * (num_traj - 1)
-                for i, trajectory in enumerate(trajectories):
-                    data_path = os.path.join(template_path, trajectory)
-                    data_paths.append(data_path)
-                    data_labels.append(labels[i])
+                for trajectory in trajectories:
+                    trajectory_path = os.path.join(template_path, trajectory)
+                    steps = sorted(os.listdir(trajectory_path))
+                    num_steps = len(steps)
+                    if num_steps!=5:
+                        print('skip %s (%d steps)'%(trajectory_path, num_steps))
+                        continue
+                    if self.label_type == 'linspace':
+                        labels = np.linspace(1, 0, num_steps)
+                    elif self.label_type == 'binary':
+                        labels = [1] + [0] * (num_steps - 1)
+                    for i, step in enumerate(steps):
+                        data_path = os.path.join(trajectory_path, step)
+                        data_paths.append(data_path)
+                        data_labels.append(labels[i])
+
         return data_paths, data_labels
 
     def __getitem__(self, index):
@@ -92,12 +101,13 @@ class TabletopTemplateDataset(Dataset):
         if self.remove_bg:
             rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
             mask = np.load(os.path.join(data_path, 'seg_%s.npy'%self.view))
-            rgb = rgb * (mask!=0)[:, :, None]
+            rgb = rgb * (mask!=mask.max())[:, :, None]
         else:
             rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
 
+        rgb = np.transpose(rgb[:, :, :3], [2, 0, 1])
         rgb = torch.from_numpy(rgb).type(torch.float)
-        label = torch.from_numpy(data_label).type(torch.float)
+        label = torch.from_numpy(np.array([data_label])).type(torch.float)
         return rgb, label
 
     def __len__(self):
