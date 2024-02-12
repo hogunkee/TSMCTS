@@ -7,8 +7,6 @@ from utils import utils
 class TwinQ(nn.Module):
     def __init__(self, state_dim, crop_size=64, hidden_dim=256, n_hidden=2):
         super().__init__()
-        dims = [state_dim + action_dim, *([hidden_dim] * n_hidden), 1]
-        
         self.q1 = TransportSmall(
             in_channels=3, 
             n_rotations=1, #8 
