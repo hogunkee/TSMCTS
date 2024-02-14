@@ -98,7 +98,7 @@ class TransportSmall:
             output = output.detach().cpu().numpy()
         return output
 
-    def forward(self, in_img, p, softmax=True):
+    def forward(self, in_img, patch, softmax=True):
         """Forward pass."""
         img_unprocessed = np.pad(in_img, self.padding, mode='constant')
         input_data = self.preprocess(img_unprocessed.copy())
@@ -107,14 +107,27 @@ class TransportSmall:
             input_data, dtype=torch.float32
         ).to(self.device)
 
+        patch_unprocessed = np.pad(patch, self.padding, mode='constant')
+        patch_data = self.preprocess(patch_unprocessed.copy())
+        patch_data = Rearrange('h w c -> 1 h w c')(patch_data)
+        patch_tensor = torch.tensor(
+            patch_data, dtype=torch.float32
+        ).to(self.device)
+
         # Rotate crop.
-        pivot = list(np.array([p[1], p[0]]) + self.pad_size)
+        pivot = np.array([1, 1]) * self.crop_size//2 + self.pad_size
+        #pivot = list(np.array([p[1], p[0]]) + self.pad_size)
 
         # Crop before network (default for Transporters in CoRL submission).
         crop = apply_rotations_to_tensor(
-            in_tensor, self.n_rotations, center=pivot)
-        crop = crop[:, p[0]:(p[0] + self.crop_size),
-                    p[1]:(p[1] + self.crop_size), :]
+                patch_tensor, self.n_rotations, center=pivot
+            )
+        crop = crop[:, pivot[0]-self.crop_size//2:pivot[0]+self.crop_size//2,
+                    pivot[1]-self.crop_size//2:pivot[1]+self.crop_size//2, :]
+        # crop = apply_rotations_to_tensor(
+        #     in_tensor, self.n_rotations, center=pivot)
+        # crop = crop[:, p[0]:(p[0] + self.crop_size),
+        #             p[1]:(p[1] + self.crop_size), :]
 
         logits = self.model_query(in_tensor)
         kernel_raw = self.model_key(crop)
@@ -134,8 +147,8 @@ class TransportSmall:
 
         return self.correlate(logits, kernel, softmax)
 
-    def train_block(self, in_img, p, q, theta):
-        output = self.forward(in_img, p, softmax=False)
+    def train_block(self, in_img, patch, q, theta):
+        output = self.forward(in_img, patch, softmax=False)
 
         itheta = theta / (2 * np.pi / self.n_rotations)
         itheta = np.int32(np.round(itheta)) % self.n_rotations
@@ -155,12 +168,12 @@ class TransportSmall:
 
         return loss
 
-    def train(self, in_img, p, q, theta):
-        """Transport pixel p to pixel q.
+    def train(self, in_img, patch, q, theta):
+        """Transport patch to pixel q.
 
         Args:
           in_img: input image.
-          p: pixel (y, x)
+          patch: patch image
           q: pixel (y, x)
           theta: rotation label in radians.
           backprop: True if backpropagating gradients.
@@ -174,7 +187,7 @@ class TransportSmall:
         self.optimizer_query.zero_grad()
         self.optimizer_key.zero_grad()
 
-        loss = self.train_block(in_img, p, q, theta)
+        loss = self.train_block(in_img, patch, q, theta)
         loss.backward()
         self.optimizer_query.step()
         self.optimizer_key.step()
@@ -183,12 +196,12 @@ class TransportSmall:
         self.iters += 1
         return np.float32(loss.detach().cpu().numpy())
 
-    def test(self, in_img, p, q, theta):
+    def test(self, in_img, patch, q, theta):
         """Test."""
         self.eval_mode()
 
         with torch.no_grad():
-            loss = self.train_block(in_img, p, q, theta)
+            loss = self.train_block(in_img, patch, q, theta)
 
         self.iters += 1
         return np.float32(loss.detach().cpu().numpy())

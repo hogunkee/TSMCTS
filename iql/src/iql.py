@@ -34,14 +34,15 @@ class ImplicitQLearning(nn.Module):
 
     def update(self, observations, actions, next_observations, rewards, terminals):
         with torch.no_grad():
-            target_q = self.q_target(observations, actions)
+            target_q_values = self.q_target(observations)
+            target_q_a_values = target_q_values.gather(1, actions)
             next_v = self.vf(next_observations)
 
         # v, next_v = compute_batched(self.vf, [observations, next_observations])
 
         # Update value function
         v = self.vf(observations)
-        adv = target_q - v
+        adv = target_q_a_values - v
         v_loss = asymmetric_l2_loss(adv, self.tau)
         self.v_optimizer.zero_grad(set_to_none=True)
         v_loss.backward()
@@ -49,8 +50,11 @@ class ImplicitQLearning(nn.Module):
 
         # Update Q function
         targets = rewards + (1. - terminals.float()) * self.discount * next_v.detach()
-        qs = self.qf.both(observations, actions)
-        q_loss = sum(F.mse_loss(q, targets) for q in qs) / len(qs)
+        q1_values, q2_values = self.qf.both(observations)
+        q1_a_values = q1_values.gather(1, actions)
+        q2_a_values = q2_values.gather(1, actions)
+        #qs = qs.gather(1, actions.unsqueeze(1).expand(-1, qs.size(1)))
+        q_loss = (F.mse_loss(q1_a_values, targets) + F.mse_loss(q2_a_values, targets)) / 2
         self.q_optimizer.zero_grad(set_to_none=True)
         q_loss.backward()
         self.q_optimizer.step()
@@ -60,15 +64,17 @@ class ImplicitQLearning(nn.Module):
 
         # Update policy
         exp_adv = torch.exp(self.beta * adv.detach()).clamp(max=EXP_ADV_MAX)
-        policy_out = self.policy(observations)
-        if isinstance(policy_out, torch.distributions.Distribution):
-            bc_losses = -policy_out.log_prob(actions)
-        elif torch.is_tensor(policy_out):
-            assert policy_out.shape == actions.shape
-            bc_losses = torch.sum((policy_out - actions)**2, dim=1)
-        else:
-            raise NotImplementedError
+        _, _, log_action_probs = self.policy(observations)
+        bc_losses = -log_action_probs.gather(1, actions)
         policy_loss = torch.mean(exp_adv * bc_losses)
+        # if isinstance(policy_out, torch.distributions.Distribution):
+        #     bc_losses = -policy_out.log_prob(actions)
+        # elif torch.is_tensor(policy_out):
+        #     assert policy_out.shape == actions.shape
+        #     bc_losses = torch.sum((policy_out - actions)**2, dim=1)
+        # else:
+        #     raise NotImplementedError
+        # policy_loss = torch.mean(exp_adv * bc_losses)
         self.policy_optimizer.zero_grad(set_to_none=True)
         policy_loss.backward()
         self.policy_optimizer.step()
