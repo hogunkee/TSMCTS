@@ -348,7 +348,7 @@ class ResNet_small(nn.Module):
             self.block_cutoff_early.apply(init_xavier_weights)
 
         self.block_full = nn.Sequential(
-            ConvBlock(64, 3, [64, 64, 64], stride=1),
+            ConvBlock(64, 3, [64, 64, 64], stride=2),
             IdentityBlock(64, 3, [64, 64, 64]),
 
             ConvBlock(64, 3, [64, 64, 64], stride=2),
@@ -359,12 +359,12 @@ class ResNet_small(nn.Module):
 
             # nn.Upsample(scale_factor=2, mode='bilinear'),
 
-            ConvBlock(64, 3, [64, 64, 64], stride=1),
+            ConvBlock(64, 3, [64, 64, 64], stride=3),
             IdentityBlock(64, 3, [64, 64, 64]),
 
-            nn.Upsample(scale_factor=2, mode='bilinear'),
+            #nn.Upsample(scale_factor=2, mode='bilinear'),
 
-            ConvBlock(64, 3, [16, 16, output_dim], stride=1, activation=False),
+            ConvBlock(64, 3, [16, 16, output_dim], stride=3, activation=False),
             IdentityBlock(output_dim, 3, [
                           16, 16, output_dim], activation=False),
 

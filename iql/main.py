@@ -1,16 +1,17 @@
 from pathlib import Path
 
-import gym
-import d4rl
 import numpy as np
 import torch
-from tqdm import trange
+from tqdm import tqdm
+
+from custom_dataset import TabletopOfflineDataset
+from torch.utils.data import DataLoader
 
 from src.iql import ImplicitQLearning
-from src.policy import GaussianPolicy, DeterministicPolicy
+from src.policy import DiscretePolicy, DeterministicPolicy
 from src.value_functions import TwinQ, ValueFunction
 from src.util import return_range, set_seed, Log, sample_batch, torchify, evaluate_policy
-
+from src.util import DEFAULT_DEVICE
 
 def get_env_and_dataset(log, env_name, max_episode_steps):
     env = gym.make(env_name)
@@ -32,45 +33,47 @@ def get_env_and_dataset(log, env_name, max_episode_steps):
 
 def main(args):
     torch.set_num_threads(1)
-    log = Log(Path(args.log_dir)/args.env_name, vars(args))
+    log = Log(Path(args.log_dir), vars(args))
     log(f'Log dir: {log.dir}')
 
-    env, dataset = get_env_and_dataset(log, args.env_name, args.max_episode_steps)
-    obs_dim = dataset['observations'].shape[1]
-    act_dim = dataset['actions'].shape[1]   # this assume continuous actions
-    set_seed(args.seed, env=env)
+    #env, dataset = get_env_and_dataset(log, args.env_name, args.max_episode_steps)
+    dataset = TabletopOfflineDataset(data_dir=args.data_dir, crop_size=args.crop_size, view='top')
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+    set_seed(args.seed)
 
     if args.deterministic_policy:
-        policy = DeterministicPolicy(obs_dim, act_dim, hidden_dim=args.hidden_dim, n_hidden=args.n_hidden)
+        policy = DeterministicPolicy(crop_size=args.crop_size)
     else:
-        policy = GaussianPolicy(obs_dim, act_dim, hidden_dim=args.hidden_dim, n_hidden=args.n_hidden)
-    def eval_policy():
-        eval_returns = np.array([evaluate_policy(env, policy, args.max_episode_steps) \
-                                 for _ in range(args.n_eval_episodes)])
-        normalized_returns = d4rl.get_normalized_score(args.env_name, eval_returns) * 100.0
-        log.row({
-            'return mean': eval_returns.mean(),
-            'return std': eval_returns.std(),
-            'normalized return mean': normalized_returns.mean(),
-            'normalized return std': normalized_returns.std(),
-        })
+        policy = DiscretePolicy(crop_size=args.crop_size)
 
     iql = ImplicitQLearning(
-        qf=TwinQ(obs_dim, act_dim, hidden_dim=args.hidden_dim, n_hidden=args.n_hidden),
-        vf=ValueFunction(obs_dim, hidden_dim=args.hidden_dim, n_hidden=args.n_hidden),
+        qf=TwinQ(crop_size=args.crop_size),
+        vf=ValueFunction(hidden_dim=args.hidden_dim),
         policy=policy,
-        optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.learning_rate),
-        max_steps=args.n_steps,
+        v_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.v_learning_rate),
+        q_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.q_learning_rate),
+        policy_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.policy_learning_rate),
+        max_steps=args.n_epochs * len(dataloader) // args.batch_size,
         tau=args.tau,
         beta=args.beta,
         alpha=args.alpha,
         discount=args.discount
     )
-
-    for step in trange(args.n_steps):
-        iql.update(**sample_batch(dataset, args.batch_size))
-        if (step+1) % args.eval_period == 0:
-            eval_policy()
+    torch.autograd.set_detect_anomaly(True)
+    for epoch in range(args.n_epochs):
+        with tqdm(dataloader) as bar:
+            bar.set_description(f'Epoch {epoch}')
+            for batch in bar:
+                images = batch['image'].to(torch.float32).to(DEFAULT_DEVICE)
+                patches = batch['patch'].to(torch.float32).to(DEFAULT_DEVICE)
+                actions = batch['action'].to(DEFAULT_DEVICE)
+                next_images = batch['next_image'].to(torch.float32).to(DEFAULT_DEVICE)
+                rewards = batch['reward'].to(torch.float32).to(DEFAULT_DEVICE)
+                terminals = batch['terminal'].to(DEFAULT_DEVICE)
+                observations = [images, patches]
+                next_observations = [next_images, None]
+                losses = iql.update(observations, actions, next_observations, rewards, terminals)
+                bar.set_postfix(losses)
 
     torch.save(iql.state_dict(), log.dir/'final.pt')
     log.close()
@@ -79,15 +82,18 @@ def main(args):
 if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('--env-name', required=True)
-    parser.add_argument('--log-dir', required=True)
+    parser.add_argument('--data-dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/train')
+    parser.add_argument('--log-dir', type=str, default='logs')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--discount', type=float, default=0.99)
+    parser.add_argument('--crop-size', type=int, default=160)
     parser.add_argument('--hidden-dim', type=int, default=256)
     parser.add_argument('--n-hidden', type=int, default=2)
-    parser.add_argument('--n-steps', type=int, default=10**6)
-    parser.add_argument('--batch-size', type=int, default=256)
-    parser.add_argument('--learning-rate', type=float, default=3e-4)
+    parser.add_argument('--n-epochs', type=int, default=10)
+    parser.add_argument('--batch-size', type=int, default=1)
+    parser.add_argument('--v-learning-rate', type=float, default=1e-4)
+    parser.add_argument('--q-learning-rate', type=float, default=1e-5)
+    parser.add_argument('--policy-learning-rate', type=float, default=1e-6)
     parser.add_argument('--alpha', type=float, default=0.005)
     parser.add_argument('--tau', type=float, default=0.7)
     parser.add_argument('--beta', type=float, default=3.0)

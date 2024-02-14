@@ -74,7 +74,10 @@ class Renderer(object):
                 ] = self.rgb[
                             max(0, yMin): min(self.imageSize[0], yMax),
                             max(0, xMin): min(self.imageSize[1], xMax),
-                            :3]
+                            :3] * mask[
+                                    max(0, yMin): min(self.imageSize[0], yMax),
+                                    max(0, xMin): min(self.imageSize[1], xMax)
+                                    ][:, :, None]
             # objPatch[max(0, -yMin): 2*self.imageSize[0]-yMax, max(0, -xMin): 2*self.imageSize[1]-xMax] = self.rgb[max(0, yMin):yMax, max(0, xMin):xMax, :3]
 
             objMask = np.zeros(self.cropSize)

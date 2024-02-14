@@ -12,15 +12,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 
-from models.resnet import ResNet43_8s, ResNet_small
-from utils import utils, MeanMetrics, to_device
-from utils.text import bold
-from utils.utils import apply_rotations_to_tensor
+#from src.models.resnet import ResNet43_8s, ResNet_small
+from src.utils import utils, MeanMetrics, to_device
+from src.utils.text import bold
+from src.utils.utils import apply_rotations_to_tensor
+from src.util import resnet_strides
 
 
-class TransportSmall:
+class TransportSmall(nn.Module):
     """Transport module."""
     def __init__(self, in_channels, n_rotations, crop_size, preprocess, verbose=False, name="Transport"):
+        super().__init__()
         """Transport module for placing.
 
         Args:
@@ -45,8 +47,13 @@ class TransportSmall:
             self.kernel_dim = 3
 
         # 2 fully convolutional ResNets with 57 layers and 16-stride
-        self.model_query = ResNet_small(in_channels, self.output_dim)
-        self.model_key = ResNet_small(in_channels, self.kernel_dim)
+        # self.model_query = ResNet_small(in_channels, self.output_dim)
+        # self.model_key = ResNet_small(in_channels, self.kernel_dim)
+
+        self.model_query = resnet_strides(num_blocks=4, in_channels=3, out_channels=32, hidden_dim=16,
+                                          output_activation=None, strides=[2, 2, 3, 3])
+        self.model_key = resnet_strides(num_blocks=4, in_channels=3, out_channels=32, hidden_dim=16,
+                                        output_activation=None, strides=[2, 2, 3, 3])
 
         self.device = to_device(
             [self.model_query, self.model_key], name, verbose=verbose)
@@ -80,57 +87,72 @@ class TransportSmall:
 
     def correlate(self, in0, in1, softmax):
         """Correlate two input tensors."""
-        in0 = Rearrange('b h w c -> b c h w')(in0)
-        in1 = Rearrange('b h w c -> b c h w')(in1)
+        # in0 = Rearrange('b h w c -> b c h w')(in0)
+        # in1 = Rearrange('b h w c -> b c h w')(in1)
 
-        output = F.conv2d(in0, in1)
+        output = F.conv2d(in0, in1, padding='same')
+        # outputs = []
+        # for b in range(in0.shape[0]):
+        #     in0_b = in0[b:b+1, ...]
+        #     in1_b = in1[b:b+1, ...]
+        #     output_b = F.conv2d(in0_b, in1_b, padding='same')
+        #     outputs.append(output_b)
+        # output = torch.cat(outputs, dim=0)
 
         if softmax:
             output_shape = output.shape
             output = Rearrange('b c h w -> b (c h w)')(output)
+            #output = output.clamp(min=1e-4)
             output = self.softmax(output)
             output = Rearrange(
                 'b (c h w) -> b h w c',
                 c=output_shape[1],
                 h=output_shape[2],
                 w=output_shape[3])(output)
-            output = output[0, ...]
-            output = output.detach().cpu().numpy()
-        return output
+            #output = output[0, ...]
+            #output = output.detach().cpu().numpy()
+        else:
+            output = Rearrange('b c h w -> b h w c')(output)
+        return output[:, :, :, 0]
 
-    def forward(self, in_img, patch, softmax=True):
-        """Forward pass."""
-        img_unprocessed = np.pad(in_img, self.padding, mode='constant')
-        input_data = self.preprocess(img_unprocessed.copy())
-        input_data = Rearrange('h w c -> 1 h w c')(input_data)
-        in_tensor = torch.tensor(
-            input_data, dtype=torch.float32
-        ).to(self.device)
-
-        patch_unprocessed = np.pad(patch, self.padding, mode='constant')
-        patch_data = self.preprocess(patch_unprocessed.copy())
-        patch_data = Rearrange('h w c -> 1 h w c')(patch_data)
-        patch_tensor = torch.tensor(
-            patch_data, dtype=torch.float32
-        ).to(self.device)
-
-        # Rotate crop.
-        pivot = np.array([1, 1]) * self.crop_size//2 + self.pad_size
-        #pivot = list(np.array([p[1], p[0]]) + self.pad_size)
-
-        # Crop before network (default for Transporters in CoRL submission).
-        crop = apply_rotations_to_tensor(
-                patch_tensor, self.n_rotations, center=pivot
-            )
-        crop = crop[:, pivot[0]-self.crop_size//2:pivot[0]+self.crop_size//2,
-                    pivot[1]-self.crop_size//2:pivot[1]+self.crop_size//2, :]
+    def forward(self, in_img, patch, softmax=False):
+        # """Forward pass."""
+        # img_unprocessed = np.pad(in_img, self.padding, mode='constant')
+        # input_data = self.preprocess(img_unprocessed.copy())
+        # input_data = Rearrange('h w c -> 1 h w c')(input_data)
+        # in_tensor = torch.tensor(
+        #     input_data, dtype=torch.float32
+        # ).to(self.device)
+        #
+        # patch_unprocessed = np.pad(patch, self.padding, mode='constant')
+        # patch_data = self.preprocess(patch_unprocessed.copy())
+        # patch_data = Rearrange('h w c -> 1 h w c')(patch_data)
+        # patch_tensor = torch.tensor(
+        #     patch_data, dtype=torch.float32
+        # ).to(self.device)
+        #
+        # # Rotate crop.
+        # pivot = np.array([1, 1]) * self.crop_size//2 + self.pad_size
+        # #pivot = list(np.array([p[1], p[0]]) + self.pad_size)
+        #
+        # # Crop before network (default for Transporters in CoRL submission).
         # crop = apply_rotations_to_tensor(
-        #     in_tensor, self.n_rotations, center=pivot)
-        # crop = crop[:, p[0]:(p[0] + self.crop_size),
-        #             p[1]:(p[1] + self.crop_size), :]
-
+        #         patch_tensor, self.n_rotations, center=pivot
+        #     )
+        # crop = crop[:, pivot[0]-self.crop_size//2:pivot[0]+self.crop_size//2,
+        #             pivot[1]-self.crop_size//2:pivot[1]+self.crop_size//2, :]
+        # # crop = apply_rotations_to_tensor(
+        # #     in_tensor, self.n_rotations, center=pivot)
+        # # crop = crop[:, p[0]:(p[0] + self.crop_size),
+        # #             p[1]:(p[1] + self.crop_size), :]
+        in_tensor = self.preprocess(in_img).to(torch.float32).to(self.device)
+        crop = self.preprocess(patch).to(torch.float32).to(self.device)
+        in_tensor = Rearrange('b h w c -> b c h w')(in_tensor)
+        crop = Rearrange('b h w c -> b c h w')(crop)
+        # in_tensor = torch.tensor(in_img, dtype=torch.float32).to(self.device)
+        # crop = torch.tensor(patch, dtype=torch.float32).to(self.device)
         logits = self.model_query(in_tensor)
-        kernel_raw = self.model_key(crop)
+        kernel = self.model_key(crop)
 
         # Crop after network (for receptive field, and more elegant).
         # logits, crop = self.model([in_tensor, in_tensor])
@@ -142,8 +164,8 @@ class TransportSmall:
 
         # Obtain kernels for cross-convolution.
         # Padding of one on right and bottom of (h, w)
-        kernel_paddings = nn.ConstantPad2d((0, 0, 0, 1, 0, 1, 0, 0), 0)
-        kernel = kernel_paddings(kernel_raw)
+        # kernel_paddings = nn.ConstantPad2d((0, 0, 0, 1, 0, 1, 0, 0), 0)
+        # kernel = kernel_paddings(kernel_raw)
 
         return self.correlate(logits, kernel, softmax)
 

@@ -44,6 +44,16 @@ def resnet(num_blocks, in_channels, out_channels, hidden_dim=16, output_activati
     layers.append(block3x3(hidden_dim, out_channels, stride, activation=output_activation))
     return nn.Sequential(*layers)
 
+def resnet_strides(num_blocks, in_channels, out_channels, hidden_dim=16, output_activation=None, strides=[]):
+    layers = []
+    stride = strides[0]
+    layers.append(block3x3(in_channels, hidden_dim, stride, 'relu'))
+    for i in range(1, num_blocks-1):
+        stride = strides[i]
+        layers.append(block3x3(hidden_dim, 2*hidden_dim, stride, 'relu'))
+        hidden_dim = 2*hidden_dim
+    layers.append(block3x3(hidden_dim, out_channels, stride, activation=output_activation))
+    return nn.Sequential(*layers)
 
 def mlp(dims, activation=nn.ReLU, output_activation=None, squeeze_output=False):
     n_dims = len(dims)

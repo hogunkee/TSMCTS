@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
 from torch.distributions.categorical import Categorical
-from models.transport_small import TransportSmall
+from .models.transport_small import TransportSmall
+from src.utils.utils import preprocess
 
 from .util import mlp
 
@@ -11,20 +12,21 @@ LOG_STD_MIN = -5.0
 LOG_STD_MAX = 2.0
 
 class DiscretePolicy(nn.Module):
-    def __init__(self, state_dim, crop_size=64, hidden_dim=256, n_hidden=2):
+    def __init__(self, crop_size=64):
         super().__init__()
         self.q = TransportSmall(
             in_channels=3, 
             n_rotations=1, #8 
             crop_size=crop_size, 
-            preprocess=utils.preprocess,
+            preprocess=preprocess,
             verbose=False,
             name="Policy-Q")
 
     def forward(self, obs):
         state, patch = obs
-        action_probs = self.q(state, patch)
-        B, H, W, C = action_probs.size()
+        action_probs = self.q(state, patch, softmax=True)
+        B, H, W = action_probs.size()
+        C = 1
         action_probs_flatten = action_probs.view(B, -1)
         dist = Categorical(action_probs_flatten)
         actions_flatten = dist.sample()
@@ -36,9 +38,11 @@ class DiscretePolicy(nn.Module):
         # actions = dist.sample().to(state.device)
 
         # Have to deal with situation of 0.0 probabilities because we can't do log 0
-        z = action_probs == 0.0
-        z = z.float() * 1e-8
-        log_action_probs = torch.log(action_probs + z)
+        # z = action_probs == 0.0
+        # z = z.float() * 1e-8
+        action_probs = action_probs.clamp(min=1e-8, max=1.0)
+        log_action_probs = torch.log(action_probs) # + z)
+
         return actions, action_probs, log_action_probs
     
     def act(self, obs, deterministic=False, enable_grad=False):
@@ -46,7 +50,7 @@ class DiscretePolicy(nn.Module):
             return self(obs[0], obs[1])
 
 class DeterministicPolicy(nn.Module):
-    def __init__(self, state_dim, crop_size=64, hidden_dim=256, n_hidden=2):
+    def __init__(self, crop_size=64):
         super().__init__()
         self.q = TransportSmall(
             in_channels=3, 
@@ -58,7 +62,7 @@ class DeterministicPolicy(nn.Module):
 
     def forward(self, obs):
         state, patch = obs
-        action_probs = self.q(state, patch)
+        action_probs = self.q(state, patch, softmax=True)
         B, H, W, C = action_probs.size()
         action_probs_flatten = action_probs.view(B, -1)
         actions_flatten = torch.argmax(action_probs_flatten, dim=-1)
