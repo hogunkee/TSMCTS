@@ -23,8 +23,8 @@ class TwinQ(nn.Module):
             name="Transport-Q2")
 
     def both(self, obs):
-        state, patch = obs
-        return self.q1(state, patch), self.q2(state, patch)
+        _, state_q, patch = obs
+        return self.q1(state_q, patch), self.q2(state_q, patch)
 
     def forward(self, obs):
         q1, q2 = self.both(obs)
@@ -47,8 +47,9 @@ class ValueFunction(nn.Module):
         self.fc2 = nn.Linear(128, 1)
 
     def forward(self, obs):
-        state = obs[0].permute(0, 3, 1, 2)
-        h = self.v(state)
+        state_v, _, _ = obs
+        state_v = state_v.permute(0, 3, 1, 2)
+        h = self.v(state_v)
         h = h.reshape(-1, 4 * 23 * 30)
         h = torch.relu(self.fc1(h))
         out = self.fc2(h)

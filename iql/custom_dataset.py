@@ -92,7 +92,8 @@ class TabletopOfflineDataset(Dataset):
         image_after_pick, patch = self.extract_patch(image, seg, moved_object)
 
         data = {
-                'image': image_after_pick/255.,
+                'image': image/255.,
+                'image_after_pick': image_after_pick/255.,
                 'patch': patch/255.,
                 'action': np.array(action),
                 'next_image': next_image/255.,
@@ -122,9 +123,9 @@ class TabletopOfflineDataset(Dataset):
         action = np.round([py, px]).astype(int).tolist()
 
         # convert action
-        # 360 x 480 -> 10 x 14
+        # 360 x 480 -> 10 x 13
         action[0] = int(action[0]/(360/10) - 0.5)
-        action[1] = int(action[1]/(480/14) - 0.5)
+        action[1] = int(action[1]/(480/13) - 0.5)
         return action
 
     def extract_patch(self, image, seg, moved_object):

@@ -10,10 +10,8 @@ from .util import DEFAULT_DEVICE, compute_batched, update_exponential_moving_ave
 
 EXP_ADV_MAX = 100.
 
-
 def asymmetric_l2_loss(u, tau):
     return torch.mean(torch.abs(tau - (u < 0).float()) * u**2)
-
 
 class ImplicitQLearning(nn.Module):
     def __init__(self, qf, vf, policy, v_optimizer_factory, q_optimizer_factory, policy_optimizer_factory,
@@ -38,14 +36,7 @@ class ImplicitQLearning(nn.Module):
             target_q_values = self.q_target(observations)
             target_q_a_values = target_q_values[torch.arange(B), actions[:, 0], actions[:, 1]]
             target_q_a_values = target_q_a_values.view(-1, 1)
-            # target_q_a_values = []
-            # for b, a in enumerate(actions):
-            #     target_q_a_values.append(target_q_values[b, a[0], a[1]])
-            # target_q_a_values = torch.stack(target_q_a_values).view(-1, 1)
-            #target_q_a_values = target_q_values.gather(1, actions)
             next_v = self.vf(next_observations)
-
-        # v, next_v = compute_batched(self.vf, [observations, next_observations])
 
         # Update value function
         v = self.vf(observations)
@@ -58,13 +49,6 @@ class ImplicitQLearning(nn.Module):
         # Update Q function
         targets = rewards.view(-1, 1) + (1. - terminals.float().view(-1, 1)) * self.discount * next_v.detach()
         q1_values, q2_values = self.qf.both(observations)
-        # q1_a_values = []
-        # q2_a_values = []
-        # for b, a in enumerate(actions):
-        #     q1_a_values.append(q1_values[b, a[0], a[1]])
-        #     q2_a_values.append(q2_values[b, a[0], a[1]])
-        # q1_a_values = torch.stack(q1_a_values).view(-1, 1)
-        # q2_a_values = torch.stack(q2_a_values).view(-1, 1)
         q1_a_values = q1_values[torch.arange(B), actions[:, 0], actions[:, 1]]
         q2_a_values = q2_values[torch.arange(B), actions[:, 0], actions[:, 1]]
         q1_a_values = q1_a_values.view(-1, 1)

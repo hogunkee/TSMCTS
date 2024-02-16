@@ -13,6 +13,9 @@ from src.value_functions import TwinQ, ValueFunction
 from src.util import return_range, set_seed, Log, sample_batch, torchify, evaluate_policy
 from src.util import DEFAULT_DEVICE
 
+import datetime
+import wandb
+
 def get_env_and_dataset(log, env_name, max_episode_steps):
     env = gym.make(env_name)
     dataset = d4rl.qlearning_dataset(env)
@@ -60,20 +63,25 @@ def main(args):
         discount=args.discount
     )
     torch.autograd.set_detect_anomaly(True)
+    count_steps = 0
     for epoch in range(args.n_epochs):
         with tqdm(dataloader) as bar:
             bar.set_description(f'Epoch {epoch}')
             for batch in bar:
                 images = batch['image'].to(torch.float32).to(DEFAULT_DEVICE)
+                images_after_pick = batch['image_after_pick'].to(torch.float32).to(DEFAULT_DEVICE)
                 patches = batch['patch'].to(torch.float32).to(DEFAULT_DEVICE)
                 actions = batch['action'].to(DEFAULT_DEVICE)
                 next_images = batch['next_image'].to(torch.float32).to(DEFAULT_DEVICE)
                 rewards = batch['reward'].to(torch.float32).to(DEFAULT_DEVICE)
                 terminals = batch['terminal'].to(DEFAULT_DEVICE)
-                observations = [images, patches]
-                next_observations = [next_images, None]
+                observations = [images, images_after_pick, patches]
+                next_observations = [next_images, None, None]
                 losses = iql.update(observations, actions, next_observations, rewards, terminals)
                 bar.set_postfix(losses)
+                if not args.wandb_off:
+                    wandb.log(losses, count_steps)
+                count_steps += 1
 
     torch.save(iql.state_dict(), log.dir/'final.pt')
     log.close()
@@ -92,8 +100,8 @@ if __name__ == '__main__':
     parser.add_argument('--n-epochs', type=int, default=10)
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--v-learning-rate', type=float, default=1e-4)
-    parser.add_argument('--q-learning-rate', type=float, default=1e-5)
-    parser.add_argument('--policy-learning-rate', type=float, default=1e-6)
+    parser.add_argument('--q-learning-rate', type=float, default=1e-4)
+    parser.add_argument('--policy-learning-rate', type=float, default=1e-4)
     parser.add_argument('--alpha', type=float, default=0.005)
     parser.add_argument('--tau', type=float, default=0.7)
     parser.add_argument('--beta', type=float, default=3.0)
@@ -101,4 +109,15 @@ if __name__ == '__main__':
     parser.add_argument('--eval-period', type=int, default=5000)
     parser.add_argument('--n-eval-episodes', type=int, default=10)
     parser.add_argument('--max-episode-steps', type=int, default=1000)
-    main(parser.parse_args())
+    parser.add_argument('--wandb-off', action='store_true')
+    args = parser.parse_args()
+
+    if not args.wandb_off:
+        now = datetime.datetime.now()
+        log_name = now.strftime("%m%d_%H%M%S")
+        wandb.init(project="IQL")
+        wandb.config.update(parser.parse_args())
+        wandb.run.name = log_name
+        wandb.run.save()
+
+    main(args)

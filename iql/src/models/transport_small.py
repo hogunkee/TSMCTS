@@ -16,7 +16,7 @@ from einops.layers.torch import Rearrange
 from src.utils import utils, MeanMetrics, to_device
 from src.utils.text import bold
 from src.utils.utils import apply_rotations_to_tensor
-from src.util import resnet_strides
+from src.util import resnet #_strides
 
 
 class TransportSmall(nn.Module):
@@ -50,10 +50,55 @@ class TransportSmall(nn.Module):
         # self.model_query = ResNet_small(in_channels, self.output_dim)
         # self.model_key = ResNet_small(in_channels, self.kernel_dim)
 
-        self.model_query = resnet_strides(num_blocks=4, in_channels=3, out_channels=32, hidden_dim=16,
-                                          output_activation=None, strides=[2, 2, 3, 3])
-        self.model_key = resnet_strides(num_blocks=4, in_channels=3, out_channels=32, hidden_dim=16,
-                                        output_activation=None, strides=[2, 2, 3, 3])
+        hidden_dim = 16
+        self.model_query = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(hidden_dim),
+            nn.ReLU(),
+            nn.Conv2d(hidden_dim, 2*hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(2*hidden_dim),
+            nn.ReLU(),
+            nn.Conv2d(2*hidden_dim, 4*hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(4*hidden_dim),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=3, padding=1),
+            nn.Conv2d(4*hidden_dim, 4*hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(4*hidden_dim),
+            nn.ReLU(),
+            nn.Conv2d(4*hidden_dim, 4 * hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(4 * hidden_dim),
+            nn.ReLU(),
+            nn.Conv2d(4 * hidden_dim, 4 * hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(4 * hidden_dim),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=3, padding=1),
+        )
+        self.model_key = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(hidden_dim),
+            nn.ReLU(),
+            nn.Conv2d(hidden_dim, 2 * hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(2 * hidden_dim),
+            nn.ReLU(),
+            nn.Conv2d(2 * hidden_dim, 4 * hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(4 * hidden_dim),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=3, padding=1),
+            nn.Conv2d(4 * hidden_dim, 4 * hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(4 * hidden_dim),
+            nn.ReLU(),
+            nn.Conv2d(4*hidden_dim, 4 * hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(4 * hidden_dim),
+            nn.ReLU(),
+            nn.Conv2d(4 * hidden_dim, 4 * hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(4 * hidden_dim),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=3, padding=1),
+        )
+        # self.model_query = resnet(num_blocks=4, in_channels=3, out_channels=32, hidden_dim=16,
+        #                                   output_activation=None)#, strides=[2, 2, 3, 3])
+        # self.model_key = resnet(num_blocks=4, in_channels=3, out_channels=32, hidden_dim=16,
+        #                                 output_activation=None)#, strides=[2, 2, 3, 3])
 
         self.device = to_device(
             [self.model_query, self.model_key], name, verbose=verbose)
@@ -153,6 +198,8 @@ class TransportSmall(nn.Module):
         # crop = torch.tensor(patch, dtype=torch.float32).to(self.device)
         logits = self.model_query(in_tensor)
         kernel = self.model_key(crop)
+        logits = F.interpolate(logits, scale_factor=1/4, mode='bilinear')
+        kernel = F.interpolate(kernel, scale_factor=1/4, mode='bilinear')
 
         # Crop after network (for receptive field, and more elegant).
         # logits, crop = self.model([in_tensor, in_tensor])

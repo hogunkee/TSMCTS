@@ -23,8 +23,8 @@ class DiscretePolicy(nn.Module):
             name="Policy-Q")
 
     def forward(self, obs):
-        state, patch = obs
-        action_probs = self.q(state, patch, softmax=True)
+        _, state_q, patch = obs
+        action_probs = self.q(state_q, patch, softmax=True)
         B, H, W = action_probs.size()
         C = 1
         action_probs_flatten = action_probs.view(B, -1)
@@ -34,7 +34,7 @@ class DiscretePolicy(nn.Module):
         a1 = (actions_flatten % (W * C)) // C
         a2 = actions_flatten % C
         actions = torch.stack([a0, a1, a2], dim=-1)
-        actions = actions.to(state.device)
+        actions = actions.to(state_q.device)
         # actions = dist.sample().to(state.device)
 
         # Have to deal with situation of 0.0 probabilities because we can't do log 0
@@ -61,16 +61,17 @@ class DeterministicPolicy(nn.Module):
             name="Policy-Q")
 
     def forward(self, obs):
-        state, patch = obs
-        action_probs = self.q(state, patch, softmax=True)
-        B, H, W, C = action_probs.size()
+        _, state_q, patch = obs
+        action_probs = self.q(state_q, patch, softmax=True)
+        B, H, W = action_probs.size()
+        C = 1
         action_probs_flatten = action_probs.view(B, -1)
         actions_flatten = torch.argmax(action_probs_flatten, dim=-1)
         a0 = actions_flatten // (W * C)
         a1 = (actions_flatten % (W * C)) // C
         a2 = actions_flatten % C
         actions = torch.stack([a0, a1, a2], dim=-1)
-        actions = actions.to(state.device)
+        actions = actions.to(state_q.device)
 
         # Have to deal with situation of 0.0 probabilities because we can't do log 0
         z = action_probs == 0.0
