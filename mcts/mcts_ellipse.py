@@ -28,7 +28,9 @@ class Renderer(object):
         self.rgb = np.copy(rgbImage)
         self.objectPatches, self.objectMasks = self.getObjectPatches()
         self.segmap = np.copy(segmentation)
-        table = self.getTable(segmentation)
+        posMap = self.getTable(segmentation)
+        rotMap = np.zeros_like(table)
+        table = [posMap, rotMap]
         return table
 
     def getRatio(self):
@@ -57,8 +59,8 @@ class Renderer(object):
         return masks, centers
     
     def getObjectPatches(self):
-        objPatches = []
-        objMasks = []
+        objPatches = [[]]
+        objMasks = [[]]
         for o in range(self.numObjects):
             mask = self.masks[o]
             cy, cx = self.centers[o]
@@ -71,54 +73,56 @@ class Renderer(object):
             objPatch[
                 max(0, -yMin): max(0, -yMin) + min(self.imageSize[0], yMax) - max(0, yMin),
                 max(0, -xMin): max(0, -xMin) + min(self.imageSize[1], xMax) - max(0, xMin),
-                ] = self.rgb[
-                            max(0, yMin): min(self.imageSize[0], yMax),
-                            max(0, xMin): min(self.imageSize[1], xMax),
-                            :3] * mask[
-                                    max(0, yMin): min(self.imageSize[0], yMax),
-                                    max(0, xMin): min(self.imageSize[1], xMax)
-                                    ][:, :, None]
+            ] = self.rgb[
+                    max(0, yMin): min(self.imageSize[0], yMax),
+                    max(0, xMin): min(self.imageSize[1], xMax),
+                    :3
+                ] * mask[
+                        max(0, yMin): min(self.imageSize[0], yMax),
+                        max(0, xMin): min(self.imageSize[1], xMax)
+                    ][:, :, None]
             # objPatch[max(0, -yMin): 2*self.imageSize[0]-yMax, max(0, -xMin): 2*self.imageSize[1]-xMax] = self.rgb[max(0, yMin):yMax, max(0, xMin):xMax, :3]
 
             objMask = np.zeros(self.cropSize)
             objMask[
                 max(0, -yMin): max(0, -yMin) + min(self.imageSize[0], yMax) - max(0, yMin),
                 max(0, -xMin): max(0, -xMin) + min(self.imageSize[1], xMax) - max(0, xMin)
-                ] = mask[
-                        max(0, yMin): min(self.imageSize[0], yMax),
-                        max(0, xMin): min(self.imageSize[1], xMax)
-                        ]
+            ] = mask[
+                    max(0, yMin): min(self.imageSize[0], yMax),
+                    max(0, xMin): min(self.imageSize[1], xMax)
+                ]
             # plt.imshow(objPatch/255.)
             # plt.show()
-            objPatches.append(objPatch)
-            objMasks.append(objMask)
+            objPatches[0].append(objPatch)
+            objMasks[0].append(objMask)
         return objPatches, objMasks
 
     def getRGB(self, table, remove=None):
+        posMap, rotMap = table
         newRgb = np.zeros_like(np.array(self.rgb))[:, :, :3]
         for o in range(1, self.numObjects+1):
             if remove is not None:
                 if o==remove:
                     continue
-            if (table==o).any():
-                py, px = np.where(table==o)
-                if len(py)==0 or len(px)==0:
-                    continue
+            if (posMap==o).any():
+                py, px = np.where(posMap==o)
                 py, px = py[0], px[0]
                 ty, tx = np.array([py, px]) * self.ratio + self.offset
+                rot = rotMap[py, px]
             else:
                 ty, tx = self.centers[o-1]
+                rot = 0
             yMin = int(ty - self.cropSize[0] / 2)
             yMax = int(ty + self.cropSize[0] / 2)
             xMin = int(tx - self.cropSize[1] / 2)
             xMax = int(tx + self.cropSize[1] / 2)
             newRgb[
-                    max(0, yMin): min(self.imageSize[0], yMax),
-                    max(0, xMin): min(self.imageSize[1], xMax)
-            ] += (self.objectPatches[o - 1] * self.objectMasks[o - 1][:, :, None])[
-                                     max(0, -yMin): max(0, -yMin) + (min(self.imageSize[0], yMax) - max(0, yMin)),
-                                     max(0, -xMin): max(0, -xMin) + (min(self.imageSize[1], xMax) - max(0, xMin)),
-                                     ].astype(np.uint8)
+                max(0, yMin): min(self.imageSize[0], yMax),
+                max(0, xMin): min(self.imageSize[1], xMax)
+            ] += (self.objectPatches[rot][o-1] * self.objectMasks[rot][o-1][:, :, None])[
+                    max(0, -yMin): max(0, -yMin) + (min(self.imageSize[0], yMax) - max(0, yMin)),
+                    max(0, -xMin): max(0, -xMin) + (min(self.imageSize[1], xMax) - max(0, xMin)),
+                ].astype(np.uint8)
         # plt.imshow(newRgb)
         # plt.show()
         return np.array(newRgb)
@@ -150,10 +154,15 @@ class Node(object):
         self.actionCandidates = []
     
     def takeAction(self, move):
-        obj, py, px = move #self.convert_action(move)
-        newTable = copy.deepcopy(self.table)
-        newTable[newTable==obj] = 0
-        newTable[py, px] = obj
+        obj, py, px, rot = move #self.convert_action(move)
+        posMap, rotMap = self.table
+        newPosMap = copy.deepcopy(posMap)
+        newRotMap = copy.deepcopy(rotMap)
+        newPosMap[posMap==obj] = 0
+        newPosMap[py, px] = obj
+        newRotMap[posMap==obj] = 0
+        newRotMap[py, px] = rot
+        newTable = [newPosMap, newRotMap]
         return newTable
     
     def setActions(self, actionCandidates):
@@ -336,8 +345,8 @@ class MCTS(object):
                 nb = self.renderer.numObjects
                 th, tw = self.renderer.tableSize
                 allPossibleActions = np.array(np.meshgrid(
-                                    np.arange(nb), np.arange(th), np.arange(tw)
-                                    )).T.reshape(-1, 3)
+                                np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
+                                    )).T.reshape(-1, 4)
                 nextStates = []
                 for action in allPossibleActions:
                     nextState = self.renderer.getRGB(node.takeAction(action))
@@ -356,9 +365,9 @@ class MCTS(object):
                 nb = self.renderer.numObjects
                 th, tw = self.renderer.tableSize
                 allPossibleActions = np.array(np.meshgrid(
-                                    np.arange(1, nb+1), np.arange(th), np.arange(tw)
-                                    )).T.reshape(-1, 3)
-                allPossibleActions = [a for a in allPossibleActions if self.root.table[a[1], a[2]]==0]
+                                np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
+                                    )).T.reshape(-1, 4)
+                allPossibleActions = [a for a in allPossibleActions if self.root.table[0][a[1], a[2]]==0]
                 node.setActions(allPossibleActions)
             return node.actionCandidates
 
@@ -399,8 +408,8 @@ class MCTS(object):
         nb = self.renderer.numObjects
         th, tw = self.renderer.tableSize
         allPossibleActions = np.array(np.meshgrid(
-                            np.arange(nb), np.arange(th), np.arange(tw)
-                            )).T.reshape(-1, 3)
+                            np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
+                            )).T.reshape(-1, 4)
         states = [self.renderer.getRGB(node.table)]
         for action in allPossibleActions:
             newTable = node.takeAction(action)
@@ -430,8 +439,8 @@ class MCTS(object):
         nb = self.renderer.numObjects
         th, tw = self.renderer.tableSize
         allPossibleActions = np.array(np.meshgrid(
-                            np.arange(nb), np.arange(th), np.arange(tw)
-                            )).T.reshape(-1, 3)
+                            np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
+                            )).T.reshape(-1, 4)
         states = [self.renderer.getRGB(node.table)]
         while not self.isTerminal(node)[0]:
             try:
@@ -535,14 +544,16 @@ if __name__=='__main__':
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
+    outDir = 'data/mcts-test/'
+    os.makedirs(outDir, exist_ok=True)
     scenes = np.random.choice(len(dataset)//5, 50) * 5 + 4
     for sidx, dataIndex in enumerate(scenes):
         try:
             # setup logger
-            os.makedirs('data/mcts/scene-%d' % sidx, exist_ok=True)
+            os.makedirs(outDir+'scene-%d' % sidx, exist_ok=True)
             logger.handlers.clear()
             formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\n%(message)s')
-            file_handler = logging.FileHandler('data/mcts/scene-%d/mcts.log'%sidx)
+            file_handler = logging.FileHandler(outDir+'scene-%d/mcts.log'%sidx)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
 
@@ -554,7 +565,7 @@ if __name__=='__main__':
             # plt.imshow(initSeg)
             # plt.show()
             plt.imshow(initRgb)
-            plt.savefig('data/mcts/scene-%d/initial.png'%sidx)
+            plt.savefig(outDir+'scene-%d/initial.png'%sidx)
             initTable = searcher.reset(initRgb, initSeg)
             print(initTable)
             logger.info('initTable: %s' % initTable)
@@ -576,7 +587,7 @@ if __name__=='__main__':
                 logger.info("Best Child: \n %s"%nextTable)
                 tableRgb = renderer.getRGB(nextTable)
                 plt.imshow(tableRgb)
-                plt.savefig('data/mcts/scene-%d/iter_%d.png'%(sidx, step))
+                plt.savefig(outDir+'scene-%d/iter_%d.png'%(sidx, step))
                 #plt.show()
                 table = copy.deepcopy(nextTable)
                 terminal, reward = searcher.isTerminal(None, table, checkReward=True)
@@ -594,7 +605,7 @@ if __name__=='__main__':
                     logger.info("Score: %f"%reward)
                     logger.info(table)
                     plt.imshow(tableRgb)
-                    plt.savefig('data/mcts/scene-%d/final.png'%sidx)
+                    plt.savefig(outDir+'scene-%d/final.png'%sidx)
                     # plt.show()
                     break
         except KeyboardInterrupt:
