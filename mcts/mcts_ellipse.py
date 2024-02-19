@@ -115,7 +115,7 @@ class Renderer(object):
                 rect = cv2.minAreaRect(X)
                 phi = rect[2]
             for r in range(numRotations):
-                angle = (phi * 180 + r * 90) / np.pi
+                angle = phi / np.pi * 180 + r * 90
                 height, width = mask.shape[:2]
                 matrix = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
                 patch_rotated = cv2.warpAffine(patch, matrix, (width, height))
@@ -125,10 +125,11 @@ class Renderer(object):
 
         objectPatches = [objPatches] + rotatedObjPatches
         objectMasks = [objMasks] + rotatedObjMasks
-        for r in range(len(objectPatches)):
-            for o in range(len(objectPatches[r])):
-                plt.imshow(objectPatches[r][o]/255.)
-                plt.savefig('data/mcts-ellipse/%d_%d.png'%(r, o))
+        if False: # check patches
+            for r in range(len(objectPatches)):
+                for o in range(len(objectPatches[r])):
+                    plt.imshow(objectPatches[r][o]/255.)
+                    plt.savefig('data/mcts-ellipse/%d_%d.png'%(o, r))
         return objectPatches, objectMasks
 
     def getRGB(self, table, remove=None):
