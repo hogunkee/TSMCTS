@@ -100,8 +100,8 @@ class Renderer(object):
         return objPatches, objMasks
 
     def getRotatedPatches(self, objPatches, objMasks, numRotations=2):
-        rotatedObjPatches = [[]] * numRotations
-        rotatedObjMasks = [[]] * numRotations
+        rotatedObjPatches = [[] for _ in range(numRotations)]
+        rotatedObjMasks = [[] for _ in range(numRotations)]
         for o in range(len(objPatches)):
             patch = objPatches[o]
             mask = objMasks[o]
@@ -110,7 +110,6 @@ class Renderer(object):
             X = np.array(list(zip(px, py)))
             reg = LsqEllipse().fit(X)
             center, width, height, phi = reg.as_parameters()
-
             for r in range(numRotations):
                 angle = (phi * 180 + r * 90) / np.pi
                 height, width = mask.shape[:2]
@@ -119,8 +118,13 @@ class Renderer(object):
                 mask_rotated = cv2.warpAffine(mask, matrix, (width, height))
                 rotatedObjPatches[r].append(patch_rotated)
                 rotatedObjMasks[r].append(mask_rotated)
+
         objectPatches = [objPatches] + rotatedObjPatches
         objectMasks = [objMasks] + rotatedObjMasks
+        for r in range(len(objectPatches)):
+            for o in range(len(objectPatches[r])):
+                plt.imshow(objectPatches[r][o]/255.)
+                plt.savefig('data/mcts-ellipse/%d_%d.png'%(r, o))
         return objectPatches, objectMasks
 
     def getRGB(self, table, remove=None):
@@ -570,7 +574,7 @@ if __name__=='__main__':
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    outDir = 'data/mcts-test/'
+    outDir = 'data/mcts-ellipse/'
     os.makedirs(outDir, exist_ok=True)
     scenes = np.random.choice(len(dataset)//5, 50) * 5 + 4
     for sidx, dataIndex in enumerate(scenes):
