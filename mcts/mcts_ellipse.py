@@ -110,6 +110,10 @@ class Renderer(object):
             X = np.array(list(zip(px, py)))
             reg = LsqEllipse().fit(X)
             center, width, height, phi = reg.as_parameters()
+            if np.abs(width-height) < 6:
+                # can be a rectangle
+                rect = cv2.minAreaRect(X)
+                phi = rect[2]
             for r in range(numRotations):
                 angle = (phi * 180 + r * 90) / np.pi
                 height, width = mask.shape[:2]
