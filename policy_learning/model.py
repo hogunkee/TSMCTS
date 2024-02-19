@@ -7,7 +7,7 @@ class PlaceNet(nn.Module):
     def __init__(self, hidden_dim=16):
         super().__init__()
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(3, hidden_dim, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Conv2d(hidden_dim, 2*hidden_dim, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
@@ -21,16 +21,17 @@ class PlaceNet(nn.Module):
             nn.Conv2d(4*hidden_dim, 4*hidden_dim, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=3, stride=3, padding=1),
-            nn.Conv2d(4*hidden_dim, 4*hidden_dim, kernel_size=1, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(4*hidden_dim, 1, kernel_size=1, stride=1, padding=1),
+            #nn.Conv2d(4*hidden_dim, 4*hidden_dim, kernel_size=1, stride=1, padding=1),
+            #nn.ReLU(),
+            #nn.Conv2d(4*hidden_dim, 1, kernel_size=1, stride=1, padding=1),
         )
 
     def forward(self, x):
         h = self.cnn(x)
-        _, H, W, C = h.shape
-        h = h.view(-1, 1)
+        h = F.interpolate(h, scale_factor=1/4, mode='bilinear')
+        _, C, H, W = h.shape
+        h = h.view(-1, C*H*W)
         p = F.softmax(h)
-        prob = p.view(-1, H, W, 1)
+        prob = p.view(-1, C, H, W)
         return prob
 
