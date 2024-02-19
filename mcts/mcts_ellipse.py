@@ -7,6 +7,8 @@ import numpy as np
 import logging
 from PIL import Image
 from matplotlib import pyplot as plt
+from ellipse import LsqEllipse
+#from matplotlib.patches import Ellipse
 
 import torch
 import torch.nn as nn
@@ -26,7 +28,8 @@ class Renderer(object):
         self.ratio, self.offset = self.getRatio()
         self.masks, self.centers = self.getMasks(segmentation)
         self.rgb = np.copy(rgbImage)
-        self.objectPatches, self.objectMasks = self.getObjectPatches()
+        oPatches, oMasks = self.getObjectPatches()
+        self.objectPatches, self.objectMasks = self.getRotatedPatches(oPatches, oMasks)
         self.segmap = np.copy(segmentation)
         posMap = self.getTable(segmentation)
         rotMap = np.zeros_like(posMap)
@@ -59,8 +62,8 @@ class Renderer(object):
         return masks, centers
     
     def getObjectPatches(self):
-        objPatches = [[]]
-        objMasks = [[]]
+        objPatches = []
+        objMasks = []
         for o in range(self.numObjects):
             mask = self.masks[o]
             cy, cx = self.centers[o]
@@ -81,7 +84,6 @@ class Renderer(object):
                         max(0, yMin): min(self.imageSize[0], yMax),
                         max(0, xMin): min(self.imageSize[1], xMax)
                     ][:, :, None]
-            # objPatch[max(0, -yMin): 2*self.imageSize[0]-yMax, max(0, -xMin): 2*self.imageSize[1]-xMax] = self.rgb[max(0, yMin):yMax, max(0, xMin):xMax, :3]
 
             objMask = np.zeros(self.cropSize)
             objMask[
@@ -93,9 +95,33 @@ class Renderer(object):
                 ]
             # plt.imshow(objPatch/255.)
             # plt.show()
-            objPatches[0].append(objPatch)
-            objMasks[0].append(objMask)
+            objPatches.append(objPatch)
+            objMasks.append(objMask)
         return objPatches, objMasks
+
+    def getRotatedPatches(self, objPatches, objMasks, numRotations=2):
+        rotatedObjPatches = [[]] * numRotations
+        rotatedObjMasks = [[]] * numRotations
+        for o in range(len(objPatches)):
+            patch = objPatches[o]
+            mask = objMasks[o]
+            py, px = np.where(mask)
+            cy, cx = np.round([np.mean(py), np.mean(px)])
+            X = np.array(list(zip(px, py)))
+            reg = LsqEllipse().fit(X)
+            center, width, height, phi = reg.as_parameters()
+
+            for r in range(numRotations):
+                angle = (phi * 180 + r * 90) / np.pi
+                height, width = mask.shape[:2]
+                matrix = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
+                patch_rotated = cv2.warpAffine(patch, matrix, (width, height))
+                mask_rotated = cv2.warpAffine(mask, matrix, (width, height))
+                rotatedObjPatches[r].append(patch_rotated)
+                rotatedObjMasks[r].append(mask_rotated)
+        objectPatches = [objPatches] + rotatedObjPatches
+        objectMasks = [objMasks] + rotatedObjMasks
+        return objectPatches, objectMasks
 
     def getRGB(self, table, remove=None):
         posMap, rotMap = table

@@ -4,7 +4,6 @@ import numpy as np
 from PIL import Image
 from matplotlib import pyplot as plt
 from data_loader import TabletopTemplateDataset
-from sklearn.linear_model import LinearRegression
 from ellipse import LsqEllipse
 from matplotlib.patches import Ellipse
 
