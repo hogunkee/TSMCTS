@@ -16,5 +16,6 @@ wandb/
 samples/
 images/
 logs/
+sample/
 
 step-*.png
