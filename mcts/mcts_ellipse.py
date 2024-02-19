@@ -251,7 +251,7 @@ class MCTS(object):
         else:
             self.rollout = lambda n: self.greedyPolicy(n, rolloutPolicy)
 
-        self.thresholdSuccess = 0.4 #0.8 #0.9
+        self.thresholdSuccess = 0.6 #0.8 #0.9
         self.thresholdQ = 0.5
         self.thresholdV = 0.5
         self.QNet = None
@@ -553,7 +553,7 @@ if __name__=='__main__':
 
     # MCTS setup
     renderer = Renderer(tableSize=(9, 12), imageSize=(360, 480), cropSize=(180, 240))
-    searcher = MCTS(iterationLimit=1000, renderer=renderer, maxDepth=7,
+    searcher = MCTS(iterationLimit=10000, renderer=renderer, maxDepth=7,
                     rolloutPolicy='nostep', treePolicy='random')
 
     # setup network
@@ -601,7 +601,7 @@ if __name__=='__main__':
         plt.imshow(initRgb)
         plt.savefig(outDir+'scene-%d/initial.png'%sidx)
         initTable = searcher.reset(initRgb, initSeg)
-        print(initTable)
+        print(initTable[0])
         logger.info('initTable: %s' % initTable)
         table = initTable
 
@@ -616,9 +616,9 @@ if __name__=='__main__':
             action = resultDict['action']
             nextTable = searcher.root.takeAction(action)
             print("Best Action:", action)
-            print("Best Child: \n %s"%nextTable)
+            print("Best Child: \n %s"%nextTable[0])
             logger.info("Best Action: %s"%str(action))
-            logger.info("Best Child: \n %s"%nextTable)
+            logger.info("Best Child: \n %s"%nextTable[0])
             tableRgb = renderer.getRGB(nextTable)
             plt.imshow(tableRgb)
             plt.savefig(outDir+'scene-%d/iter_%d.png'%(sidx, step))
@@ -632,12 +632,12 @@ if __name__=='__main__':
             if terminal:
                 print("Arrived at the final state:")
                 print("Score:", reward)
-                print(table)
+                print(table[0])
                 print("--------------------------------")
                 print("--------------------------------")
                 logger.info("Arrived at the final state:")
                 logger.info("Score: %f"%reward)
-                logger.info(table)
+                logger.info(table[0])
                 plt.imshow(tableRgb)
                 plt.savefig(outDir+'scene-%d/final.png'%sidx)
                 # plt.show()
