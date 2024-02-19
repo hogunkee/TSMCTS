@@ -29,7 +29,7 @@ class Renderer(object):
         self.objectPatches, self.objectMasks = self.getObjectPatches()
         self.segmap = np.copy(segmentation)
         posMap = self.getTable(segmentation)
-        rotMap = np.zeros_like(table)
+        rotMap = np.zeros_like(posMap)
         table = [posMap, rotMap]
         return table
 
@@ -108,7 +108,7 @@ class Renderer(object):
                 py, px = np.where(posMap==o)
                 py, px = py[0], px[0]
                 ty, tx = np.array([py, px]) * self.ratio + self.offset
-                rot = rotMap[py, px]
+                rot = int(rotMap[py, px])
             else:
                 ty, tx = self.centers[o-1]
                 rot = 0
@@ -518,7 +518,7 @@ if __name__=='__main__':
 
     # MCTS setup
     renderer = Renderer(tableSize=(9, 12), imageSize=(360, 480), cropSize=(180, 240))
-    searcher = MCTS(iterationLimit=10000, renderer=renderer, maxDepth=7,
+    searcher = MCTS(iterationLimit=1000, renderer=renderer, maxDepth=7,
                     rolloutPolicy='nostep', treePolicy='random')
 
     # setup network
@@ -548,69 +548,63 @@ if __name__=='__main__':
     os.makedirs(outDir, exist_ok=True)
     scenes = np.random.choice(len(dataset)//5, 50) * 5 + 4
     for sidx, dataIndex in enumerate(scenes):
-        try:
-            # setup logger
-            os.makedirs(outDir+'scene-%d' % sidx, exist_ok=True)
-            logger.handlers.clear()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\n%(message)s')
-            file_handler = logging.FileHandler(outDir+'scene-%d/mcts.log'%sidx)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
+        # setup logger
+        os.makedirs(outDir+'scene-%d' % sidx, exist_ok=True)
+        logger.handlers.clear()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\n%(message)s')
+        file_handler = logging.FileHandler(outDir+'scene-%d/mcts.log'%sidx)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
-            # setup initial state
-            initRgb = np.array(Image.open(rgbList[dataIndex]))
-            initSeg = np.load(segList[dataIndex])
-            print(rgbList[dataIndex])
-            print(segList[dataIndex])
-            # plt.imshow(initSeg)
-            # plt.show()
-            plt.imshow(initRgb)
-            plt.savefig(outDir+'scene-%d/initial.png'%sidx)
-            initTable = searcher.reset(initRgb, initSeg)
-            print(initTable)
-            logger.info('initTable: %s' % initTable)
-            table = initTable
+        # setup initial state
+        initRgb = np.array(Image.open(rgbList[dataIndex]))
+        initSeg = np.load(segList[dataIndex])
+        print(rgbList[dataIndex])
+        print(segList[dataIndex])
+        # plt.imshow(initSeg)
+        # plt.show()
+        plt.imshow(initRgb)
+        plt.savefig(outDir+'scene-%d/initial.png'%sidx)
+        initTable = searcher.reset(initRgb, initSeg)
+        print(initTable)
+        logger.info('initTable: %s' % initTable)
+        table = initTable
 
+        print("--------------------------------")
+        logger.info('-'*50)
+        for step in range(10):
+            resultDict = searcher.search(table=table, needDetails=True)
+            print("Num Children: %d"%len(searcher.root.children))
+            logger.info("Num Children: %d"%len(searcher.root.children))
+            for i, c in enumerate(searcher.root.children):
+                print(i, c, searcher.root.children[c])
+            action = resultDict['action']
+            nextTable = searcher.root.takeAction(action)
+            print("Best Action:", action)
+            print("Best Child: \n %s"%nextTable)
+            logger.info("Best Action: %s"%str(action))
+            logger.info("Best Child: \n %s"%nextTable)
+            tableRgb = renderer.getRGB(nextTable)
+            plt.imshow(tableRgb)
+            plt.savefig(outDir+'scene-%d/iter_%d.png'%(sidx, step))
+            #plt.show()
+            table = copy.deepcopy(nextTable)
+            terminal, reward = searcher.isTerminal(None, table, checkReward=True)
+            print("Current Score:", reward)
             print("--------------------------------")
-            logger.info('-'*50)
-            for step in range(10):
-                resultDict = searcher.search(table=table, needDetails=True)
-                print("Num Children: %d"%len(searcher.root.children))
-                logger.info("Num Children: %d"%len(searcher.root.children))
-                for i, c in enumerate(searcher.root.children):
-                    print(i, c, searcher.root.children[c])
-                action = resultDict['action']
-                nextTable = searcher.root.takeAction(action)
-                print("Best Action:", action)
-                print("Best Child: \n %s"%nextTable)
-                logger.info("Best Action: %s"%str(action))
-                logger.info("Best Child: \n %s"%nextTable)
-                tableRgb = renderer.getRGB(nextTable)
-                plt.imshow(tableRgb)
-                plt.savefig(outDir+'scene-%d/iter_%d.png'%(sidx, step))
-                #plt.show()
-                table = copy.deepcopy(nextTable)
-                terminal, reward = searcher.isTerminal(None, table, checkReward=True)
-                print("Current Score:", reward)
+            logger.info("Current Score: %f" %reward)
+            logger.info("-"*50)
+            if terminal:
+                print("Arrived at the final state:")
+                print("Score:", reward)
+                print(table)
                 print("--------------------------------")
-                logger.info("Current Score: %f" %reward)
-                logger.info("-"*50)
-                if terminal:
-                    print("Arrived at the final state:")
-                    print("Score:", reward)
-                    print(table)
-                    print("--------------------------------")
-                    print("--------------------------------")
-                    logger.info("Arrived at the final state:")
-                    logger.info("Score: %f"%reward)
-                    logger.info(table)
-                    plt.imshow(tableRgb)
-                    plt.savefig(outDir+'scene-%d/final.png'%sidx)
-                    # plt.show()
-                    break
-        except KeyboardInterrupt:
-            print("Interrupted")
-            exit()
-        except:
-            continue
+                print("--------------------------------")
+                logger.info("Arrived at the final state:")
+                logger.info("Score: %f"%reward)
+                logger.info(table)
+                plt.imshow(tableRgb)
+                plt.savefig(outDir+'scene-%d/final.png'%sidx)
+                # plt.show()
+                break
 
