@@ -116,6 +116,7 @@ class TabletopOfflineDataset(Dataset):
     def find_action(self, moved_object, next_seg, seg):
         next_patch_mask = (next_seg == moved_object).astype(float)
         pys, pxs = np.where(next_patch_mask == 1)
+        assert not (len(pys)==0 or len(pxs)==0)
         py, px = np.mean(pys), np.mean(pxs)
         action = np.round([py, px]).astype(int).tolist()
 
