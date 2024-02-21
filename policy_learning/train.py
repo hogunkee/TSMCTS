@@ -18,7 +18,12 @@ def train(args):
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
     pnet = PlaceNet(args.hidden_dim).to(Device)
-    criterion = nn.CrossEntropyLoss()
+    if args.loss=='ce':
+        criterion = nn.CrossEntropyLoss()
+    elif args.loss=='mse':
+        criterion = nn.MSELoss()
+    elif args.loss=='sum':
+        criterion = None
     optimizer = optim.Adam(pnet.parameters(), lr=args.learning_rate)
     for epoch in range(args.num_epochs):
         running_loss = 0.0
@@ -28,16 +33,14 @@ def train(args):
             labels = np.zeros([len(actions), 10, 13])
             labels[np.arange(len(actions)), actions[:, 0], actions[:, 1]] = 1
             labels = torch.Tensor(labels).to(torch.float32).to(Device)
-
             probs = pnet(inputs)
-            probs_flatten = probs.view(-1, 10 * 13)
-            labels_flatten = labels.view(-1, 10 * 13)
-            #print('probs:', probs.shape)
-            #print('labels:', labels.shape)
 
-            #print((probs * labels).shape)
-            #loss = - (probs * labels).sum()
-            loss = criterion(probs_flatten, labels_flatten)
+            if args.loss=='sum':
+                loss = - (probs * labels).sum()
+            else:
+                probs_flatten = probs.view(-1, 10 * 13)
+                labels_flatten = labels.view(-1, 10 * 13)
+                loss = criterion(probs_flatten, labels_flatten)
 
             optimizer.zero_grad()
             loss.backward()
@@ -66,6 +69,7 @@ if __name__=='__main__':
     parser.add_argument('--batch-size', type=int, default=16)
     parser.add_argument('--crop-size', type=int, default=64)
     parser.add_argument('--learning-rate', type=float, default=1e-4)
+    parser.add_argument('--loss', type=str, default='ce') # mse / sum
     parser.add_argument('--data-dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/train')
     parser.add_argument('--log-freq', type=int, default=100)
     parser.add_argument('--log-dir', type=str, default='logs')
