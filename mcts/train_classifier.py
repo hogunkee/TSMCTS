@@ -5,7 +5,7 @@ import numpy as np
 import datetime
 import wandb
 from tqdm import tqdm
-from data_loader import PybulletNpyDataset, TabletopTemplateDataset
+from data_loader import TabletopTemplateDataset
 
 import torch
 import torch.nn as nn
@@ -33,19 +33,23 @@ def train(args):
 
     # dataloader #
     print("Loading data...")
-    if args.dataset=='tabletop':
-        dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'train'), 
-                        remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
-        test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-seen_template'),
-                        remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
-        print('len(dataset):', len(dataset))
-        print('len(test_dataset):', len(test_dataset))
-    elif args.dataset=='pybullet':
-        dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'train'), num_duplication=5)
-        test_dataset = PybulletNpyDataset(data_dir=os.path.join(args.data_dir, 'test'), num_duplication=5)
-        test_dataset.fsize = 500
+    dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'train'), 
+                    remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    us_test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-seen_template'),
+                    remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    su_test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-seen_obj-unseen_template'),
+                    remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    uu_test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-unseen_template'),
+                    remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    print('len(dataset):', len(dataset))
+    print('len(us_test_dataset):', len(us_test_dataset))
+    print('len(su_test_dataset):', len(su_test_dataset))
+    print('len(uu_test_dataset):', len(uu_test_dataset))
+
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
-    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
+    us_test_dataloader = DataLoader(us_test_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
+    su_test_dataloader = DataLoader(su_test_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
+    uu_test_dataloader = DataLoader(uu_test_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
 
     # model #
     print("Create a ResNet model.")
@@ -115,28 +119,37 @@ def train(args):
                     acc=float(acc)
                 )
                 if not args.wandb_off:
-                    step_log = {'loss': float(loss), 'accuracy': float(acc)}
+                    step_log = {'train loss': float(loss), 'train accuracy': float(acc)}
                     wandb.log(step_log)
                 count_steps += 1
 
         # evaluate accuracy at end of each epoch
         model.eval()
-        matchings = []
-        for X_val, Y_val in test_dataloader:
-            X_val = preprocess(X_val).to(device)
-            Y_val = Y_val[:, 0].to(device)
-            y_pred = model(X_val)[:, 0]
-            indices = torch.logical_or(Y_val==0, Y_val==1)
-            matching = (y_pred.round()==Y_val)[indices].float().detach().cpu().numpy()
-            matchings.append(matching)
-        matchings = np.concatenate(matchings, axis=0)
-        accuracy = np.mean(matchings)
-        print("Validation accuracy:", accuracy)
+        accuracies = []
+        for test_dataloader in [us_test_dataloader, su_test_dataloader, uu_test_dataloader]:
+            matchings = []
+            for X_val, Y_val in test_dataloader:
+                X_val = preprocess(X_val).to(device)
+                Y_val = Y_val[:, 0].to(device)
+                y_pred = model(X_val)[:, 0]
+                indices = torch.logical_or(Y_val==0, Y_val==1)
+                matching = (y_pred.round()==Y_val)[indices].float().detach().cpu().numpy()
+                matchings.append(matching)
+            matchings = np.concatenate(matchings, axis=0)
+            accuracy = np.mean(matchings)
+            accuracies.append(accuracy)
+        print("US validation accuracy:", accuracy[0])
+        print("SU validation accuracy:", accuracy[1])
+        print("UU validation accuracy:", accuracy[2])
         if not args.wandb_off:
-            step_log = {'valid accuracy': float(accuracy)}
+            step_log = {
+                    'us valid accuracy': float(accuracy[0]),
+                    'su valid accuracy': float(accuracy[1]),
+                    'uu valid accuracy': float(accuracy[2]),
+                    }
             wandb.log(step_log)
-        if accuracy > best_accuracy:
-            best_accuracy = accuracy
+        if np.mean(accuracy) > best_accuracy:
+            best_accuracy = np.mean(accuracy)
             best_weights = copy.deepcopy(model.state_dict())
 
         # optionally save model
@@ -164,9 +177,7 @@ if __name__ == "__main__":
     parser.add_argument("--loss", type=str, default='mse')
     parser.add_argument("--save_freq", type=int, default=1) #5
     # Dataset
-    parser.add_argument("--dataset", type=str, default='tabletop')
     parser.add_argument("--data_dir", type=str, default='/ssd/disk/TableTidyingUp/dataset_template')
-    #parser.add_argument("--data_dir", type=str, default='/ssd/disk/ur5_tidying_data/pybullet_single_bg')
     parser.add_argument("--remove_bg", action="store_true") # default: False
     parser.add_argument("--label_type", type=str, default='binary') # linspace / binary
     parser.add_argument("--view", type=str, default='top') # top / front_top
