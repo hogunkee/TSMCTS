@@ -82,7 +82,7 @@ def train(args):
     if args.loss=='mse':
         loss_fn = nn.MSELoss()
     elif args.loss=='bce':
-        loss_fn = BCELoss()  # binary cross entropy
+        loss_fn = nn.BCELoss()  # binary cross entropy
     optimizer = torch.optim.Adam(model.parameters(), lr=lrate)
  
     # Hold the best model
@@ -145,7 +145,7 @@ def train(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # Training
-    parser.add_argument("--n_epoch", type=int, default=30)
+    parser.add_argument("--n_epoch", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=16) #100
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--out", type=str, default='classification')
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str, default='/ssd/disk/TableTidyingUp/dataset_template')
     #parser.add_argument("--data_dir", type=str, default='/ssd/disk/ur5_tidying_data/pybullet_single_bg')
     parser.add_argument("--remove_bg", action="store_true") # default: False
-    parser.add_argument("--label_type", type=str, default='linspace') # linspace / binary
+    parser.add_argument("--label_type", type=str, default='binary') # linspace / binary
     parser.add_argument("--view", type=str, default='top') # top / front_top
     # etc
     parser.add_argument("--model", type=str, default='resnet-18')

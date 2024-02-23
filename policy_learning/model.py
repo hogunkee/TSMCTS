@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.models import resnet18
 
 class PlaceNet(nn.Module):
     def __init__(self, hidden_dim=16):
@@ -35,3 +36,20 @@ class PlaceNet(nn.Module):
         prob = p.view(-1, H, W)
         return prob
 
+class ResNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        resnet = resnet18(pretrained=True)
+        self.resnet = nn.Sequential(
+            *list(resnet.children())[:-2]
+            +[nn.Conv2d(512, 1, kernel_size=1, stride=1, padding=0)]
+            )
+
+    def forward(self, x):
+        h = self.resnet(x)  # [B, 1, 12, 15]
+        #h = F.interpolate(h, scale_factor=1/4, mode='bilinear')
+        _, C, H, W = h.shape
+        h = h.reshape(-1, C*H*W)
+        p = F.softmax(h, dim=1)
+        prob = p.view(-1, H, W)
+        return prob

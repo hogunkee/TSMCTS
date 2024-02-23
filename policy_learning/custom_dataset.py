@@ -16,9 +16,10 @@ from torch.utils.data import Dataset
 #       seg_top.npy
 
 class TabletopOfflineDataset(Dataset):
-    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', crop_size=160, view='top'):
+    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', crop_size=160, view='top', H=10, W=13):
         super().__init__()
         self.data_dir = data_dir
+        self.H, self.W = H, W
         self.crop_size = crop_size
         self.view = view
         self.get_data_paths()
@@ -90,13 +91,17 @@ class TabletopOfflineDataset(Dataset):
         moved_object = self.find_object(next_obj_info, obj_info)
         action = self.find_action(moved_object, next_seg, seg)
         image_after_pick, patch = self.extract_patch(image, seg, moved_object)
+        next_image_before_place, next_patch = self.extract_patch(next_image, next_seg, moved_object)
+        #image_after_pick, patch = self.extract_patch(image, seg, moved_object)
 
         data = {
                 'image': image/255.,
                 'image_after_pick': image_after_pick/255.,
                 'patch': patch/255.,
-                'action': np.array(action),
                 'next_image': next_image/255.,
+                'next_image_before_place': next_image_before_place/255.,
+                'next_patch': next_patch/255.,
+                'action': np.array(action),
                 'reward': reward, 
                 'terminal': terminal
                 }
@@ -122,8 +127,8 @@ class TabletopOfflineDataset(Dataset):
 
         # convert action
         # 360 x 480 -> 10 x 13
-        action[0] = int(action[0]/(360/10) - 0.5)
-        action[1] = int(action[1]/(480/13) - 0.5)
+        action[0] = int(action[0]/(360/self.H) - 0.5)
+        action[1] = int(action[1]/(480/self.W) - 0.5)
         return action
 
     def extract_patch(self, image, seg, moved_object):

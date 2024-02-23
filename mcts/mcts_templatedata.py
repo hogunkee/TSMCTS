@@ -281,11 +281,11 @@ class MCTS(object):
     def getReward(self, table):
         # print('getReward.')
         rgb = self.renderer.getRGB(table)
-        s = torch.Tensor(rgb[None, :]).permute([0,3,1,2]).cuda()
+        s = torch.Tensor(rgb[None, :]/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
             s = self.preProcess(s)
         reward = self.VNet(s).cpu().detach().numpy()[0]
-        reward = max(0, (reward - 0.5) * 2)
+        #reward = max(0, (reward - 0.5) * 2)
         return reward
 
     def backpropogate(self, node, reward):
@@ -327,8 +327,11 @@ class MCTS(object):
                     objPatch = self.renderer.objectPatches[o]
                     states.append(rgbWoTarget)
                     objectPatches.append(objPatch)
-                s = torch.Tensor(np.array(states)).permute([0,3,1,2]).cuda()
-                p = torch.Tensor(np.array(objectPatches)).permute([0,3,1,2]).cuda()
+                s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
+                p = torch.Tensor(np.array(objectPatches)/255.).permute([0,3,1,2]).cuda()
+                if self.preProcess is not None:
+                    s = self.preProcess(s)
+                    p = self.reProcess(p)
                 QHeatmap = self.QNet(s, p).cpu().detach().numpy()
                 for o, py, px in np.where(QHeatmap > self.thresholdQ):
                     actionCandidates.append((o, py, px))
@@ -346,7 +349,9 @@ class MCTS(object):
                 for action in allPossibleActions:
                     nextState = self.renderer.getRGB(node.takeAction(action))
                     nextStates.append(nextState)
-                s = torch.Tensor(np.array(nextStates)).permute([0,3,1,2]).cuda()
+                s = torch.Tensor(np.array(nextStates)/255.).permute([0,3,1,2]).cuda()
+                if self.preProcess is not None:
+                    s = self.preProcess(s)
                 values = self.VNet(s).cpu().detach().numpy()
                 possibleIdx = values > self.thresholdV
                 node.setActions(allPossibleActions[possibleIdx])
@@ -387,11 +392,11 @@ class MCTS(object):
         # print('noStepPolicy.')
         # st = time.time()
         states = [self.renderer.getRGB(node.table)]
-        s = torch.Tensor(np.array(states)).permute([0,3,1,2]).cuda()
+        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
             s = self.preProcess(s)
         rewards = self.VNet(s).cpu().detach().numpy()
-        rewards = np.maximum(0, (rewards - 0.5) * 2)
+        #rewards = np.maximum(0, (rewards - 0.5) * 2)
         maxReward = np.max(rewards)
         # et = time.time()
         # print(et - st, 'seconds.')
@@ -411,7 +416,7 @@ class MCTS(object):
             newNode = Node(self.renderer.numObjects, newTable)
             states.append(self.renderer.getRGB(newNode.table))
 
-        s = torch.Tensor(np.array(states)).permute([0,3,1,2]).cuda()
+        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
             s = self.preProcess(s)
         rewards = []
@@ -446,7 +451,7 @@ class MCTS(object):
             newNode = Node(self.renderer.numObjects, newTable)
             node = newNode
             states.append(self.renderer.getRGB(node.table))
-        s = torch.Tensor(np.array(states)).permute([0,3,1,2]).cuda()
+        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
             s = self.preProcess(s)
         rewards = []
@@ -476,7 +481,7 @@ class MCTS(object):
             newNode = Node(self.renderer.numObjects, newTable)
             node = newNode
             states.append(self.renderer.getRGB(node.table))
-        s = torch.Tensor(np.array(states)).permute([0,3,1,2]).cuda()
+        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
             s = self.preProcess(s)
         rewards = self.VNet(s).cpu().detach().numpy()
@@ -485,7 +490,9 @@ class MCTS(object):
 
     def greedyPolicyWithV(self, node):
         state = self.renderer.getRGB(node.table)
-        s = torch.Tensor(state).permute([0,3,1,2]).cuda()
+        s = torch.Tensor(state/255.).permute([0,3,1,2]).cuda()
+        if self.preProcess is not None:
+            s = self.preProcess(s)
         value = self.VNet(s).cpu().detach().numpy()[0]
         values = [value]
         while not self.isTerminal(node)[0]:

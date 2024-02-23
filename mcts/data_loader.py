@@ -105,7 +105,7 @@ class TabletopTemplateDataset(Dataset):
         else:
             rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
 
-        rgb = np.transpose(rgb[:, :, :3], [2, 0, 1])
+        rgb = np.transpose(rgb[:, :, :3], [2, 0, 1]) / 255.
         rgb = torch.from_numpy(rgb).type(torch.float)
         label = torch.from_numpy(np.array([data_label])).type(torch.float)
         return rgb, label
