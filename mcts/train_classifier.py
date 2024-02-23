@@ -2,6 +2,8 @@ import argparse
 import copy
 import os
 import numpy as np
+import datetime
+import wandb
 from tqdm import tqdm
 from data_loader import PybulletNpyDataset, TabletopTemplateDataset
 
@@ -89,6 +91,7 @@ def train(args):
     best_accuracy = - np.inf   # init to negative infinity
     best_weights = None
  
+    count_steps = 0
     for epoch in range(n_epoch):
         model.train()
         with tqdm(dataloader) as bar:
@@ -111,6 +114,10 @@ def train(args):
                     loss=float(loss),
                     acc=float(acc)
                 )
+                if not args.wandb_off:
+                    step_log = {'loss': float(loss), 'accuracy': float(acc)}
+                    wandb.log(step_log)
+                count_steps += 1
 
         # evaluate accuracy at end of each epoch
         model.eval()
@@ -125,6 +132,9 @@ def train(args):
         matchings = np.concatenate(matchings, axis=0)
         accuracy = np.mean(matchings)
         print("Validation accuracy:", accuracy)
+        if not args.wandb_off:
+            step_log = {'valid accuracy': float(accuracy)}
+            wandb.log(step_log)
         if accuracy > best_accuracy:
             best_accuracy = accuracy
             best_weights = copy.deepcopy(model.state_dict())
@@ -162,7 +172,16 @@ if __name__ == "__main__":
     parser.add_argument("--view", type=str, default='top') # top / front_top
     # etc
     parser.add_argument("--model", type=str, default='resnet-18')
+    parser.add_argument('--wandb-off', action='store_true')
     args = parser.parse_args()
+
+    if not args.wandb_off:
+        now = datetime.datetime.now()
+        log_name = now.strftime("%m%d_%H%M%S")
+        wandb.init(project="Classifier")
+        wandb.config.update(parser.parse_args())
+        wandb.run.name = log_name
+        wandb.run.save()
 
     gpu = args.gpu
     if "CUDA_VISIBLE_DEVICES" in os.environ:

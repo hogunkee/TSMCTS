@@ -2,7 +2,10 @@ import os
 import time
 import numpy as np
 import nonechucks as nc
+import datetime
+import wandb
 from tqdm import tqdm
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -154,6 +157,7 @@ def train(args):
 
     vNet, preprocess = loadRewardFunction()
 
+    count_steps = 0
     for epoch in range(args.num_epochs):
         running_loss = 0.0
         with tqdm(train_loader) as bar:
@@ -179,12 +183,14 @@ def train(args):
                 bar.set_postfix(
                     loss=float(loss)
                 )
+                if not args.wandb_off:
+                    step_log = {'loss': float(loss)}
+                    wandb.log(step_log, count_steps)
                 
                 running_loss += loss.item()
                 if (i+1) % args.log_freq == 0:
                     print('%d steps / loss: %.3f' %
                         (i + 1, running_loss / args.log_freq))
-                    running_loss = 0.0
                     if False:
                         plt.subplot(1, 3, 1)
                         plt.imshow(probs.cpu().detach().numpy()[0], vmin=0., vmax=1.)
@@ -199,6 +205,14 @@ def train(args):
                         delta_reward = evaluateBatch(t_data, pnet, vNet, preprocess, H, W, args.crop_size)
                         delta_rewards.append(delta_reward)
                     print('rewards:', np.mean(delta_rewards))
+                    if not args.wandb_off:
+                        step_log = {
+                                'running loss': float(running_loss / args.log_freq),
+                                'delta rewards': float(np.mean(delta_rewards)),
+                                }
+                        wandb.log(step_log, count_steps)
+                    running_loss = 0.0
+                count_steps += 1
         torch.save(pnet.state_dict(), os.path.join(args.log_dir, 'pnet_e%d.pth'%(epoch+1)))
 
 if __name__=='__main__':
@@ -213,7 +227,16 @@ if __name__=='__main__':
     parser.add_argument('--data-dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/train')
     parser.add_argument('--log-freq', type=int, default=100)
     parser.add_argument('--log-dir', type=str, default='logs')
+    parser.add_argument('--wandb-off', action='store_true')
     args = parser.parse_args()
+
+    if not args.wandb_off:
+        now = datetime.datetime.now()
+        log_name = now.strftime("%m%d_%H%M%S")
+        wandb.init(project="Policy learning")
+        wandb.config.update(parser.parse_args())
+        wandb.run.name = log_name
+        wandb.run.save()
 
     train(args)
     print('Finished Training')
