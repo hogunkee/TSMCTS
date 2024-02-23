@@ -141,11 +141,13 @@ def train(args):
         print("US validation accuracy:", accuracy[0])
         print("SU validation accuracy:", accuracy[1])
         print("UU validation accuracy:", accuracy[2])
+        print("mean validation accuracy:", np.mean(accuracy))
         if not args.wandb_off:
             step_log = {
                     'us valid accuracy': float(accuracy[0]),
                     'su valid accuracy': float(accuracy[1]),
                     'uu valid accuracy': float(accuracy[2]),
+                    'mean valid accuracy': float(np.mean(accuracy)),
                     }
             wandb.log(step_log)
         if np.mean(accuracy) > best_accuracy:
