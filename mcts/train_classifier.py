@@ -138,20 +138,20 @@ def train(args):
             matchings = np.concatenate(matchings, axis=0)
             accuracy = np.mean(matchings)
             accuracies.append(accuracy)
-        print("US validation accuracy:", accuracy[0])
-        print("SU validation accuracy:", accuracy[1])
-        print("UU validation accuracy:", accuracy[2])
-        print("mean validation accuracy:", np.mean(accuracy))
+        print("US validation accuracy:", accuracies[0])
+        print("SU validation accuracy:", accuracies[1])
+        print("UU validation accuracy:", accuracies[2])
+        print("mean validation accuracy:", np.mean(accuracies))
         if not args.wandb_off:
             step_log = {
-                    'us valid accuracy': float(accuracy[0]),
-                    'su valid accuracy': float(accuracy[1]),
-                    'uu valid accuracy': float(accuracy[2]),
-                    'mean valid accuracy': float(np.mean(accuracy)),
+                    'us valid accuracy': float(accuracies[0]),
+                    'su valid accuracy': float(accuracies[1]),
+                    'uu valid accuracy': float(accuracies[2]),
+                    'mean valid accuracy': float(np.mean(accuracies)),
                     }
             wandb.log(step_log)
-        if np.mean(accuracy) > best_accuracy:
-            best_accuracy = np.mean(accuracy)
+        if np.mean(accuracies) > best_accuracy:
+            best_accuracy = np.mean(accuracies)
             best_weights = copy.deepcopy(model.state_dict())
 
         # optionally save model
