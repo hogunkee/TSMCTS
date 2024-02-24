@@ -28,12 +28,9 @@ def eval(args):
     # dataloader #
     print("Loading data...")
 
-    test_su_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-seen_obj-unseen_template'),
-                                              remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
-    test_us_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-seen_template'),
-                                              remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
-    test_uu_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-unseen_template'),
-                                              remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    test_su_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-seen_obj-unseen_template'), remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    test_us_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-seen_template'), remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    test_uu_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-unseen_template'), remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
     print('len(test_su_dataset):', len(test_su_dataset))
     print('len(test_us_dataset):', len(test_us_dataset))
     print('len(test_uu_dataset):', len(test_uu_dataset))
@@ -58,7 +55,7 @@ def eval(args):
         nn.Linear(fc_in_features, 1),
         #nn.Sigmoid()
     )
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(args.model_path))
     if torch.cuda.is_available():
         device = "cuda:0"
     else:
@@ -67,7 +64,7 @@ def eval(args):
     model.eval()
 
     matchings = []
-    for X_val, Y_val in test_su_dataloader:
+    for X_val, Y_val in tqdm(test_su_dataloader):
         X_val = preprocess(X_val).to(device)
         Y_val = Y_val[:, 0].to(device)
         y_pred = model(X_val)[:, 0]
@@ -79,7 +76,7 @@ def eval(args):
     print("Test SU accuracy:", accuracy)
 
     matchings = []
-    for X_val, Y_val in test_us_dataloader:
+    for X_val, Y_val in tqdm(test_us_dataloader):
         X_val = preprocess(X_val).to(device)
         Y_val = Y_val[:, 0].to(device)
         y_pred = model(X_val)[:, 0]
@@ -91,7 +88,7 @@ def eval(args):
     print("Test US accuracy:", accuracy)
 
     matchings = []
-    for X_val, Y_val in test_uu_dataloader:
+    for X_val, Y_val in tqdm(test_uu_dataloader):
         X_val = preprocess(X_val).to(device)
         Y_val = Y_val[:, 0].to(device)
         y_pred = model(X_val)[:, 0]
