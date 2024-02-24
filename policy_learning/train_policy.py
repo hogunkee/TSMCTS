@@ -20,9 +20,8 @@ from torchvision.models import resnet18
 
 Device = 'cuda'
 
-def loadRewardFunction():
+def loadRewardFunction(model_path):
     resnet = resnet18
-    model_path = '/home/gun/Desktop/PreferenceDiffusion/mcts/data/classification/top_nobg_binary_mse-0.pth'
     vNet = resnet(pretrained=False)
     fc_in_features = vNet.fc.in_features
     vNet.fc = nn.Sequential(
@@ -104,7 +103,7 @@ def evaluateBatch(data, pnet, vNet, preprocess, H, W, cropSize):
     return (rewards - rewards_prime).sum()
 
 
-def train(args):
+def train(args, log_name):
     if args.model=='resnet':
         H, W = 12, 15
     else:
@@ -155,7 +154,7 @@ def train(args):
         criterion = None
     optimizer = optim.Adam(pnet.parameters(), lr=args.learning_rate)
 
-    vNet, preprocess = loadRewardFunction()
+    vNet, preprocess = loadRewardFunction(args.reward_model_path)
 
     count_steps = 0
     for epoch in range(args.num_epochs):
@@ -213,7 +212,9 @@ def train(args):
                         wandb.log(step_log, count_steps)
                     running_loss = 0.0
                 count_steps += 1
-        torch.save(pnet.state_dict(), os.path.join(args.log_dir, 'pnet_e%d.pth'%(epoch+1)))
+        if not os.path.isdir(os.path.join(args.log_dir, log_name)):
+            os.makedirs(os.path.join(args.log_dir, log_name))
+        torch.save(pnet.state_dict(), os.path.join(args.log_dir, log_name, 'pnet_e%d.pth'%(epoch+1)))
 
 if __name__=='__main__':
     parser = ArgumentParser()
@@ -224,19 +225,20 @@ if __name__=='__main__':
     parser.add_argument('--learning-rate', type=float, default=1e-4)
     parser.add_argument('--loss', type=str, default='ce') # mse / sum / ce:cross-entropy
     parser.add_argument('--model', type=str, default='resnet') # pnet / resnet
+    parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--data-dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/train')
     parser.add_argument('--log-freq', type=int, default=100)
     parser.add_argument('--log-dir', type=str, default='logs')
     parser.add_argument('--wandb-off', action='store_true')
     args = parser.parse_args()
 
+    now = datetime.datetime.now()
+    log_name = now.strftime("%m%d_%H%M")
     if not args.wandb_off:
-        now = datetime.datetime.now()
-        log_name = now.strftime("%m%d_%H%M%S")
         wandb.init(project="Policy learning")
         wandb.config.update(parser.parse_args())
         wandb.run.name = log_name
         wandb.run.save()
 
-    train(args)
+    train(args, log_name)
     print('Finished Training')

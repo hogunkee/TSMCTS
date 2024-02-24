@@ -21,27 +21,22 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-def train(args):
+def train(args, log_name):
     n_epoch = args.n_epoch
     batch_size = args.batch_size
     lrate = args.lr
-    save_dir = os.path.join('data', args.out)
-    if not os.path.isdir(save_dir):
-        os.makedirs(save_dir)
+    save_dir = os.path.join('data', args.out, log_name)
+    os.makedirs(save_dir, exist_ok=True)
     save_model = True #False
     save_freq = args.save_freq
 
     # dataloader #
     print("Loading data...")
-    dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'train'), 
-                    remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
-    us_test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-seen_template'),
-                    remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
-    su_test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-seen_obj-unseen_template'),
-                    remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
-    uu_test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-unseen_template'),
-                    remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
-    print('len(dataset):', len(dataset))
+    dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'train'), remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    us_test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-seen_template'), remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    su_test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-seen_obj-unseen_template'), remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    uu_test_dataset = TabletopTemplateDataset(data_dir=os.path.join(args.data_dir, 'test-unseen_obj-unseen_template'), remove_bg=args.remove_bg, label_type=args.label_type, view=args.view)
+    print('len(train_dataset):', len(dataset))
     print('len(us_test_dataset):', len(us_test_dataset))
     print('len(su_test_dataset):', len(su_test_dataset))
     print('len(uu_test_dataset):', len(uu_test_dataset))
@@ -188,9 +183,9 @@ if __name__ == "__main__":
     parser.add_argument('--wandb-off', action='store_true')
     args = parser.parse_args()
 
+    now = datetime.datetime.now()
+    log_name = now.strftime("%m%d_%H%M")
     if not args.wandb_off:
-        now = datetime.datetime.now()
-        log_name = now.strftime("%m%d_%H%M%S")
         wandb.init(project="Classifier")
         wandb.config.update(parser.parse_args())
         wandb.run.name = log_name
@@ -205,7 +200,7 @@ if __name__ == "__main__":
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
 
     print("Training starts.")
-    best_accur = train(args)
+    best_accur = train(args, log_name)
     print("Training finished.")
     print("Best accuracy:", best_accur)
 
