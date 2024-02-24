@@ -21,8 +21,7 @@ from torchvision.models import resnet18
 Device = 'cuda'
 
 def loadRewardFunction(model_path):
-    resnet = resnet18
-    vNet = resnet(pretrained=False)
+    vNet = resnet18(pretrained=False)
     fc_in_features = vNet.fc.in_features
     vNet.fc = nn.Sequential(
         nn.Linear(fc_in_features, 1),
@@ -114,16 +113,6 @@ def train(args, log_name):
     # test_size = len(dataset) - train_size
     # train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
     
-    indices_train = np.arange(len(train_dataset)).tolist()
-    train_dataset.data_rewards = [train_dataset.data_rewards[d] for d in indices_train]
-    train_dataset.data_terminals = [train_dataset.data_terminals[d] for d in indices_train]
-    train_dataset.data_next_images = [train_dataset.data_next_images[d] for d in indices_train]
-    train_dataset.data_images = [train_dataset.data_images[d] for d in indices_train]
-    train_dataset.data_next_segs = [train_dataset.data_next_segs[d] for d in indices_train]
-    train_dataset.data_segs = [train_dataset.data_segs[d] for d in indices_train]
-    train_dataset.data_next_obj_infos = [train_dataset.data_next_obj_infos[d] for d in indices_train]
-    train_dataset.data_obj_infos = [train_dataset.data_obj_infos[d] for d in indices_train]
-
     indices_test = np.arange(len(test_dataset))[::4][-1000:].tolist()
     test_dataset.data_rewards = [test_dataset.data_rewards[d] for d in indices_test]
     test_dataset.data_terminals = [test_dataset.data_terminals[d] for d in indices_test]
