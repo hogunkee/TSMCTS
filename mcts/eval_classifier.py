@@ -63,6 +63,7 @@ def eval(args):
     model.to(device)
     model.eval()
 
+    accuracies = []
     matchings = []
     for X_val, Y_val in tqdm(test_su_dataloader):
         X_val = preprocess(X_val).to(device)
@@ -74,6 +75,7 @@ def eval(args):
     matchings = np.concatenate(matchings, axis=0)
     accuracy = np.mean(matchings)
     print("Test SU accuracy:", accuracy)
+    accuracies.append(accuracy)
 
     matchings = []
     for X_val, Y_val in tqdm(test_us_dataloader):
@@ -86,6 +88,7 @@ def eval(args):
     matchings = np.concatenate(matchings, axis=0)
     accuracy = np.mean(matchings)
     print("Test US accuracy:", accuracy)
+    accuracies.append(accuracy)
 
     matchings = []
     for X_val, Y_val in tqdm(test_uu_dataloader):
@@ -98,7 +101,9 @@ def eval(args):
     matchings = np.concatenate(matchings, axis=0)
     accuracy = np.mean(matchings)
     print("Test UU accuracy:", accuracy)
-    return
+    accuracies.append(accuracy)
+
+    return accuracies
 
 
 if __name__ == "__main__":
@@ -127,8 +132,8 @@ if __name__ == "__main__":
             torch.cuda.set_device(gpu_idx)
             os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
 
-    print("Training starts.")
-    best_accur = eval(args)
-    print("Training finished.")
-    print("Best accuracy:", best_accur)
+    print("Evaluation starts.")
+    accuracies = eval(args)
+    print("Evaluation finished.")
+    print("Average accuracy:", float(np.mean(accuracies)))
 
