@@ -100,7 +100,7 @@ def evaluateBatch(data, pnet, vNet, preprocess, H, W, cropSize):
 
     s_prime = preprocess(torch.Tensor(images_after_action).permute([0,3,1,2])).cuda()
     rewards_prime = vNet(s_prime).cpu().detach().numpy()
-    return (rewards_prime - rewards).sum()
+    return (rewards_prime - rewards).mean()
 
 
 def train(args, log_name):
