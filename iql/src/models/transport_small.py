@@ -22,7 +22,7 @@ from torchvision.models import resnet18
 
 class TransportSmall(nn.Module):
     """Transport module."""
-    def __init__(self, in_channels, n_rotations, crop_size, preprocess, verbose=False, name="Transport"):
+    def __init__(self, in_channels, n_rotations, crop_size, verbose=False, name="Transport"):
         super().__init__()
         """Transport module for placing.
 
@@ -30,12 +30,10 @@ class TransportSmall(nn.Module):
           in_shape: shape of input image.
           n_rotations: number of rotations of convolving kernel.
           crop_size: crop size around pick argmax used as convolving kernel.
-          preprocess: function to preprocess input images.
         """
         self.iters = 0
         self.n_rotations = n_rotations
         self.crop_size = crop_size  # crop size must be N*16 (e.g. 96)
-        self.preprocess = preprocess
 
         self.pad_size = int(self.crop_size / 2)
         self.padding = np.zeros((3, 2), dtype=int)
@@ -141,8 +139,8 @@ class TransportSmall(nn.Module):
         return output[:, :, :, 0]
 
     def forward(self, in_img, patch, softmax=False):
-        in_tensor = self.preprocess(in_img).to(torch.float32).to(self.device)
-        crop = self.preprocess(patch).to(torch.float32).to(self.device)
+        in_tensor = (in_img).to(torch.float32).to(self.device)
+        crop = (patch).to(torch.float32).to(self.device)
         in_tensor = Rearrange('b h w c -> b c h w')(in_tensor)
         crop = Rearrange('b h w c -> b c h w')(crop)
 

@@ -3,7 +3,6 @@ import torch.nn as nn
 from torch.distributions import MultivariateNormal
 from torch.distributions.categorical import Categorical
 from .models.transport_small import TransportSmall
-from src.utils.utils import preprocess
 
 from .util import mlp
 
@@ -18,7 +17,6 @@ class DiscretePolicy(nn.Module):
             in_channels=3, 
             n_rotations=1, #8 
             crop_size=crop_size, 
-            preprocess=preprocess,
             verbose=False,
             name="Policy-Q")
 
@@ -56,7 +54,6 @@ class DeterministicPolicy(nn.Module):
             in_channels=3, 
             n_rotations=1, #8 
             crop_size=crop_size, 
-            preprocess=utils.preprocess,
             verbose=False,
             name="Policy-Q")
 

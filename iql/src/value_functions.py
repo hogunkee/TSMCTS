@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from .util import mlp, resnet
 from src.models.transport_small import TransportSmall
-from src.utils import utils
 
 class TwinQ(nn.Module):
     def __init__(self, crop_size=64):
@@ -11,14 +10,12 @@ class TwinQ(nn.Module):
             in_channels=3, 
             n_rotations=1, #8 
             crop_size=crop_size, 
-            preprocess=utils.preprocess,
             verbose=False,
             name="Transport-Q1")
         self.q2 = TransportSmall(
             in_channels=3, 
             n_rotations=1, #8 
             crop_size=crop_size, 
-            preprocess=utils.preprocess,
             verbose=False,
             name="Transport-Q2")
 
