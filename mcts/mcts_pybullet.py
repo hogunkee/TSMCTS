@@ -2,10 +2,13 @@ import os
 import sys
 import copy
 import cv2
+import datetime
 import time
 import random
 import numpy as np
 import logging
+import json
+import pybullet as p
 from argparse import ArgumentParser
 from PIL import Image
 from matplotlib import pyplot as plt
@@ -20,7 +23,23 @@ from data_loader import TabletopTemplateDataset
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
 from custom_env import TableTopTidyingUpEnv
+from utilities import Camera, Camera_front_top
 
+
+def loadRewardFunction(model_path):
+    vNet = resnet18(pretrained=False)
+    fc_in_features = vNet.fc.in_features
+    vNet.fc = nn.Sequential(
+        nn.Linear(fc_in_features, 1),
+    )
+    vNet.load_state_dict(torch.load(model_path))
+    vNet.to("cuda:0")
+    vNet.eval()
+    preprocess = transforms.Compose([
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
+    return vNet, preprocess
 
 class Renderer(object):
     def __init__(self, tableSize, imageSize, cropSize):
@@ -30,12 +49,17 @@ class Renderer(object):
         self.rgb = None
 
     def setup(self, rgbImage, segmentation):
-        self.numObjects = int(np.max(segmentation)) - 2
+        # segmentation info
+        # 1: background (table)
+        # 2: None
+        # 3: robot arm
+        # 4~N: objects
+        self.numObjects = int(np.max(segmentation)) - 3
         self.ratio, self.offset = self.getRatio()
         self.masks, self.centers = self.getMasks(segmentation)
         self.rgb = np.copy(rgbImage)
         oPatches, oMasks = self.getObjectPatches()
-        self.objectPatches, self.objectMasks = self.getRotatedPatches(oPatches, oMasks)
+        self.objectPatches, self.objectMasks, self.objectAngles = self.getRotatedPatches(oPatches, oMasks)
         self.segmap = np.copy(segmentation)
         posMap = self.getTable(segmentation)
         rotMap = np.zeros_like(posMap)
@@ -51,7 +75,7 @@ class Renderer(object):
         masks, centers = [], []
         for o in range(self.numObjects):
             # get the segmentation mask of each object #
-            mask = (segmap==o+2).astype(float)
+            mask = (segmap==o+4).astype(float)
             if mask.sum()<100:
                 kernel = np.ones((2, 2), np.uint8)
                 mask = cv2.dilate(cv2.erode(mask, kernel), kernel)
@@ -108,6 +132,7 @@ class Renderer(object):
     def getRotatedPatches(self, objPatches, objMasks, numRotations=2):
         rotatedObjPatches = [[] for _ in range(numRotations)]
         rotatedObjMasks = [[] for _ in range(numRotations)]
+        rotatedAngles = [[] for _ in range(numRotations)]
         for o in range(len(objPatches)):
             patch = objPatches[o]
             mask = objMasks[o]
@@ -128,15 +153,17 @@ class Renderer(object):
                 mask_rotated = cv2.warpAffine(mask, matrix, (width, height))
                 rotatedObjPatches[r].append(patch_rotated)
                 rotatedObjMasks[r].append(mask_rotated)
+                rotatedAngles[r].append(angle)
 
         objectPatches = [objPatches] + rotatedObjPatches
         objectMasks = [objMasks] + rotatedObjMasks
+        objectAngles = [[0. for _ in range(len(objPatches))]] + rotatedAngles
         if False: # check patches
             for r in range(len(objectPatches)):
                 for o in range(len(objectPatches[r])):
                     plt.imshow(objectPatches[r][o]/255.)
                     plt.savefig('data/mcts-ellipse/%d_%d.png'%(o, r))
-        return objectPatches, objectMasks
+        return objectPatches, objectMasks, objectAngles
 
     def getRGB(self, table, remove=None):
         posMap, rotMap = table
@@ -174,15 +201,12 @@ class Renderer(object):
 
     def convert_action(self, action):
         obj, py, px, rot = action
-        target_object = obj
+        target_object = obj + 3
         ty, tx = np.array([py, px]) * self.ratio + self.offset
         target_position = [ty, tx]
-        if rot==0:
-            rot_angle = 0.
-        elif rot==1:
-            rot_angle = 0.
-        elif rot==2:
-            rot_angle = 0.
+
+        rot_angle = self.objectAngles[rot][obj-1]
+        rot_angle = rot_angle / 180 * np.pi
         return target_object, target_position, rot_angle
 
         
@@ -230,9 +254,9 @@ class Node(object):
 
 
 class MCTS(object):
-    def __init__(self, timeLimit=None, iterationLimit=None, renderer=None, 
-                 explorationConstant=1/np.sqrt(2), maxDepth=8,
-                 rolloutPolicy='random', treePolicy='random'):
+    def __init__(self, renderer, args, explorationConstant=1/np.sqrt(2)):
+        timeLimit = args.time_limit
+        iterationLimit = args.iteration_limit
         if timeLimit != None:
             if iterationLimit != None:
                 raise ValueError("Cannot have both a time limit and an iteration limit")
@@ -254,8 +278,9 @@ class MCTS(object):
             self.domain = 'image'
         self.explorationConstant = explorationConstant
 
-        self.treePolicy = treePolicy
-        self.maxDepth = maxDepth
+        self.treePolicy = args.tree_policy
+        self.maxDepth = args.max_depth
+        rolloutPolicy = args.rollout_policy
         if rolloutPolicy=='random':
             self.rollout = self.randomPolicy
         elif rolloutPolicy=='nostep':
@@ -265,12 +290,12 @@ class MCTS(object):
         else:
             self.rollout = lambda n: self.greedyPolicy(n, rolloutPolicy)
 
-        self.thresholdSuccess = 0.6
-        self.thresholdQ = 0.5
-        self.thresholdV = 0.5
+        self.thresholdSuccess = args.threshold_success #0.6
+        self.thresholdQ = args.threshold_q #0.5
+        self.thresholdV = args.threshold_v #0.5
         self.QNet = None
         self.VNet = None
-        self.batchSize = 32
+        self.batchSize = args.batch_size #32
         self.preProcess = None
     
     def reset(self, rgbImage, segmentation):
@@ -421,7 +446,7 @@ class MCTS(object):
                 allPossibleActions = np.array(np.meshgrid(
                                 np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
                                 )).T.reshape(-1, 4)
-                allPossibleActions = [a for a in allPossibleActions if self.root.table[a[1], a[2]]==0]
+                allPossibleActions = [a for a in allPossibleActions if self.root.table[0][a[1], a[2]]==0]
                 node.setActions(allPossibleActions)
             return node.actionCandidates
 
@@ -592,39 +617,39 @@ def setupEnvironment(args):
 
 if __name__=='__main__':
     parser = ArgumentParser()
+    # Inference
     parser.add_argument('--num-objects', type=int, default=4)
+    parser.add_argument('--num-scenes', type=int, default=10)
+    parser.add_argument('--H', type=int, default=12)
+    parser.add_argument('--W', type=int, default=15)
+    parser.add_argument('--crop-size', type=int, default=96)
+    # MCTS
+    parser.add_argument('--time-limit', type=int, default=None)
+    parser.add_argument('--iteration-limit', type=int, default=10000)
+    parser.add_argument('--max-depth', type=int, default=7)
+    parser.add_argument('--rollout-policy', type=str, default='nostep')
+    parser.add_argument('--tree-policy', type=str, default='random')
+    parser.add_argument('--threshold-success', type=float, default=0.85)
+    parser.add_argument('--threshold-q', type=float, default=0.5)
+    parser.add_argument('--threshold-v', type=float, default=0.5)
+    parser.add_argument('--batch-size', type=int, default=32)
+    # Reward model
+    parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
-    parser.add_argument('--view', type=str, default='top')
-    parser.add_argument('--data-dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/train')
+    parser.add_argument('--view', type=str, default='top') 
     args = parser.parse_args()
 
-    dataset = TabletopTemplateDataset(data_dir=args.data_dir, remove_bg=True, label_type=args.label_type, view=args.view)
-
-    rgbList = sorted([os.path.join(p, 'rgb_%s.png'%args.view) for p in dataset.data_paths])
-    segList = sorted([os.path.join(p, 'seg_%s.npy'%args.view) for p in dataset.data_paths])
+    # Logger
+    now = datetime.datetime.now()
+    log_name = now.strftime("%m%d_%H%M")
 
     # MCTS setup
-    renderer = Renderer(tableSize=(9, 12), imageSize=(360, 480), cropSize=(180, 240))
-    searcher = MCTS(iterationLimit=10000, renderer=renderer, maxDepth=7,
-                    rolloutPolicy='nostep', treePolicy='random')
+    renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
+    searcher = MCTS(renderer, args)
 
     # Network setup
-    resnet = resnet18
-    model_path = 'data/classification/top_nobg_linspace_mse-0.pth'
-    device = "cuda:0"
-    vNet = resnet(pretrained=False)
-    fc_in_features = vNet.fc.in_features
-    vNet.fc = nn.Sequential(
-        nn.Linear(fc_in_features, 1),
-        # nn.Sigmoid()
-    )
-    vNet.load_state_dict(torch.load(model_path))
-    vNet.to(device)
-    vNet.eval()
-    preprocess = transforms.Compose([
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225]),
-    ])
+    model_path = args.reward_model_path
+    vNet, preprocess = loadRewardFunction(model_path)
     searcher.setVNet(vNet)
     searcher.setPreProcess(preprocess)
 
@@ -633,28 +658,26 @@ if __name__=='__main__':
 
     # Environment setup
     env = setupEnvironment(args)
-    
-    for sidx in range(num(args.num_scenes)):
+
+    for sidx in range(args.num_scenes):
         # setup logger
-        os.makedirs('data/mcts/scene-%d' % sidx, exist_ok=True)
+        os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
+        with open('data/mcts-%s/config.json'%log_name, 'w') as f:
+            json.dump(args.__dict__, f, indent=2)
+            #f.write(str(args))
         logger.handlers.clear()
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\n%(message)s')
-        file_handler = logging.FileHandler('data/mcts/scene-%d/mcts.log'%sidx)
+        file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
         # setup initial state
         obs = env.reset()
         initRgb = obs[args.view]['rgb']
-        initSeg = obs[args.view]['seg']
+        initSeg = obs[args.view]['segmentation']
 
-        #dataIndex = 0
-        #initRgb = np.array(Image.open(rgbList[dataIndex]))
-        #initSeg = np.load(segList[dataIndex])
-        # plt.imshow(initSeg)
-        # plt.show()
         plt.imshow(initRgb)
-        plt.savefig('data/mcts/scene-%d/initial.png'%sidx)
+        plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
         initTable = searcher.reset(initRgb, initSeg)
         print(initTable[0])
         logger.info('initTable: %s' % initTable)
@@ -678,20 +701,20 @@ if __name__=='__main__':
             logger.info("Best Child: \n %s"%nextTable[0])
             tableRgb = renderer.getRGB(nextTable)
             plt.imshow(tableRgb)
-            plt.savefig('data/mcts/scene-%d/expect_%d.png'%(sidx, step))
+            plt.savefig('data/mcts-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
             #plt.show()
 
             # simulation step in pybullet #
             target_object, target_position, rot_angle = renderer.convert_action(action)
             obs = env.step(target_object, target_position, rot_angle)
             currentRgb = obs[args.view]['rgb']
-            currentSeg = obs[args.view]['seg']
+            currentSeg = obs[args.view]['segmentation']
             table = searcher.reset(currentRgb, currentSeg)
             #table = copy.deepcopy(nextTable)
             print("Current state: \n %s"%table[0])
             logger.info("Current state: \n %s"%table[0])
             plt.imshow(currentRgb)
-            plt.savefig('data/mcts/scene-%d/real_%d.png'%(sidx, step))
+            plt.savefig('data/mcts-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
             terminal, reward = searcher.isTerminal(None, table, checkReward=True)
             print("Current Score:", reward)
             print("--------------------------------")
@@ -707,6 +730,6 @@ if __name__=='__main__':
                 logger.info("Score: %f"%reward)
                 logger.info(table[0])
                 plt.imshow(currentRgb)
-                plt.savefig('data/mcts/scene-%d/final.png'%sidx)
+                plt.savefig('data/mcts-%s/scene-%d/final.png'%(log_name, sidx))
                 # plt.show()
                 break
