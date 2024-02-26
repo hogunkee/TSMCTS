@@ -601,7 +601,8 @@ def setupEnvironment(objects, args):
         'split' : 'inference' #'train'
     }
     
-    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=True, num_objs=args.num_objects, gripper_type='85')
+    gui_on = not args.gui_off
+    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, num_objs=args.num_objects, gripper_type='85')
     p.resetDebugVisualizerCamera(2.0, -270., -60., (0., 0., 0.))
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
@@ -621,6 +622,7 @@ if __name__=='__main__':
     parser.add_argument('--H', type=int, default=12)
     parser.add_argument('--W', type=int, default=15)
     parser.add_argument('--crop-size', type=int, default=96)
+    parser.add_argument('--gui-off', action="store_true")
     # MCTS
     parser.add_argument('--time-limit', type=int, default=None)
     parser.add_argument('--iteration-limit', type=int, default=10000)
