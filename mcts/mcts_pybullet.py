@@ -225,6 +225,7 @@ class Node(object):
         self.totalReward = 0.
         self.children = {}
         self.actionCandidates = []
+        self.actionProb = None
     
     def takeAction(self, move):
         obj, py, px, rot = move
@@ -238,8 +239,18 @@ class Node(object):
         newTable = [newPosMap, newRotMap]
         return newTable
     
-    def setActions(self, actionCandidates):
+    def setActions(self, actionCandidates, actionProb=None):
         self.actionCandidates = actionCandidates
+        if actionProb is not None:
+            self.actionProb = actionProb
+            if False: # blurring
+                newActionProb = np.zeros_like(actionProb)
+                for i in range(len(actionProb)):
+                    ap = actionProb[i]
+                    kernel = np.ones((2, 2))
+                    ap_blur = cv2.dilate(cv2.erode(ap, kernel), kernel)
+                    newActionProb[i] = ap_blur
+                self.actionProb = newActionProb
 
     def isFullyExpanded(self):
         return len(self.children)!=0 and len(self.children)==len(self.actionCandidates)
@@ -354,7 +365,8 @@ class MCTS(object):
     def expand(self, node):
         # print('expand.')
         while True:
-            actions = self.getPossibleActions(node, self.treePolicy)
+            actions, prob = self.getPossibleActions(node, self.treePolicy)
+            # print('Num possible actions:', len(actions))
             assert actions is not None
             action = random.choice(actions)
             if tuple(action) not in node.children:
@@ -406,7 +418,7 @@ class MCTS(object):
                 actionCandidates = []
                 states = []
                 objectPatches = []
-                for o in range(len(self.renderer.numObjects)):
+                for o in range(self.renderer.numObjects):
                     rgbWoTarget = self.renderer.getRGB(node.table, remove=o)
                     objPatch = self.renderer.objectPatches[o]
                     states.append(rgbWoTarget)
@@ -420,7 +432,7 @@ class MCTS(object):
                 for o, py, px in np.where(QHeatmap > self.thresholdQ):
                     actionCandidates.append((o, py, px))
                 node.setActions(actionCandidates)
-            return node.actionCandidates
+            return node.actionCandidates, node.actionProb
 
         elif policy=='V':
             if len(node.actionCandidates)==0:
@@ -442,24 +454,27 @@ class MCTS(object):
             if needValues:
                 return node,actionCandidates, values[possibleIdx]
             else:
-                return node.actionCandidates
+                return node.actionCandidates, node.actionProb
             
         elif policy=='policy':
             if len(node.actionCandidates)==0:
                 actionCandidates = []
                 states = []
                 objectPatches = []
-                for o in range(len(self.renderer.numObjects)):
+                for o in range(self.renderer.numObjects):
                     rgbWoTarget = self.renderer.getRGB(node.table, remove=o)
                     states.append(rgbWoTarget)
                 s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
                 if self.preProcess is not None:
                     s = self.preProcess(s)
                 probMap  = self.policyNet(s).cpu().detach().numpy()
-                for o, py, px in np.where(probMap > self.thresholdProb):
-                    actionCandidates.append((o, py, px))
-                node.setActions(actionCandidates)
-            return node.actionCandidates
+                os, pys, pxs = np.where(probMap > self.thresholdProb)
+                for o, py, px in zip(os, pys, pxs):
+                    for rot in range(1, 3):
+                        actionCandidates.append((o, py, px, rot))
+                actionCandidates = [a for a in actionCandidates if self.root.table[0][a[1], a[2]]==0]
+                node.setActions(actionCandidates, probMap)
+            return node.actionCandidates, node.actionProb
 
         elif policy=='random':
             if len(node.actionCandidates)==0:
@@ -468,9 +483,11 @@ class MCTS(object):
                 allPossibleActions = np.array(np.meshgrid(
                                 np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
                                 )).T.reshape(-1, 4)
-                allPossibleActions = [a for a in allPossibleActions if self.root.table[0][a[1], a[2]]==0]
-                node.setActions(allPossibleActions)
-            return node.actionCandidates
+                actionCandidates = [a for a in allPossibleActions if self.root.table[0][a[1], a[2]]==0]
+                probMap = np.ones([nb, th, tw])
+                probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+                node.setActions(actionCandidates, probMap)
+            return node.actionCandidates, node.actionProb
 
     def isTerminal(self, node, table=None, checkReward=False):
         # print('isTerminal')
@@ -673,7 +690,9 @@ if __name__=='__main__':
     logger.setLevel(logging.INFO)
 
     # Environment setup
-    objects = [('bowl', 'medium'), ('can_drink','medium'), ('plate','medium'), ('marker', 'medium'), ('soap_dish', 'medium'), ('book', 'medium'), ('remote', 'medium')]
+    objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
+    objects = [(o, 'medium') for o in objects]
+    #objects = [('bowl', 'medium'), ('can_drink','medium'), ('plate','medium'), ('marker', 'medium'), ('soap_dish', 'medium'), ('book', 'medium'), ('remote', 'medium')]
     selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
     env = setupEnvironment(selected_objects, args)
 
@@ -694,7 +713,7 @@ if __name__=='__main__':
         pnet = ResNet()
         pnet.load_state_dict(torch.load(args.policynet_path))
         pnet = pnet.to("cuda:0")
-        MCTS.setPolicyNet(pnet)
+        searcher.setPolicyNet(pnet)
     
     for sidx in range(args.num_scenes):
         # setup logger
@@ -758,6 +777,13 @@ if __name__=='__main__':
             for i, c in enumerate(searcher.root.children):
                 print(i, c, searcher.root.children[c])
             action = resultDict['action']
+            
+            # action probability
+            actionProb = searcher.root.actionProb
+            if actionProb is not None:
+                actionProb[actionProb>args.threshold_prob] += 0.5
+                plt.imshow(np.mean(actionProb, axis=0))
+                plt.savefig('data/mcts-%s/scene-%d/actionprob_%d.png'%(log_name, sidx, step))
 
             # expected result in mcts #
             nextTable = searcher.root.takeAction(action)
