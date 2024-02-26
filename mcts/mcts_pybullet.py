@@ -22,7 +22,7 @@ from data_loader import TabletopTemplateDataset
 
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
-from custom_env import TableTopTidyingUpEnv
+from custom_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
 
 
@@ -76,12 +76,12 @@ class Renderer(object):
         for o in range(self.numObjects):
             # get the segmentation mask of each object #
             mask = (segmap==o+4).astype(float)
-            if mask.sum()<100:
-                kernel = np.ones((2, 2), np.uint8)
-                mask = cv2.dilate(cv2.erode(mask, kernel), kernel)
-            else:
-                kernel = np.ones((3, 3), np.uint8)
-                mask = cv2.dilate(cv2.erode(mask, kernel), kernel)
+            # if mask.sum()<100:
+            #     kernel = np.ones((2, 2), np.uint8)
+            #     mask = cv2.dilate(cv2.erode(mask, kernel), kernel)
+            # else:
+            #     kernel = np.ones((3, 3), np.uint8)
+            #     mask = cv2.dilate(cv2.erode(mask, kernel), kernel)
             mask = np.round(mask)
             masks.append(mask)
             # get the center of each object #
@@ -589,7 +589,7 @@ class MCTS(object):
         return maxReward
 
 
-def setupEnvironment(args):
+def setupEnvironment(objects, args):
     camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
     camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
     
@@ -605,8 +605,6 @@ def setupEnvironment(args):
     p.resetDebugVisualizerCamera(2.0, -270., -60., (0., 0., 0.))
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
-
-    objects = [('bowl', 'medium'), ('can_drink','medium'), ('plate','medium'), ('marker', 'medium'), ('soap_dish', 'medium')]
 
     env.reset()
     object_pybullet_ids = env.spawn_objects(objects)
@@ -642,6 +640,13 @@ if __name__=='__main__':
     # Logger
     now = datetime.datetime.now()
     log_name = now.strftime("%m%d_%H%M")
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Environment setup
+    objects = [('bowl', 'medium'), ('can_drink','medium'), ('plate','medium'), ('marker', 'medium'), ('soap_dish', 'medium'), ('book', 'medium'), ('remote', 'medium')]
+    selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+    env = setupEnvironment(selected_objects, args)
 
     # MCTS setup
     renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
@@ -652,29 +657,52 @@ if __name__=='__main__':
     vNet, preprocess = loadRewardFunction(model_path)
     searcher.setVNet(vNet)
     searcher.setPreProcess(preprocess)
-
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-
-    # Environment setup
-    env = setupEnvironment(args)
-
+    
     for sidx in range(args.num_scenes):
         # setup logger
         os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
         with open('data/mcts-%s/config.json'%log_name, 'w') as f:
             json.dump(args.__dict__, f, indent=2)
-            #f.write(str(args))
+
         logger.handlers.clear()
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\n%(message)s')
         file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
-        # setup initial state
+        # Initial state
         obs = env.reset()
-        initRgb = obs[args.view]['rgb']
-        initSeg = obs[args.view]['segmentation']
+        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+        env.spawn_objects(selected_objects)
+        while True:
+            is_occluded = False
+            is_collision = False
+            env.arrange_objects(random=True)
+            obs = env.get_observation()
+            initRgb = obs[args.view]['rgb']
+            initSeg = obs[args.view]['segmentation']
+            # Check occlusions
+            for o in range(args.num_objects):
+                # get the segmentation mask of each object #
+                mask = (initSeg==o+4).astype(float)
+                if mask.sum()==0:
+                    print("Object %d is occluded."%o)
+                    logger.info("Object %d is occluded."%o)
+                    is_occluded = True
+                    break
+            # Check collision
+            contact_objects = get_contact_objects()
+            contact_objects = [c for c in list(get_contact_objects()) if 1 not in c and 2 not in c]
+            if len(contact_objects) > 0:
+                print("Collision detected.")
+                print(contact_objects)
+                logger.info("Collision detected.")
+                logger.info(contact_objects)
+                is_collision = True
+            if is_occluded or is_collision:
+                continue
+            else:
+                break
 
         plt.imshow(initRgb)
         plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
