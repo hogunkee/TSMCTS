@@ -293,8 +293,10 @@ class MCTS(object):
         self.thresholdSuccess = args.threshold_success #0.6
         self.thresholdQ = args.threshold_q #0.5
         self.thresholdV = args.threshold_v #0.5
+        self.thresholdProb = args.threshold_prob #0.1
         self.QNet = None
         self.VNet = None
+        self.policyNet = None
         self.batchSize = args.batch_size #32
         self.preProcess = None
     
@@ -307,6 +309,9 @@ class MCTS(object):
     
     def setVNet(self, VNet):
         self.VNet = VNet
+
+    def setPolicyNet(self, policyNet):
+        self.policyNet = policyNet
 
     def setPreProcess(self, preProcess):
         self.preProcess = preProcess
@@ -439,6 +444,23 @@ class MCTS(object):
             else:
                 return node.actionCandidates
             
+        elif policy=='policy':
+            if len(node.actionCandidates)==0:
+                actionCandidates = []
+                states = []
+                objectPatches = []
+                for o in range(len(self.renderer.numObjects)):
+                    rgbWoTarget = self.renderer.getRGB(node.table, remove=o)
+                    states.append(rgbWoTarget)
+                s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
+                if self.preProcess is not None:
+                    s = self.preProcess(s)
+                probMap  = self.policyNet(s).cpu().detach().numpy()
+                for o, py, px in np.where(probMap > self.thresholdProb):
+                    actionCandidates.append((o, py, px))
+                node.setActions(actionCandidates)
+            return node.actionCandidates
+
         elif policy=='random':
             if len(node.actionCandidates)==0:
                 nb = self.renderer.numObjects
@@ -632,11 +654,16 @@ if __name__=='__main__':
     parser.add_argument('--threshold-success', type=float, default=0.85)
     parser.add_argument('--threshold-q', type=float, default=0.5)
     parser.add_argument('--threshold-v', type=float, default=0.5)
+    parser.add_argument('--threshold-prob', type=float, default=0.1)
     parser.add_argument('--batch-size', type=int, default=32)
     # Reward model
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
     parser.add_argument('--view', type=str, default='top') 
+    # Pretrained Models
+    parser.add_argument('--qnet-path', type=str, default='')
+    parser.add_argument('--vnet-path', type=str, default='')
+    parser.add_argument('--policynet-path', type=str, default='../policy_learning/logs/0224_1815/pnet_e30.pth')
     args = parser.parse_args()
 
     # Logger
@@ -659,6 +686,15 @@ if __name__=='__main__':
     vNet, preprocess = loadRewardFunction(model_path)
     searcher.setVNet(vNet)
     searcher.setPreProcess(preprocess)
+
+    # Policy-based MCTS
+    if args.tree_policy=='policy':
+        sys.path.append(os.path.join(FILE_PATH, '..', 'policy_learning'))
+        from model import ResNet
+        pnet = ResNet()
+        pnet.load_state_dict(torch.load(args.policynet_path))
+        pnet = pnet.to("cuda:0")
+        MCTS.setPolicyNet(pnet)
     
     for sidx in range(args.num_scenes):
         # setup logger
