@@ -16,6 +16,7 @@ from src.policy import DiscreteResNetPolicy, DeterministicResNetPolicy, Discrete
 from src.value_functions import TransportQ, ValueFunction
 from src.util import return_range, set_seed, Log, sample_batch, torchify, evaluate_policy
 from src.util import DEFAULT_DEVICE
+from iql_dataset import TabletopOfflineDataset
 
 import datetime
 import wandb
@@ -24,7 +25,6 @@ from matplotlib import pyplot as plt
 file_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(file_path, '../policy_learning'))
 import nonechucks as nc
-from custom_dataset import TabletopOfflineDataset
 
 
 def loadRewardFunction(model_path):
