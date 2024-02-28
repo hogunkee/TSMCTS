@@ -102,7 +102,7 @@ def evaluateBatch(data, pnet, vNet, preprocess, H, W, cropSize):
     return (rewards_prime - rewards).mean()
 
 
-def train(args, log_name):
+def evaluate(args, log_name):
     if args.model=='resnet':
         H, W = 12, 15
     else:
@@ -134,103 +134,61 @@ def train(args, log_name):
         pnet = ResNet().to(Device)
     elif args.model=='pnet':
         pnet = PlaceNet(args.hidden_dim).to(Device)
-
-    if args.loss=='ce':
-        criterion = nn.CrossEntropyLoss()
-    elif args.loss=='mse':
-        criterion = nn.MSELoss()
-    elif args.loss=='sum':
-        criterion = None
-    optimizer = optim.Adam(pnet.parameters(), lr=args.learning_rate)
+    pnet.load_state_dict(torch.load(args.model_path))
 
     vNet, preprocess = loadRewardFunction(args.reward_model_path)
 
     count_steps = 0
-    for epoch in range(args.num_epochs):
-        running_loss = 0.0
-        with tqdm(train_loader) as bar:
-            bar.set_description(f"Epoch {epoch + 1}")
-            for i, data in enumerate(bar, 0):
-                inputs = preprocess(data['image_after_pick'].permute([0,3,1,2])).to(torch.float32).to(Device)
-                actions = data['action']
-                labels = np.zeros([len(actions), H, W])
-                labels[np.arange(len(actions)), actions[:, 0], actions[:, 1]] = 1
-                labels = torch.Tensor(labels).to(torch.float32).to(Device)
-                probs = pnet(inputs)
+    with tqdm(train_loader) as bar:
+        for i, data in enumerate(bar, 0):
+            rgb = data['image_after_pick']
+            inputs = preprocess(rgb.permute([0,3,1,2])).to(torch.float32).to(Device)
+            actions = data['action']
+            labels = np.zeros([len(actions), H, W])
+            labels[np.arange(len(actions)), actions[:, 0], actions[:, 1]] = 1
+            labels = torch.Tensor(labels).to(torch.float32).to(Device)
+            probs = pnet(inputs)
 
-                if args.loss=='sum':
-                    loss = - (probs * labels).sum()
-                else:
-                    probs_flatten = probs.view(-1, H * W)
-                    labels_flatten = labels.view(-1, H * W)
-                    loss = criterion(probs_flatten, labels_flatten)
-                    # entropy maximization
-                    loss -= args.alpha * (probs * torch.log(probs + 1e-8)).sum() / len(probs)
-
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                bar.set_postfix(
-                    loss=float(loss)
-                )
-                if not args.wandb_off:
-                    step_log = {'loss': float(loss)}
-                    wandb.log(step_log, count_steps)
-                
-                running_loss += loss.item()
-                if (i+1) % args.log_freq == 0:
-                    print('%d steps / loss: %.3f' %
-                        (i + 1, running_loss / args.log_freq))
-                    if False:
-                        plt.subplot(1, 3, 1)
-                        plt.imshow(probs.cpu().detach().numpy()[0], vmin=0., vmax=1.)
-                        plt.subplot(1, 3, 2)
-                        plt.imshow(labels.cpu().detach().numpy()[0], vmin=0., vmax=1.)
-                        plt.subplot(1, 3, 3)
-                        plt.imshow((probs * labels).cpu().detach().numpy()[0], vmin=0., vmax=1.)
-                        plt.show()
-                    
-                    delta_rewards = []
-                    for t_data in test_loader:
-                        delta_reward = evaluateBatch(t_data, pnet, vNet, preprocess, H, W, args.crop_size)
-                        delta_rewards.append(delta_reward)
-                    print('rewards:', np.mean(delta_rewards))
-                    if not args.wandb_off:
-                        step_log = {
-                                'running loss': float(running_loss / args.log_freq),
-                                'delta rewards': float(np.mean(delta_rewards)),
-                                }
-                        wandb.log(step_log, count_steps)
-                    running_loss = 0.0
+            
+            for b in range(args.batch_size):
+                fig = plt.figure(figsize=(16, 8))
+                plt.subplot(1, 3, 1)
+                plt.imshow(rgb.cpu().detach().numpy()[b])
+                plt.subplot(1, 3, 2)
+                p = probs.cpu().detach().numpy()
+                plt.imshow(p[b], vmin=0., vmax=1.)
+                for _y in range(p[b].shape[0]):
+                    for _x in range(p[b].shape[1]):
+                        plt.text(_x, _y, '%.2f'%p[b][_y, _x], ha='center', va='center')
+                plt.subplot(1, 3, 3)
+                plt.imshow(labels.cpu().detach().numpy()[b], vmin=0., vmax=1.)
+                plt.savefig('../mcts/data/weekly/s-%d.png'%count_steps)
                 count_steps += 1
-        if not os.path.isdir(os.path.join(args.log_dir, log_name)):
-            os.makedirs(os.path.join(args.log_dir, log_name))
-        torch.save(pnet.state_dict(), os.path.join(args.log_dir, log_name, 'pnet_e%d.pth'%(epoch+1)))
+                
+            if False:
+                delta_rewards = []
+                for t_data in test_loader:
+                    delta_reward = evaluateBatch(t_data, pnet, vNet, preprocess, H, W, args.crop_size)
+                    delta_rewards.append(delta_reward)
+                print('rewards:', np.mean(delta_rewards))
+            
+        
 
 if __name__=='__main__':
     parser = ArgumentParser()
     parser.add_argument('--hidden-dim', type=int, default=16)
-    parser.add_argument('--num-epochs', type=int, default=10)
     parser.add_argument('--batch-size', type=int, default=16)
     parser.add_argument('--crop-size', type=int, default=64)
     parser.add_argument('--learning-rate', type=float, default=1e-4)
-    parser.add_argument('--alpha', type=float, default=0.1)
-    parser.add_argument('--loss', type=str, default='ce') # mse / sum / ce:cross-entropy
     parser.add_argument('--model', type=str, default='resnet') # pnet / resnet
+    parser.add_argument('--model-path', type=str, default='logs/0224_1815/pnet_e1.pth')
     parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--data-dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/train')
-    parser.add_argument('--log-freq', type=int, default=100)
     parser.add_argument('--log-dir', type=str, default='logs')
-    parser.add_argument('--wandb-off', action='store_true')
     args = parser.parse_args()
 
     now = datetime.datetime.now()
     log_name = now.strftime("%m%d_%H%M")
-    if not args.wandb_off:
-        wandb.init(project="Policy learning")
-        wandb.config.update(parser.parse_args())
-        wandb.run.name = log_name
-        wandb.run.save()
-
-    train(args, log_name)
-    print('Finished Training')
+    
+    evaluate(args, log_name)
+    print('Finished Evluation')

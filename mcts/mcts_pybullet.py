@@ -168,17 +168,17 @@ class Renderer(object):
     def getRGB(self, table, remove=None):
         posMap, rotMap = table
         newRgb = np.zeros_like(np.array(self.rgb))[:, :, :3]
-        for o in range(1, self.numObjects+1):
+        for o in range(self.numObjects):
             if remove is not None:
                 if o==remove:
                     continue
-            if (posMap==o).any():
-                py, px = np.where(posMap==o)
+            if (posMap==o+1).any():
+                py, px = np.where(posMap==o+1)
                 py, px = py[0], px[0]
                 ty, tx = np.array([py, px]) * self.ratio + self.offset
                 rot = int(rotMap[py, px])
             else:
-                ty, tx = self.centers[o-1]
+                ty, tx = self.centers[o]
                 rot = 0
             yMin = int(ty - self.cropSize[0] / 2)
             yMax = int(ty + self.cropSize[0] / 2)
@@ -197,7 +197,13 @@ class Renderer(object):
 
     def getTable(self, segmap):
         newTable = np.zeros([self.tableSize[0], self.tableSize[1]])
+        #return newTable
+        for o in range(self.numObjects):
+               center = self.centers[o]
+               gy, gx = ((np.array(center) - self.offset) // self.ratio).astype(int)
+               newTable[gy, gx] = o + 1
         return newTable
+
 
     def convert_action(self, action):
         obj, py, px, rot = action
@@ -474,6 +480,23 @@ class MCTS(object):
                         actionCandidates.append((o, py, px, rot))
                 actionCandidates = [a for a in actionCandidates if self.root.table[0][a[1], a[2]]==0]
                 node.setActions(actionCandidates, probMap)
+
+                if False:
+                    plt.imshow(self.renderer.getRGB(node.table))
+                    plt.savefig('data/weekly/orig.png')
+                    for o in range(self.renderer.numObjects):
+                        plt.imshow(states[o])
+                        plt.savefig('data/weekly/state_%d.png'%o)
+                    for o in range(self.renderer.numObjects):
+                        texts = []
+                        plt.imshow(probMap[o])
+                        for _y in range(probMap[o].shape[0]):
+                            for _x in range(probMap[o].shape[1]):
+                                txt = plt.text(_x, _y, '%.1f'%probMap[o][_y, _x], ha='center', va='center')
+                                texts.append(txt)
+                        plt.savefig('data/weekly/probmap_%d.png'%o)
+                        for txt in texts:
+                            txt.remove()
             return node.actionCandidates, node.actionProb
 
         elif policy=='random':
@@ -660,7 +683,7 @@ if __name__=='__main__':
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--H', type=int, default=12)
     parser.add_argument('--W', type=int, default=15)
-    parser.add_argument('--crop-size', type=int, default=96)
+    parser.add_argument('--crop-size', type=int, default=128) #96
     parser.add_argument('--gui-off', action="store_true")
     # MCTS
     parser.add_argument('--time-limit', type=int, default=None)
@@ -716,112 +739,117 @@ if __name__=='__main__':
         searcher.setPolicyNet(pnet)
     
     for sidx in range(args.num_scenes):
-        # setup logger
-        os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
-        with open('data/mcts-%s/config.json'%log_name, 'w') as f:
-            json.dump(args.__dict__, f, indent=2)
+        try:
+            # setup logger
+            os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
+            with open('data/mcts-%s/config.json'%log_name, 'w') as f:
+                json.dump(args.__dict__, f, indent=2)
 
-        logger.handlers.clear()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\n%(message)s')
-        file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+            logger.handlers.clear()
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\n%(message)s')
+            file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
 
-        # Initial state
-        obs = env.reset()
-        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
-        env.spawn_objects(selected_objects)
-        while True:
-            is_occluded = False
-            is_collision = False
-            env.arrange_objects(random=True)
-            obs = env.get_observation()
-            initRgb = obs[args.view]['rgb']
-            initSeg = obs[args.view]['segmentation']
-            # Check occlusions
-            for o in range(args.num_objects):
-                # get the segmentation mask of each object #
-                mask = (initSeg==o+4).astype(float)
-                if mask.sum()==0:
-                    print("Object %d is occluded."%o)
-                    logger.info("Object %d is occluded."%o)
-                    is_occluded = True
+            # Initial state
+            obs = env.reset()
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+            env.spawn_objects(selected_objects)
+            while True:
+                is_occluded = False
+                is_collision = False
+                env.arrange_objects(random=True)
+                obs = env.get_observation()
+                initRgb = obs[args.view]['rgb']
+                initSeg = obs[args.view]['segmentation']
+                # Check occlusions
+                for o in range(args.num_objects):
+                    # get the segmentation mask of each object #
+                    mask = (initSeg==o+4).astype(float)
+                    if mask.sum()==0:
+                        print("Object %d is occluded."%o)
+                        logger.info("Object %d is occluded."%o)
+                        is_occluded = True
+                        break
+                # Check collision
+                contact_objects = get_contact_objects()
+                contact_objects = [c for c in list(get_contact_objects()) if 1 not in c and 2 not in c]
+                if len(contact_objects) > 0:
+                    print("Collision detected.")
+                    print(contact_objects)
+                    logger.info("Collision detected.")
+                    logger.info(contact_objects)
+                    is_collision = True
+                if is_occluded or is_collision:
+                    continue
+                else:
                     break
-            # Check collision
-            contact_objects = get_contact_objects()
-            contact_objects = [c for c in list(get_contact_objects()) if 1 not in c and 2 not in c]
-            if len(contact_objects) > 0:
-                print("Collision detected.")
-                print(contact_objects)
-                logger.info("Collision detected.")
-                logger.info(contact_objects)
-                is_collision = True
-            if is_occluded or is_collision:
-                continue
-            else:
-                break
 
-        plt.imshow(initRgb)
-        plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
-        initTable = searcher.reset(initRgb, initSeg)
-        print(initTable[0])
-        logger.info('initTable: %s' % initTable)
-        table = initTable
+            plt.imshow(initRgb)
+            plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
+            initTable = searcher.reset(initRgb, initSeg)
+            print(initTable[0])
+            logger.info('initTable: %s' % initTable)
+            table = initTable
 
-        print("--------------------------------")
-        logger.info('-'*50)
-        for step in range(10):
-            resultDict = searcher.search(table=table, needDetails=True)
-            print("Num Children: %d"%len(searcher.root.children))
-            logger.info("Num Children: %d"%len(searcher.root.children))
-            for i, c in enumerate(searcher.root.children):
-                print(i, c, searcher.root.children[c])
-            action = resultDict['action']
-            
-            # action probability
-            actionProb = searcher.root.actionProb
-            if actionProb is not None:
-                actionProb[actionProb>args.threshold_prob] += 0.5
-                plt.imshow(np.mean(actionProb, axis=0))
-                plt.savefig('data/mcts-%s/scene-%d/actionprob_%d.png'%(log_name, sidx, step))
-
-            # expected result in mcts #
-            nextTable = searcher.root.takeAction(action)
-            print("Best Action:", action)
-            print("Best Child: \n %s"%nextTable[0])
-            logger.info("Best Action: %s"%str(action))
-            logger.info("Best Child: \n %s"%nextTable[0])
-            tableRgb = renderer.getRGB(nextTable)
-            plt.imshow(tableRgb)
-            plt.savefig('data/mcts-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
-            #plt.show()
-
-            # simulation step in pybullet #
-            target_object, target_position, rot_angle = renderer.convert_action(action)
-            obs = env.step(target_object, target_position, rot_angle)
-            currentRgb = obs[args.view]['rgb']
-            currentSeg = obs[args.view]['segmentation']
-            table = searcher.reset(currentRgb, currentSeg)
-            #table = copy.deepcopy(nextTable)
-            print("Current state: \n %s"%table[0])
-            logger.info("Current state: \n %s"%table[0])
-            plt.imshow(currentRgb)
-            plt.savefig('data/mcts-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
-            terminal, reward = searcher.isTerminal(None, table, checkReward=True)
-            print("Current Score:", reward)
             print("--------------------------------")
-            logger.info("Current Score: %f" %reward)
-            logger.info("-"*50)
-            if terminal:
-                print("Arrived at the final state:")
-                print("Score:", reward)
-                print(table[0])
-                print("--------------------------------")
-                print("--------------------------------")
-                logger.info("Arrived at the final state:")
-                logger.info("Score: %f"%reward)
-                logger.info(table[0])
+            logger.info('-'*50)
+            for step in range(10):
+                resultDict = searcher.search(table=table, needDetails=True)
+                print("Num Children: %d"%len(searcher.root.children))
+                logger.info("Num Children: %d"%len(searcher.root.children))
+                for i, c in enumerate(searcher.root.children):
+                    print(i, c, searcher.root.children[c])
+                action = resultDict['action']
+                
+                # action probability
+                actionProb = searcher.root.actionProb
+                if actionProb is not None:
+                    actionProb[actionProb>args.threshold_prob] += 0.5
+                    plt.imshow(np.mean(actionProb, axis=0))
+                    plt.savefig('data/mcts-%s/scene-%d/actionprob_%d.png'%(log_name, sidx, step))
+
+                # expected result in mcts #
+                nextTable = searcher.root.takeAction(action)
+                print("Best Action:", action)
+                print("Best Child: \n %s"%nextTable[0])
+                logger.info("Best Action: %s"%str(action))
+                logger.info("Best Child: \n %s"%nextTable[0])
+                tableRgb = renderer.getRGB(nextTable)
+                plt.imshow(tableRgb)
+                plt.savefig('data/mcts-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
+                #plt.show()
+
+                # simulation step in pybullet #
+                target_object, target_position, rot_angle = renderer.convert_action(action)
+                obs = env.step(target_object, target_position, rot_angle)
+                currentRgb = obs[args.view]['rgb']
+                currentSeg = obs[args.view]['segmentation']
+                table = searcher.reset(currentRgb, currentSeg)
+                #table = copy.deepcopy(nextTable)
+                print("Current state: \n %s"%table[0])
+                logger.info("Current state: \n %s"%table[0])
                 plt.imshow(currentRgb)
-                plt.savefig('data/mcts-%s/scene-%d/final.png'%(log_name, sidx))
-                # plt.show()
-                break
+                plt.savefig('data/mcts-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
+                terminal, reward = searcher.isTerminal(None, table, checkReward=True)
+                print("Current Score:", reward)
+                print("--------------------------------")
+                logger.info("Current Score: %f" %reward)
+                logger.info("-"*50)
+                if terminal:
+                    print("Arrived at the final state:")
+                    print("Score:", reward)
+                    print(table[0])
+                    print("--------------------------------")
+                    print("--------------------------------")
+                    logger.info("Arrived at the final state:")
+                    logger.info("Score: %f"%reward)
+                    logger.info(table[0])
+                    plt.imshow(currentRgb)
+                    plt.savefig('data/mcts-%s/scene-%d/final.png'%(log_name, sidx))
+                    # plt.show()
+                    break
+        except KeyboardInterrupt:
+            break
+        except:
+            continue
