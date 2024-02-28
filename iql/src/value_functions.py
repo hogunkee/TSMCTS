@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 from .util import mlp, resnet
+from torchvision.models import resnet18
 from src.models.transport_small import TransportSmall
 
-class TwinQ(nn.Module):
+class TransportQ(nn.Module):
     def __init__(self, crop_size=64):
         super().__init__()
         self.q1 = TransportSmall(
@@ -18,6 +19,53 @@ class TwinQ(nn.Module):
             crop_size=crop_size, 
             verbose=False,
             name="Transport-Q2")
+
+    def both(self, obs):
+        _, state_q, patch = obs
+        return self.q1(state_q, patch), self.q2(state_q, patch)
+
+    def forward(self, obs):
+        q1, q2 = self.both(obs)
+        #print(q1.shape, q2.shape)
+        return torch.min(q1, q2)
+
+class ResNetQ(nn.Module):
+    def __init__(self, hidden_dim=32):
+        super().__init__()
+        resnet = resnet18(pretrained=False)
+        self.cnn_state = nn.Sequential(
+            *list(resnet.children())[:-2]
+            +[nn.Conv2d(512, hidden_dim, kernel_size=1, stride=1, padding=0)]
+            )
+        self.cnn_patch = resnet18(pretrained=False)
+        self.cnn_patch.fc = nn.Sequential(
+                                nn.Linear(512, hidden_dim),
+                                nn.Tanh()
+                            )
+        # fully convolution layer
+        self.fconv = nn.Sequential(
+                        nn.Conv2d(2*hidden_dim, 4*hidden_dim, kernel_size=1, stride=1, padding='same'),
+                        nn.ReLU(),
+                        nn.Conv2d(4*hidden_dim, 1, kernel_size=1, stride=1, padding='same')
+                        )
+        
+    def forward(self, state, patch):
+        state = state.permute(0, 3, 1, 2)
+        patch = patch.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        f_patch = self.cnn_patch(patch) # B x 32
+        f_patch = f_patch.unsqueeze(-1).unsqueeze(-1)
+        f_patch = f_patch.expand(-1, -1, h_state.size(2), h_state.size(3))
+        h_cat = torch.cat([h_state, f_patch], dim=1)  # B x 64 x H x W
+        q = self.fconv(h_cat).squeeze(1)  # B x H x W
+        return q
+
+class ResNetTwinQ(nn.Module):
+    def __init__(self, crop_size=64):
+        super().__init__()
+        
+        self.q1 = ResNetQ(hidden_dim=32)
+        self.q2 = ResNetQ(hidden_dim=32)
 
     def both(self, obs):
         _, state_q, patch = obs
@@ -51,30 +99,3 @@ class ValueFunction(nn.Module):
         h = torch.relu(self.fc1(h))
         out = self.fc2(h)
         return out
-
-    
-
-# old code
-# class TwinQ(nn.Module):
-#     def __init__(self, state_dim, action_dim, hidden_dim=256, n_hidden=2):
-#         super().__init__()
-#         dims = [state_dim + action_dim, *([hidden_dim] * n_hidden), 1]
-#         self.q1 = mlp(dims, squeeze_output=True)
-#         self.q2 = mlp(dims, squeeze_output=True)
-
-#     def both(self, state, action):
-#         sa = torch.cat([state, action], 1)
-#         return self.q1(sa), self.q2(sa)
-
-#     def forward(self, state, action):
-#         return torch.min(*self.both(state, action))
-
-
-# class ValueFunction(nn.Module):
-#     def __init__(self, state_dim, hidden_dim=256, n_hidden=2):
-#         super().__init__()
-#         dims = [state_dim, *([hidden_dim] * n_hidden), 1]
-#         self.v = mlp(dims, squeeze_output=True)
-
-#     def forward(self, state):
-#         return self.v(state)

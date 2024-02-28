@@ -12,8 +12,8 @@ from torchvision.models import resnet18
 from torchvision import transforms
 
 from src.iql import ImplicitQLearning
-from src.policy import DiscretePolicy, DeterministicPolicy
-from src.value_functions import TwinQ, ValueFunction
+from src.policy import DiscreteResNetPolicy, DeterministicResNetPolicy, DiscreteTransportPolicy, DeterministicTransportPolicy, GaussianPolicy
+from src.value_functions import TransportQ, ValueFunction
 from src.util import return_range, set_seed, Log, sample_batch, torchify, evaluate_policy
 from src.util import DEFAULT_DEVICE
 
@@ -136,14 +136,26 @@ def main(args, log_name):
     # dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     set_seed(args.seed)
 
-    if args.deterministic_policy:
-        policy = DeterministicPolicy(crop_size=args.crop_size)
+    
+    if args.continuous_policy:
+        policy = GaussianPolicy()
+    elif args.deterministic_policy:
+        if args.policy_net=='transport':
+            policy = DeterministicTransportPolicy(crop_size=args.crop_size)
+        elif args.policy_net=='resnet':
+            policy = DeterministicResNetPolicy(crop_size=args.crop_size)
+            
     else:
-        policy = DiscretePolicy(crop_size=args.crop_size)
+        if args.policy_net=='transport':
+            policy = DiscreteTransportPolicy(crop_size=args.crop_size)
+        elif args.policy_net=='resnet':
+            policy = DiscreteResNetPolicy(crop_size=args.crop_size)
 
+    qNet = TransportQ(crop_size=args.crop_size)
+    vNet = ValueFunction(hidden_dim=args.hidden_dim)
     iql = ImplicitQLearning(
-        qf=TwinQ(crop_size=args.crop_size),
-        vf=ValueFunction(hidden_dim=args.hidden_dim),
+        qf=qNet, #winQ(crop_size=args.crop_size),
+        vf=vNet, #ValueFunction(hidden_dim=args.hidden_dim),
         policy=policy,
         v_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.v_learning_rate),
         q_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.q_learning_rate),
@@ -211,7 +223,9 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=0.005)
     parser.add_argument('--tau', type=float, default=0.7)
     parser.add_argument('--beta', type=float, default=3.0)
-    parser.add_argument('--deterministic-policy', action='store_true')
+    parser.add_argument('--continuous-policy', action='store_true')
+    parser.add_argument('--deterministic-policy', action='store_true') # otherwise, use a categorical policy
+    parser.add_argument('--policy-net', type=str, default='resnet') # 'transport' / 'resnet
     parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--eval-period', type=int, default=5000)
     parser.add_argument('--wandb-off', action='store_true')
