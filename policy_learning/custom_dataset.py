@@ -89,7 +89,7 @@ class TabletopOfflineDataset(Dataset):
         obj_info = json.load(open(self.data_obj_infos[index], 'r'))
 
         moved_object = self.find_object(next_obj_info, obj_info)
-        action = self.find_action(moved_object, next_seg, seg)
+        action, action_dist = self.find_action(moved_object, next_seg, seg)
         image_after_pick, patch = self.extract_patch(image, seg, moved_object)
         next_image_before_place, next_patch = self.extract_patch(next_image, next_seg, moved_object)
         #image_after_pick, patch = self.extract_patch(image, seg, moved_object)
@@ -102,6 +102,7 @@ class TabletopOfflineDataset(Dataset):
                 'next_image_before_place': next_image_before_place/255.,
                 'next_patch': next_patch/255.,
                 'action': np.array(action),
+                'action_dist': np.array(action_dist),
                 'reward': reward, 
                 'terminal': terminal
                 }
@@ -126,10 +127,29 @@ class TabletopOfflineDataset(Dataset):
         action = np.round([py, px]).astype(int).tolist()
 
         # convert action
-        # 360 x 480 -> 10 x 13
-        action[0] = int(action[0]/(360/self.H) - 0.5)
-        action[1] = int(action[1]/(480/self.W) - 0.5)
-        return action
+        # 360 x 480 -> 12 x 15 (10 x 13)
+        # n' = N' / N * (n + 0.5) - 0.5
+        action[0] = (action[0]+0.5)/360 * self.H - 0.5
+        action[1] = (action[1]+0.5)/480 * self.W - 0.5
+        
+        
+        y, x = action
+        y1, x1 = np.trunc(action)
+        y2, x2 = np.ceil(action)
+        if y1==y2:
+            cy = np.array([[1]])
+        else:
+            cy = np.array([[y2-y], [y-y1]])
+        if x1==x2:
+            cx = np.array([[1]])
+        else:
+            cx = np.array([[x2-x, x-x1]])
+        cxy = np.matmul(cy, cx)
+        action_dist = np.zeros([self.H, self.W])
+        action_dist[int(y1):int(y1)+cxy.shape[0], int(x1):int(x1)+cxy.shape[1]] = cxy
+
+        action = np.round(action).astype(int).tolist()
+        return action, action_dist
 
     def extract_patch(self, image, seg, moved_object):
         image_after_pick = image * (seg != moved_object)[:, :, None]

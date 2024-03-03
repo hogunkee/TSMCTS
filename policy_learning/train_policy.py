@@ -152,14 +152,17 @@ def train(args, log_name):
             bar.set_description(f"Epoch {epoch + 1}")
             for i, data in enumerate(bar, 0):
                 inputs = preprocess(data['image_after_pick'].permute([0,3,1,2])).to(torch.float32).to(Device)
-                actions = data['action']
-                labels = np.zeros([len(actions), H, W])
-                labels[np.arange(len(actions)), actions[:, 0], actions[:, 1]] = 1
-                labels = torch.Tensor(labels).to(torch.float32).to(Device)
+                if args.action_distribution:
+                    labels = data['action_dist'].to(torch.float32).to(Device)
+                else:
+                    actions = data['action']
+                    labels = np.zeros([len(actions), H, W])
+                    labels[np.arange(len(actions)), actions[:, 0], actions[:, 1]] = 1
+                    labels = torch.Tensor(labels).to(torch.float32).to(Device)
                 probs = pnet(inputs)
 
                 if args.loss=='sum':
-                    loss = - (probs * labels).sum()
+                    loss = -(probs * labels).sum()
                 else:
                     probs_flatten = probs.view(-1, H * W)
                     labels_flatten = labels.view(-1, H * W)
@@ -222,6 +225,7 @@ if __name__=='__main__':
     parser.add_argument('--log-freq', type=int, default=100)
     parser.add_argument('--log-dir', type=str, default='logs')
     parser.add_argument('--wandb-off', action='store_true')
+    parser.add_argument('--action-distribution', action='store_true')
     args = parser.parse_args()
 
     now = datetime.datetime.now()
