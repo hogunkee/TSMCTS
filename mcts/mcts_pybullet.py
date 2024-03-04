@@ -478,7 +478,7 @@ class MCTS(object):
                 for o, py, px in zip(os, pys, pxs):
                     for rot in range(1, 3):
                         actionCandidates.append((o, py, px, rot))
-                actionCandidates = [a for a in actionCandidates if self.root.table[0][a[1], a[2]]==0]
+                actionCandidates = [a for a in actionCandidates if node.table[0][a[1], a[2]]==0]
                 node.setActions(actionCandidates, probMap)
 
                 if False:
@@ -506,7 +506,7 @@ class MCTS(object):
                 allPossibleActions = np.array(np.meshgrid(
                                 np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
                                 )).T.reshape(-1, 4)
-                actionCandidates = [a for a in allPossibleActions if self.root.table[0][a[1], a[2]]==0]
+                actionCandidates = [a for a in allPossibleActions if node.table[0][a[1], a[2]]==0]
                 probMap = np.ones([nb, th, tw])
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
                 node.setActions(actionCandidates, probMap)
