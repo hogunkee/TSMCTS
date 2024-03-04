@@ -158,11 +158,6 @@ class Renderer(object):
         objectPatches = [objPatches] + rotatedObjPatches
         objectMasks = [objMasks] + rotatedObjMasks
         objectAngles = [[0. for _ in range(len(objPatches))]] + rotatedAngles
-        if False: # check patches
-            for r in range(len(objectPatches)):
-                for o in range(len(objectPatches[r])):
-                    plt.imshow(objectPatches[r][o]/255.)
-                    plt.savefig('data/mcts-ellipse/%d_%d.png'%(o, r))
         return objectPatches, objectMasks, objectAngles
 
     def getRGB(self, table, remove=None):
