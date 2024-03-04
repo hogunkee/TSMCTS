@@ -182,7 +182,16 @@ def main(args, log_name):
                 patches = batch['next_patch'].to(torch.float32).to(DEFAULT_DEVICE)
                 actions = batch['action'].to(DEFAULT_DEVICE)
                 next_images = batch['next_image'].to(torch.float32).to(DEFAULT_DEVICE)
-                rewards = batch['reward'].to(torch.float32).to(DEFAULT_DEVICE)
+                if args.reward=='classifier':
+                    s = preprocess(images.permute([0,3,1,2]))
+                    s_prime = preprocess(next_images.permute([0,3,1,2]))
+                    states = torch.cat([s, s_prime], 0)
+                    with torch.no_grad():
+                        scores = vNet(states) #.cpu().detach().numpy()
+                        rewards = scores[len(scores)//2:] - scores[:len(scores)//2]
+                    rewards = rewards.view(-1)
+                else:
+                    rewards = batch['reward'].to(torch.float32).to(DEFAULT_DEVICE)
                 terminals = batch['terminal'].to(DEFAULT_DEVICE)
                 observations = [images, images_after_pick, patches]
                 next_observations = [next_images, None, None]
@@ -230,6 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--deterministic-policy', action='store_true') # otherwise, use a categorical policy
     parser.add_argument('--q-net', type=str, default='resnet') # 'transport' / 'resnet
     parser.add_argument('--policy-net', type=str, default='resnet') # 'transport' / 'resnet
+    parser.add_argument('--reward', type=str, default='') # '' / 'classifier'
     parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--eval-period', type=int, default=5000)
     parser.add_argument('--wandb-off', action='store_true')
