@@ -17,5 +17,6 @@ samples/
 images/
 logs/
 sample/
+test/
 
 step-*.png
