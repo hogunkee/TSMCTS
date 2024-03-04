@@ -145,9 +145,10 @@ class TabletopOfflineDataset(Dataset):
         action = np.round([py, px]).astype(int).tolist()
 
         # convert action
-        # 360 x 480 -> 10 x 13
-        action[0] = int(action[0]/(360/self.H) - 0.5)
-        action[1] = int(action[1]/(480/self.W) - 0.5)
+        # 360 x 480 -> H x W
+        action[0] = (action[0]+0.5)/360 * self.H - 0.5
+        action[1] = (action[1]+0.5)/480 * self.W - 0.5
+        action = np.round(action).astype(int).tolist()
         return action
 
     def extract_patch(self, image, seg, moved_object):
