@@ -67,8 +67,17 @@ class Renderer(object):
         return table
 
     def getRatio(self):
-        ratio = self.imageSize // self.tableSize
-        offset = (self.imageSize - ratio * self.tableSize + ratio)//2
+        # v2.
+        ratio = self.imageSize / self.tableSize
+        offset = 0.0
+        # ty, tx = np.round((np.array([py, px]) + 0.5) * ratio - 0.5).astype(int)
+        # gy, gx = np.round((np.array(center) + 0.5) / ratio - 0.5).astype(int)
+
+        # v1.
+        # ratio = self.imageSize // self.tableSize
+        # offset = (self.imageSize - ratio * self.tableSize + ratio)//2
+        # ty, tx = np.array([py, px]) * self.ratio + self.offset
+        # gy, gx = ((np.array(center) - self.offset) // self.ratio).astype(int)
         return ratio, offset
     
     def getMasks(self, segmap):
@@ -170,7 +179,8 @@ class Renderer(object):
             if (posMap==o+1).any():
                 py, px = np.where(posMap==o+1)
                 py, px = py[0], px[0]
-                ty, tx = np.array([py, px]) * self.ratio + self.offset
+                ty, tx = np.round((np.array([py, px]) + 0.5) * self.ratio - 0.5).astype(int)
+                # ty, tx = np.array([py, px]) * self.ratio + self.offset
                 rot = int(rotMap[py, px])
             else:
                 ty, tx = self.centers[o]
@@ -182,7 +192,7 @@ class Renderer(object):
             newRgb[
                 max(0, yMin): min(self.imageSize[0], yMax),
                 max(0, xMin): min(self.imageSize[1], xMax)
-            ] += (self.objectPatches[rot][o-1] * self.objectMasks[rot][o-1][:, :, None])[
+            ] += (self.objectPatches[rot][o] * self.objectMasks[rot][o][:, :, None])[
                     max(0, -yMin): max(0, -yMin) + (min(self.imageSize[0], yMax) - max(0, yMin)),
                     max(0, -xMin): max(0, -xMin) + (min(self.imageSize[1], xMax) - max(0, xMin)),
                 ].astype(np.uint8)
@@ -192,18 +202,22 @@ class Renderer(object):
 
     def getTable(self, segmap):
         newTable = np.zeros([self.tableSize[0], self.tableSize[1]])
-        #return newTable
+        # return newTable
         for o in range(self.numObjects):
-               center = self.centers[o]
-               gy, gx = ((np.array(center) - self.offset) // self.ratio).astype(int)
-               newTable[gy, gx] = o + 1
+            center = self.centers[o]
+            gyx = (np.array(center) + 0.5) / self.ratio - 0.5
+            if np.linalg.norm(gyx - np.round(gyx))<0.2:
+                gy, gx = np.round(gyx).astype(int)
+                # gy, gx = np.round((np.array(center) + 0.5) / self.ratio - 0.5).astype(int)
+                # gy, gx = ((np.array(center) - self.offset) // self.ratio).astype(int)
+                newTable[gy, gx] = o + 1
         return newTable
-
 
     def convert_action(self, action):
         obj, py, px, rot = action
         target_object = obj + 3
-        ty, tx = np.array([py, px]) * self.ratio + self.offset
+        ty, tx = np.round((np.array([py, px]) + 0.5) * self.ratio - 0.5).astype(int)
+        # ty, tx = np.array([py, px]) * self.ratio + self.offset
         target_position = [ty, tx]
 
         rot_angle = self.objectAngles[rot][obj-1]
