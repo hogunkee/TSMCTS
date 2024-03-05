@@ -760,9 +760,6 @@ if __name__=='__main__':
             resultDict = searcher.search(table=table, needDetails=True)
             print("Num Children: %d"%len(searcher.root.children))
             logger.info("Num Children: %d"%len(searcher.root.children))
-            for c in sorted(list(searcher.root.children.keys())):
-                print(searcher.root.children[c])
-                logger.info(str(searcher.root.children[c]))
             action = resultDict['action']
             
             # action probability
@@ -785,8 +782,8 @@ if __name__=='__main__':
             print("Children of the best child pick node:")
             logger.info("Children of the best child pick node:")
             for i, c in enumerate(sorted(list(bestPickChild.children.keys()))):
-                print(i, bestPickChild.children[c])
-                logger.info(f"{i} {str(bestPickChild.children[c])}")
+                print(i, c, bestPickChild.children[c])
+                logger.info(f"{i} {c} {str(bestPickChild.children[c])}")
             nextTable = bestPlaceChild.table
             # nextTable = searcher.root.takeAction(action)
             print("Best Action:", action)
