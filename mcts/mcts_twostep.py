@@ -475,15 +475,29 @@ class MCTS(object):
                     node.children[action] = newNode
                     return newNode
 
-    def getReward(self, table):
+    def getReward(self, tables):
         # print('getReward.')
-        rgb = self.renderer.getRGB(table)
-        s = torch.Tensor(rgb[None, :]/255.).permute([0,3,1,2]).cuda()
+        states = []
+        for table in tables:
+            rgb = self.renderer.getRGB(table)
+            states.append(rgb)
+        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
             s = self.preProcess(s)
-        reward = self.VNet(s).cpu().detach().numpy()[0]
-        #reward = max(0, (reward - 0.5) * 2)
-        return reward
+
+        if len(states) > self.batchSize:
+            rewards = []
+            numBatches = len(states)//self.batchSize
+            if len(states)%self.batchSize > 0:
+                numBatches += 1
+            for b in range(numBatches):
+                batchS = s[b*self.batchSize:(b+1)*self.batchSize]
+                batchRewards = self.VNet(batchS).cpu().detach().numpy()
+                rewards.append(batchRewards)
+            rewards = np.concatenate(rewards)
+        else:
+            rewards = self.VNet(s).cpu().detach().numpy()
+        return rewards
 
     def backpropogate(self, node, reward):
         # print('backpropagate.')
@@ -552,7 +566,7 @@ class MCTS(object):
         if checkReward:
             if table is None:
                 table = node.table
-            reward = self.getReward(table)
+            reward = self.getReward([table])[0]
             if reward > self.thresholdSuccess:
                 terminal = True
         return terminal, reward
@@ -560,12 +574,7 @@ class MCTS(object):
     def noStepPolicy(self, node):
         # print('noStepPolicy.')
         # st = time.time()
-        states = [self.renderer.getRGB(node.table)]
-        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
-        if self.preProcess is not None:
-            s = self.preProcess(s)
-        rewards = self.VNet(s).cpu().detach().numpy()
-        #rewards = np.maximum(0, (rewards - 0.5) * 2)
+        rewards = self.getReward([node.table])
         maxReward = np.max(rewards)
         # et = time.time()
         # print(et - st, 'seconds.')
@@ -579,7 +588,7 @@ class MCTS(object):
         allPossibleActions = np.array(np.meshgrid(
                             np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
                             )).T.reshape(-1, 4)
-        states = [self.renderer.getRGB(node.table)]
+        tables = [np.copy(node.table)]
         while not self.isTerminal(node)[0]:
             try:
                 action = random.choice(allPossibleActions)
@@ -597,20 +606,8 @@ class MCTS(object):
                 newNode = NodePick(self.renderer.numObjects, newTable, node)
             node = newNode
             if node.type=='pick':   # skip the place-node
-                states.append(self.renderer.getRGB(node.table))
-        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
-        if self.preProcess is not None:
-            s = self.preProcess(s)
-        rewards = []
-        numBatches = len(states)//self.batchSize
-        if len(states)%self.batchSize > 0:
-            numBatches += 1
-        for b in range(numBatches):
-            batchS = s[b*self.batchSize:(b+1)*self.batchSize]
-            batchRewards = self.VNet(batchS).cpu().detach().numpy()
-            rewards.append(batchRewards)
-        rewards = np.concatenate(rewards)
-        #rewards = self.VNet(s).cpu().detach().numpy()
+                tables.append(np.copy(node.table))
+        rewards = self.getReward(tables)
         maxReward = np.max(rewards)
         # et = time.time()
         # print(et - st, 'seconds.')
