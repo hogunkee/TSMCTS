@@ -549,11 +549,6 @@ class MCTS(object):
         if node is not None:
             if node.depth >= self.maxDepth:
                 terminal = True
-        # if table is None:
-        #     table = node.table
-        # for o in range(1, self.renderer.numObjects+1):
-        #    if len(np.where(table==o)[0])==0:
-        #        return True, 0.0
         if checkReward:
             if table is None:
                 table = node.table
@@ -659,7 +654,7 @@ if __name__=='__main__':
     # MCTS
     parser.add_argument('--time-limit', type=int, default=None)
     parser.add_argument('--iteration-limit', type=int, default=10000)
-    parser.add_argument('--max-depth', type=int, default=7)
+    parser.add_argument('--max-depth', type=int, default=14)
     parser.add_argument('--rollout-policy', type=str, default='nostep')
     parser.add_argument('--tree-policy', type=str, default='random')
     parser.add_argument('--threshold-success', type=float, default=0.85)
@@ -716,7 +711,7 @@ if __name__=='__main__':
             json.dump(args.__dict__, f, indent=2)
 
         logger.handlers.clear()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\n%(message)s')
+        formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
         file_handler = logging.FileHandler('data/2step-%s/scene-%d/mcts.log'%(log_name, sidx))
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
@@ -758,8 +753,8 @@ if __name__=='__main__':
         plt.imshow(initRgb)
         plt.savefig('data/2step-%s/scene-%d/initial.png'%(log_name, sidx))
         initTable = searcher.reset(initRgb, initSeg)
-        print(initTable[0])
-        logger.info('initTable: %s' % initTable)
+        print('initTable: \n %s' % initTable[0])
+        logger.info('initTable: \n %s' % initTable[0])
         table = initTable
 
         print("--------------------------------")
@@ -770,6 +765,7 @@ if __name__=='__main__':
             logger.info("Num Children: %d"%len(searcher.root.children))
             for c in sorted(list(searcher.root.children.keys())):
                 print(searcher.root.children[c])
+                logger.info(str(searcher.root.children[c]))
             action = resultDict['action']
             
             # action probability
@@ -784,6 +780,16 @@ if __name__=='__main__':
             place = action[1:]
             bestPickChild = (node for action, node in searcher.root.children.items() if action==pick).__next__()
             bestPlaceChild = (node for action, node in bestPickChild.children.items() if action==tuple(place)).__next__()
+            print("Children of the root node:")
+            logger.info("Children of the root node:")
+            for c in sorted(list(searcher.root.children.keys())):
+                print(searcher.root.children[c])
+                logger.info(str(searcher.root.children[c]))
+            print("Children of the best child pick node:")
+            logger.info("Children of the best child pick node:")
+            for i, c in enumerate(sorted(list(bestPickChild.children.keys()))):
+                print(i, bestPickChild.children[c])
+                logger.info(f"{i} {str(bestPickChild.children[c])}")
             nextTable = bestPlaceChild.table
             # nextTable = searcher.root.takeAction(action)
             print("Best Action:", action)

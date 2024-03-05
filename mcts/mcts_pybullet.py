@@ -148,12 +148,17 @@ class Renderer(object):
             py, px = np.where(mask)
             cy, cx = np.round([np.mean(py), np.mean(px)])
             X = np.array(list(zip(px, py)))
-            reg = LsqEllipse().fit(X)
-            center, width, height, phi = reg.as_parameters()
-            if np.abs(width-height) < 6:
+            if len(X) < 5:
                 # can be a rectangle
                 rect = cv2.minAreaRect(X)
                 phi = rect[2]
+            else:
+                reg = LsqEllipse().fit(X)
+                center, width, height, phi = reg.as_parameters()
+                if np.abs(width-height) < 6:
+                    # can be a rectangle
+                    rect = cv2.minAreaRect(X)
+                    phi = rect[2]
             for r in range(numRotations):
                 angle = phi / np.pi * 180 + r * 90
                 height, width = mask.shape[:2]
@@ -523,20 +528,18 @@ class MCTS(object):
 
     def isTerminal(self, node, table=None, checkReward=False):
         # print('isTerminal')
-        if table is None:
+        terminal = False
+        reward = 0.0
+        if node is not None:
             if node.depth >= self.maxDepth:
-                return True, 0.0
-            table = node.table
-        #for o in range(1, self.renderer.numObjects+1):
-        #    if len(np.where(table==o)[0])==0:
-        #        return True, 0.0
+                terminal = True
         if checkReward:
+            if table is None:
+                table = node.table
             reward = self.getReward(table)
             if reward > self.thresholdSuccess:
-                return True, reward
-            else:
-                return False, reward
-        return False, 0.0
+                terminal = True
+        return terminal, reward
 
     def noStepPolicy(self, node):
         # print('noStepPolicy.')
@@ -679,7 +682,7 @@ def setupEnvironment(objects, args):
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
 
     env.reset()
-    object_pybullet_ids = env.spawn_objects(objects)
+    env.spawn_objects(objects)
     
     env.arrange_objects(random=True)
     return env
@@ -755,7 +758,7 @@ if __name__=='__main__':
                 json.dump(args.__dict__, f, indent=2)
 
             logger.handlers.clear()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\n%(message)s')
+            formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
             file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
@@ -797,8 +800,8 @@ if __name__=='__main__':
             plt.imshow(initRgb)
             plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
             initTable = searcher.reset(initRgb, initSeg)
-            print(initTable[0])
-            logger.info('initTable: %s' % initTable)
+            print('initTable: \n %s' % initTable[0])
+            logger.info('initTable: \n %s' % initTable[0])
             table = initTable
 
             print("--------------------------------")
@@ -807,8 +810,9 @@ if __name__=='__main__':
                 resultDict = searcher.search(table=table, needDetails=True)
                 print("Num Children: %d"%len(searcher.root.children))
                 logger.info("Num Children: %d"%len(searcher.root.children))
-                for i, c in enumerate(searcher.root.children):
+                for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
                     print(i, c, searcher.root.children[c])
+                    logger.info(f"{i} {c} {str(searcher.root.children[c])}")
                 action = resultDict['action']
                 
                 # action probability
