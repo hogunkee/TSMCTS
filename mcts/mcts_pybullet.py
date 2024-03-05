@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 
 import torch
 from data_loader import TabletopTemplateDataset
-from utils import loadRewardFunction, Renderer
+from utils import loadRewardFunction, Renderer, getGraph, visualizeGraph
 
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
@@ -490,6 +490,7 @@ if __name__=='__main__':
     parser.add_argument('--W', type=int, default=15)
     parser.add_argument('--crop-size', type=int, default=128) #96
     parser.add_argument('--gui-off', action="store_true")
+    parser.add_argument('--visualize-graph', action="store_true")
     # MCTS
     parser.add_argument('--time-limit', type=int, default=None)
     parser.add_argument('--iteration-limit', type=int, default=10000)
@@ -607,6 +608,10 @@ if __name__=='__main__':
                     print(i, c, searcher.root.children[c])
                     logger.info(f"{i} {c} {str(searcher.root.children[c])}")
                 action = resultDict['action']
+                if args.visualize_graph:
+                    graph = getGraph(searcher.root)
+                    fig = visualizeGraph(graph, title='MCTS two-step')
+                    fig.show()
                 
                 # action probability
                 actionProb = searcher.root.actionProb

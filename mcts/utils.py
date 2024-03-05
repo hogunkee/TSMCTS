@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import igraph as ig
+import plotly.graph_objects as go
+from igraph import Graph, EdgeSeq
 from ellipse import LsqEllipse
 
 import torch
@@ -10,29 +12,28 @@ from torchvision.models import resnet18
 
 
 def getGraph(root):
-    g = ig.Graph()
-    vertexCount = 1
-    edgeCount = 0
+    g = ig.Graph(n=1)
 
     def getSubGraph(node, vNode):
-        vertices = []
+        g.vs[vNode]['visit'] = node.numVisits
+        g.vs[vNode]['reward'] = node.totalReward
+        g.vs[vNode]['depth'] = node.depth
+        vertices = 0
         edges = []
         if len(node.children)==0:
             return vertices, edges
         for c in node.children:
-            vChild = vertexCount
+            vChild = g.vcount()
+            eChild = g.ecount()
 
-            vertices.append(vChild)
+            vertices += 1
             edges.append([vNode, vChild])
-            g.add_vertices(vChild)
+            g.add_vertices(1)
             g.add_edges([(vNode, vChild)])
 
-            g.vs[vertexCount]['visit'] = vChild.numVisits
-            g.vs[vertexCount]['reward'] = vChild.totalReward
-            g.es[edgeCount]['action'] = str(c)
-
-            vertexCount += 1
-            edgeCount += 1
+            # g.vs[vChild]['visit'] = node.children[c].numVisits
+            # g.vs[vChild]['reward'] = node.children[c].totalReward
+            g.es[eChild]['action'] = str(c)
 
             childNode = node.children[c]
             childV, childE = getSubGraph(childNode, vChild)
@@ -42,8 +43,95 @@ def getGraph(root):
         return vertices, edges
 
     v, e = getSubGraph(root, 0)
-    g2 = ig.Graph(n=len(v), edges=e)
-    return g, g2
+    #g2 = ig.Graph(n=v+1, edges=e)
+    return g
+
+def visualizeGraph(graph, title):
+    nr_vertices = graph.vcount()
+    v_label = ["%d"%(v['visit']) for v in graph.vs]
+    r_label = ["%.2f"%(v['reward']) for v in graph.vs]
+    labels = ["visits: %d / rewards: %.2f / depth: %d"%(v['visit'], v['reward'], v['depth']) for v in graph.vs]
+    #v_label = list(map(str, range(nr_vertices)))
+    lay = graph.layout('rt') #Graph.layout_reingold_tilford_circular
+
+    position = {k: lay[k] for k in range(nr_vertices)}
+    Y = [lay[k][1] for k in range(nr_vertices)]
+    M = max(Y)
+
+    E = [e.tuple for e in graph.es] # list of edges
+
+    L = len(position)
+    Xn = [position[k][0] for k in range(L)]
+    Yn = [2*M-position[k][1] for k in range(L)]
+    Xe = []
+    Ye = []
+    edge_label = []
+    edge_position = []
+    for edge in E:
+        Xe+=[position[edge[0]][0],position[edge[1]][0], None]
+        Ye+=[2*M-position[edge[0]][1],2*M-position[edge[1]][1], None]
+
+        edge_position.append([(position[edge[0]][0]+position[edge[1]][0])/2, (position[edge[0]][1]+position[edge[1]][1])/2])
+        action = graph.es.find(_source=edge[0], _target=edge[1])['action'] 
+        if len(action)>1: action = ''
+        edge_label.append(action)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+                    x=Xe,
+                    y=Ye,
+                    mode='lines',
+                    line=dict(color='rgb(210,210,210)', width=1),
+                    hoverinfo='none'
+                    ))
+    fig.add_trace(go.Scatter(
+                    x=Xn,
+                    y=Yn,
+                    mode='markers',
+                    name='bla',
+                    marker=dict(symbol='circle', # square / circle-dot
+                                size=18,
+                                color='#6175c1',    #'#DB4551',
+                                line=dict(color='rgb(50,50,50)', width=1)
+                                ),
+                    text=labels,
+                    hoverinfo='text',
+                    opacity=0.8
+                    ))
+
+    axis = dict(showline=False, # hide axis line, grid, ticklabels and  title
+            zeroline=False,
+            showgrid=False,
+            showticklabels=False,
+            )
+    
+    def make_annotations(pos, text, font_size=10, font_color='rgb(250,250,250)'):
+        L=len(pos)
+        if len(text)!=L:
+            raise ValueError('The lists pos and text must have the same len')
+        annotations = []
+        for k in range(L):
+            annotations.append(
+                dict(
+                    text=text[k], # or replace labels with a different list for the text within the circle
+                    x=pos[k][0], y=2*M-pos[k][1],
+                    xref='x1', yref='y1',
+                    font=dict(color=font_color, size=font_size),
+                    showarrow=False)
+            )
+        return annotations
+
+    fig.update_layout(title=title,
+              annotations=make_annotations(list(position.values())+edge_position, v_label+edge_label, font_size=8, font_color='rgb(10,10,10)'),
+              font_size=12,
+              showlegend=False,
+              xaxis=axis,
+              yaxis=axis,
+              margin=dict(l=40, r=40, b=85, t=100),
+              hovermode='closest',
+              plot_bgcolor='rgb(248,248,248)'
+              )
+    return fig
 
 
 def loadRewardFunction(model_path):
