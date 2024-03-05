@@ -1,10 +1,50 @@
+import cv2
 import numpy as np
+import igraph as ig
 from ellipse import LsqEllipse
 
 import torch
 import torch.nn as nn
 from torchvision import transforms
 from torchvision.models import resnet18
+
+
+def getGraph(root):
+    g = ig.Graph()
+    vertexCount = 1
+    edgeCount = 0
+
+    def getSubGraph(node, vNode):
+        vertices = []
+        edges = []
+        if len(node.children)==0:
+            return vertices, edges
+        for c in node.children:
+            vChild = vertexCount
+
+            vertices.append(vChild)
+            edges.append([vNode, vChild])
+            g.add_vertices(vChild)
+            g.add_edges([(vNode, vChild)])
+
+            g.vs[vertexCount]['visit'] = vChild.numVisits
+            g.vs[vertexCount]['reward'] = vChild.totalReward
+            g.es[edgeCount]['action'] = str(c)
+
+            vertexCount += 1
+            edgeCount += 1
+
+            childNode = node.children[c]
+            childV, childE = getSubGraph(childNode, vChild)
+
+            vertices += childV
+            edges += childE
+        return vertices, edges
+
+    v, e = getSubGraph(root, 0)
+    g2 = ig.Graph(n=len(v), edges=e)
+    return g, g2
+
 
 def loadRewardFunction(model_path):
     vNet = resnet18(pretrained=False)
