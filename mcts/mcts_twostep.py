@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 
 import torch
 from data_loader import TabletopTemplateDataset
-from utils import loadRewardFunction, Renderer, getGraph, visualizeGraph
+from utils import loadRewardFunction, Renderer, getGraph, visualizeGraph, summaryGraph
 
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
@@ -492,13 +492,13 @@ if __name__=='__main__':
     
     for sidx in range(args.num_scenes):
         # setup logger
-        os.makedirs('data/2step-%s/scene-%d'%(log_name, sidx), exist_ok=True)
-        with open('data/2step-%s/config.json'%log_name, 'w') as f:
+        os.makedirs('data/twotep-%s/scene-%d'%(log_name, sidx), exist_ok=True)
+        with open('data/twostep-%s/config.json'%log_name, 'w') as f:
             json.dump(args.__dict__, f, indent=2)
 
         logger.handlers.clear()
         formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
-        file_handler = logging.FileHandler('data/2step-%s/scene-%d/mcts.log'%(log_name, sidx))
+        file_handler = logging.FileHandler('data/twostep-%s/scene-%d/mcts.log'%(log_name, sidx))
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
@@ -537,7 +537,7 @@ if __name__=='__main__':
                 break
 
         plt.imshow(initRgb)
-        plt.savefig('data/2step-%s/scene-%d/initial.png'%(log_name, sidx))
+        plt.savefig('data/twostep-%s/scene-%d/initial.png'%(log_name, sidx))
         initTable = searcher.reset(initRgb, initSeg)
         print('initTable: \n %s' % initTable[0])
         logger.info('initTable: \n %s' % initTable[0])
@@ -550,17 +550,21 @@ if __name__=='__main__':
             print("Num Children: %d"%len(searcher.root.children))
             logger.info("Num Children: %d"%len(searcher.root.children))
             action = resultDict['action']
+
+            summary = summaryGraph(searcher.root)
             if args.visualize_graph:
                 graph = getGraph(searcher.root)
                 fig = visualizeGraph(graph, title='MCTS two-step')
                 fig.show()
+            print(summary)
+            logger.info(summary)
             
             # action probability
             actionProb = searcher.root.actionProb
             if actionProb is not None:
                 actionProb[actionProb>args.threshold_prob] += 0.5
                 plt.imshow(np.mean(actionProb, axis=0))
-                plt.savefig('data/2step-%s/scene-%d/actionprob_%d.png'%(log_name, sidx, step))
+                plt.savefig('data/twostep-%s/scene-%d/actionprob_%d.png'%(log_name, sidx, step))
 
             # expected result in mcts #
             pick = action[0]
@@ -585,7 +589,7 @@ if __name__=='__main__':
             logger.info("Best Child: \n %s"%nextTable[0])
             tableRgb = renderer.getRGB(nextTable)
             plt.imshow(tableRgb)
-            plt.savefig('data/2step-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
+            plt.savefig('data/twostep-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
             #plt.show()
 
             # simulation step in pybullet #
@@ -598,7 +602,7 @@ if __name__=='__main__':
             print("Current state: \n %s"%table[0])
             logger.info("Current state: \n %s"%table[0])
             plt.imshow(currentRgb)
-            plt.savefig('data/2step-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
+            plt.savefig('data/twostep-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
             terminal, reward = searcher.isTerminal(None, table, checkReward=True)
             print("Current Score:", reward)
             print("--------------------------------")
@@ -614,6 +618,6 @@ if __name__=='__main__':
                 logger.info("Score: %f"%reward)
                 logger.info(table[0])
                 plt.imshow(currentRgb)
-                plt.savefig('data/2step-%s/scene-%d/final.png'%(log_name, sidx))
+                plt.savefig('data/twostep-%s/scene-%d/final.png'%(log_name, sidx))
                 # plt.show()
                 break

@@ -11,6 +11,28 @@ from torchvision import transforms
 from torchvision.models import resnet18
 
 
+def summaryGraph(root):
+    countDepth = {}
+    visitDepth = {}
+    def countSubGraph(node):
+        assert (node.terminal and len(node.children)==0) or not node.terminal
+        if node.depth not in countDepth:
+            countDepth[node.depth] = 0
+            visitDepth[node.depth] = 0
+        countDepth[node.depth] += 1
+        visitDepth[node.depth] += node.numVisits
+        if len(node.children)==0:
+            return
+        for c in node.children:
+            countSubGraph(node.children[c])
+    countSubGraph(root)
+
+    txt = ""
+    txt += "Total nodes: %d\n"%(sum(countDepth.values()))
+    for d in countDepth:
+        txt += "Depth %d: %d nodes, %d visits\n"%(d, countDepth[d], visitDepth[d])
+    return txt
+
 def getGraph(root):
     g = ig.Graph(n=1)
 
@@ -149,6 +171,7 @@ def loadRewardFunction(model_path):
     ])
     return vNet, preprocess
 
+
 class Renderer(object):
     def __init__(self, tableSize, imageSize, cropSize):
         self.tableSize = np.array(tableSize)
@@ -165,6 +188,8 @@ class Renderer(object):
         self.numObjects = int(np.max(segmentation)) - 3
         self.ratio, self.offset = self.getRatio()
         self.masks, self.centers = self.getMasks(segmentation)
+        if np.isnan(self.centers).any():
+            return None
         self.rgb = np.copy(rgbImage)
         oPatches, oMasks = self.getObjectPatches()
         self.objectPatches, self.objectMasks, self.objectAngles = self.getRotatedPatches(oPatches, oMasks)
@@ -289,7 +314,7 @@ class Renderer(object):
 
     def getRGB(self, table, remove=None):
         posMap, rotMap = table
-        newRgb = np.zeros_like(np.array(self.rgb))[:, :, :3]
+        newRgb = np.zeros_like(np.array(self.rgb)[:, :, :3])
         for o in range(self.numObjects):
             if remove is not None:
                 if o==remove:
@@ -317,6 +342,35 @@ class Renderer(object):
         # plt.imshow(newRgb)
         # plt.show()
         return np.array(newRgb)
+    
+    def checkCollision(self, table):
+        posMap, rotMap = table
+        collisionMask = np.zeros([*np.array(self.rgb).shape[:2]])
+        for o in range(self.numObjects):
+            if (posMap==o+1).any():
+                py, px = np.where(posMap==o+1)
+                py, px = py[0], px[0]
+                ty, tx = np.round((np.array([py, px]) + 0.5) * self.ratio - 0.5).astype(int)
+                # ty, tx = np.array([py, px]) * self.ratio + self.offset
+                rot = int(rotMap[py, px])
+            else:
+                ty, tx = self.centers[o]
+                rot = 0
+            yMin = int(ty - self.cropSize[0] / 2)
+            yMax = int(ty + self.cropSize[0] / 2)
+            xMin = int(tx - self.cropSize[1] / 2)
+            xMax = int(tx + self.cropSize[1] / 2)
+            collisionMask[
+                max(0, yMin): min(self.imageSize[0], yMax),
+                max(0, xMin): min(self.imageSize[1], xMax)
+            ] += self.objectMasks[rot][o][
+                    max(0, -yMin): max(0, -yMin) + (min(self.imageSize[0], yMax) - max(0, yMin)),
+                    max(0, -xMin): max(0, -xMin) + (min(self.imageSize[1], xMax) - max(0, xMin)),
+                ]
+        if (collisionMask>1).any():
+            return True
+        else:
+            return False
 
     def getTable(self, segmap):
         newTable = np.zeros([self.tableSize[0], self.tableSize[1]])

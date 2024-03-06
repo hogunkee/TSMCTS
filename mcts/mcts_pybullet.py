@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 
 import torch
 from data_loader import TabletopTemplateDataset
-from utils import loadRewardFunction, Renderer, getGraph, visualizeGraph
+from utils import loadRewardFunction, Renderer, getGraph, visualizeGraph, summaryGraph
 
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
@@ -39,6 +39,7 @@ class Node(object):
         self.children = {}
         self.actionCandidates = []
         self.actionProb = None
+        self.terminal = False
     
     def takeAction(self, move):
         obj, py, px, rot = move
@@ -72,7 +73,7 @@ class Node(object):
         s=[]
         s.append("Reward: %s"%(self.totalReward))
         s.append("Visits: %d"%(self.numVisits))
-        #s.append("Terminal: %s"%(self.isTerminal))
+        s.append("Terminal: %s"%(self.terminal))
         s.append("Children: %d"%(len(self.children.keys())))
         return "%s: %s"%(self.__class__.__name__, ' / '.join(s))
 
@@ -113,6 +114,7 @@ class MCTS(object):
             self.rollout = self.oneStepPolicy
         else:
             self.rollout = lambda n: self.greedyPolicy(n, rolloutPolicy)
+        self.binaryReward = args.binary_reward
 
         self.thresholdSuccess = args.threshold_success #0.6
         self.thresholdQ = args.threshold_q #0.5
@@ -161,7 +163,7 @@ class MCTS(object):
 
     def selectNode(self, node):
         # print('selectNode.')
-        while not self.isTerminal(node)[0]:
+        while not node.terminal: # self.isTerminal(node)[0]:
             if len(node.children)==0:
                 return self.expand(node)
             elif random.uniform(0, 1) < 0.5:
@@ -187,15 +189,29 @@ class MCTS(object):
                 node.children[tuple(action)] = newNode
                 return newNode
 
-    def getReward(self, table):
+    def getReward(self, tables):
         # print('getReward.')
-        rgb = self.renderer.getRGB(table)
-        s = torch.Tensor(rgb[None, :]/255.).permute([0,3,1,2]).cuda()
+        states = []
+        for table in tables:
+            rgb = self.renderer.getRGB(table)
+            states.append(rgb)
+        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
             s = self.preProcess(s)
-        reward = self.VNet(s).cpu().detach().numpy()[0]
-        #reward = max(0, (reward - 0.5) * 2)
-        return reward
+
+        if len(states) > self.batchSize:
+            rewards = []
+            numBatches = len(states)//self.batchSize
+            if len(states)%self.batchSize > 0:
+                numBatches += 1
+            for b in range(numBatches):
+                batchS = s[b*self.batchSize:(b+1)*self.batchSize]
+                batchRewards = self.VNet(batchS).cpu().detach().numpy()
+                rewards.append(batchRewards)
+            rewards = np.concatenate(rewards)
+        else:
+            rewards = self.VNet(s).cpu().detach().numpy()
+        return rewards.reshape(-1)
 
     def backpropogate(self, node, reward):
         # print('backpropagate.')
@@ -323,27 +339,39 @@ class MCTS(object):
         # print('isTerminal')
         terminal = False
         reward = 0.0
+        # check depth
+        
+        if table is None:
+            table = node.table
+        # check collision and reward
+        collision = self.renderer.checkCollision(table)
+        if collision:
+            reward = -1.0
+            terminal = True
+        elif checkReward:
+            reward = self.getReward([table])[0]
+            if reward > self.thresholdSuccess:
+                terminal = True
         if node is not None:
             if node.depth >= self.maxDepth:
                 terminal = True
-        if checkReward:
-            if table is None:
-                table = node.table
-            reward = self.getReward(table)
-            if reward > self.thresholdSuccess:
-                terminal = True
+            node.terminal = terminal
         return terminal, reward
 
     def noStepPolicy(self, node):
         # print('noStepPolicy.')
         # st = time.time()
-        states = [self.renderer.getRGB(node.table)]
-        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
-        if self.preProcess is not None:
-            s = self.preProcess(s)
-        rewards = self.VNet(s).cpu().detach().numpy()
-        #rewards = np.maximum(0, (rewards - 0.5) * 2)
-        maxReward = np.max(rewards)
+        # rewards = self.getReward([node.table])
+        # maxReward = np.max(rewards)
+        terminal, reward = self.isTerminal(node, checkReward=True)
+        if self.binaryReward:
+            if reward > self.thresholdSuccess:
+                reward = 1.0
+            elif reward == -1.0:
+                reward = -1.0
+            else:
+                reward = 0.0
+        maxReward = reward
         # et = time.time()
         # print(et - st, 'seconds.')
         return maxReward
@@ -387,7 +415,7 @@ class MCTS(object):
         allPossibleActions = np.array(np.meshgrid(
                             np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
                             )).T.reshape(-1, 4)
-        states = [self.renderer.getRGB(node.table)]
+        tables = [np.copy(node.table)]
         while not self.isTerminal(node)[0]:
             try:
                 action = random.choice(allPossibleActions)
@@ -396,20 +424,8 @@ class MCTS(object):
             newTable = node.takeAction(action)
             newNode = Node(self.renderer.numObjects, newTable)
             node = newNode
-            states.append(self.renderer.getRGB(node.table))
-        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
-        if self.preProcess is not None:
-            s = self.preProcess(s)
-        rewards = []
-        numBatches = len(states)//self.batchSize
-        if len(states)%self.batchSize > 0:
-            numBatches += 1
-        for b in range(numBatches):
-            batchS = s[b*self.batchSize:(b+1)*self.batchSize]
-            batchRewards = self.VNet(batchS).cpu().detach().numpy()
-            rewards.append(batchRewards)
-        rewards = np.concatenate(rewards)
-        #rewards = self.VNet(s).cpu().detach().numpy()
+            tables.append(np.copy(node.table))
+        rewards = self.getReward(tables)
         maxReward = np.max(rewards)
         # et = time.time()
         # print(et - st, 'seconds.')
@@ -484,6 +500,7 @@ def setupEnvironment(objects, args):
 if __name__=='__main__':
     parser = ArgumentParser()
     # Inference
+    parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--num-objects', type=int, default=4)
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--H', type=int, default=12)
@@ -497,11 +514,12 @@ if __name__=='__main__':
     parser.add_argument('--max-depth', type=int, default=7)
     parser.add_argument('--rollout-policy', type=str, default='nostep')
     parser.add_argument('--tree-policy', type=str, default='random')
-    parser.add_argument('--threshold-success', type=float, default=0.85)
+    parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
     parser.add_argument('--threshold-q', type=float, default=0.5)
     parser.add_argument('--threshold-v', type=float, default=0.5)
     parser.add_argument('--threshold-prob', type=float, default=0.1)
     parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--binary-reward', action="store_true")
     # Reward model
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
@@ -517,6 +535,19 @@ if __name__=='__main__':
     log_name = now.strftime("%m%d_%H%M")
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
+
+    # Random seed
+    seed = args.seed
+    if seed is not None:
+        print("Random seed: %d"%seed)
+        logger.info("Random seed: %d"%seed)
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
     # Environment setup
     objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
@@ -544,123 +575,137 @@ if __name__=='__main__':
         pnet = pnet.to("cuda:0")
         searcher.setPolicyNet(pnet)
     
+    success = 0
     for sidx in range(args.num_scenes):
-        try:
-            # setup logger
-            os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
-            with open('data/mcts-%s/config.json'%log_name, 'w') as f:
-                json.dump(args.__dict__, f, indent=2)
+        # setup logger
+        os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
+        with open('data/mcts-%s/config.json'%log_name, 'w') as f:
+            json.dump(args.__dict__, f, indent=2)
 
-            logger.handlers.clear()
-            formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
-            file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
+        logger.handlers.clear()
+        formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
+        file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
-            # Initial state
-            obs = env.reset()
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
-            env.spawn_objects(selected_objects)
-            while True:
-                is_occluded = False
-                is_collision = False
-                env.arrange_objects(random=True)
-                obs = env.get_observation()
-                initRgb = obs[args.view]['rgb']
-                initSeg = obs[args.view]['segmentation']
-                # Check occlusions
-                for o in range(args.num_objects):
-                    # get the segmentation mask of each object #
-                    mask = (initSeg==o+4).astype(float)
-                    if mask.sum()==0:
-                        print("Object %d is occluded."%o)
-                        logger.info("Object %d is occluded."%o)
-                        is_occluded = True
-                        break
-                # Check collision
-                contact_objects = get_contact_objects()
-                contact_objects = [c for c in list(get_contact_objects()) if 1 not in c and 2 not in c]
-                if len(contact_objects) > 0:
-                    print("Collision detected.")
-                    print(contact_objects)
-                    logger.info("Collision detected.")
-                    logger.info(contact_objects)
-                    is_collision = True
-                if is_occluded or is_collision:
-                    continue
-                else:
+        # Initial state
+        obs = env.reset()
+        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+        env.spawn_objects(selected_objects)
+        while True:
+            is_occluded = False
+            is_collision = False
+            env.arrange_objects(random=True)
+            obs = env.get_observation()
+            initRgb = obs[args.view]['rgb']
+            initSeg = obs[args.view]['segmentation']
+            # Check occlusions
+            for o in range(args.num_objects):
+                # get the segmentation mask of each object #
+                mask = (initSeg==o+4).astype(float)
+                if mask.sum()==0:
+                    print("Object %d is occluded."%o)
+                    logger.info("Object %d is occluded."%o)
+                    is_occluded = True
                     break
+            # Check collision
+            contact_objects = get_contact_objects()
+            contact_objects = [c for c in list(get_contact_objects()) if 1 not in c and 2 not in c]
+            if len(contact_objects) > 0:
+                print("Collision detected.")
+                print(contact_objects)
+                logger.info("Collision detected.")
+                logger.info(contact_objects)
+                is_collision = True
+            if is_occluded or is_collision:
+                continue
+            else:
+                break
 
-            plt.imshow(initRgb)
-            plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
-            initTable = searcher.reset(initRgb, initSeg)
-            print('initTable: \n %s' % initTable[0])
-            logger.info('initTable: \n %s' % initTable[0])
-            table = initTable
+        plt.imshow(initRgb)
+        plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
+        initTable = searcher.reset(initRgb, initSeg)
+        print('initTable: \n %s' % initTable[0])
+        logger.info('initTable: \n %s' % initTable[0])
+        table = initTable
 
+        print("--------------------------------")
+        logger.info('-'*50)
+        for step in range(10):
+            resultDict = searcher.search(table=table, needDetails=True)
+            print("Num Children: %d"%len(searcher.root.children))
+            logger.info("Num Children: %d"%len(searcher.root.children))
+            for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
+                print(i, c, searcher.root.children[c])
+                logger.info(f"{i} {c} {str(searcher.root.children[c])}")
+            action = resultDict['action']
+            
+            summary = summaryGraph(searcher.root)
+            if args.visualize_graph:
+                graph = getGraph(searcher.root)
+                fig = visualizeGraph(graph, title='Naive MCTS')
+                fig.show()
+            print(summary)
+            logger.info(summary)
+            
+            # action probability
+            actionProb = searcher.root.actionProb
+            if actionProb is not None:
+                actionProb[actionProb>args.threshold_prob] += 0.5
+                plt.imshow(np.mean(actionProb, axis=0))
+                plt.savefig('data/mcts-%s/scene-%d/actionprob_%d.png'%(log_name, sidx, step))
+
+            # expected result in mcts #
+            nextTable = searcher.root.takeAction(action)
+            print("Best Action:", action)
+            print("Best Child: \n %s"%nextTable[0])
+            logger.info("Best Action: %s"%str(action))
+            logger.info("Best Child: \n %s"%nextTable[0])
+            if True:
+                nextCollision = renderer.checkCollision(nextTable)
+                logger.info("Collision: %s"%nextCollision)
+                logger.info("Save fig: scene-%d/expect_%d.png"%(sidx, step))
+            tableRgb = renderer.getRGB(nextTable)
+            plt.imshow(tableRgb)
+            plt.savefig('data/mcts-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
+            #plt.show()
+
+            # simulation step in pybullet #
+            target_object, target_position, rot_angle = renderer.convert_action(action)
+            obs = env.step(target_object, target_position, rot_angle)
+            currentRgb = obs[args.view]['rgb']
+            currentSeg = obs[args.view]['segmentation']
+            plt.imshow(currentRgb)
+            plt.savefig('data/mcts-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
+
+            table = searcher.reset(currentRgb, currentSeg)
+            if table is None:
+                print("Scenario ended.")
+                logger.info("Scenario ended.")
+                break
+            #table = copy.deepcopy(nextTable)
+            print("Current state: \n %s"%table[0])
+            logger.info("Current state: \n %s"%table[0])
+
+            terminal, reward = searcher.isTerminal(None, table, checkReward=True)
+            print("Current Score:", reward)
             print("--------------------------------")
-            logger.info('-'*50)
-            for step in range(10):
-                resultDict = searcher.search(table=table, needDetails=True)
-                print("Num Children: %d"%len(searcher.root.children))
-                logger.info("Num Children: %d"%len(searcher.root.children))
-                for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
-                    print(i, c, searcher.root.children[c])
-                    logger.info(f"{i} {c} {str(searcher.root.children[c])}")
-                action = resultDict['action']
-                if args.visualize_graph:
-                    graph = getGraph(searcher.root)
-                    fig = visualizeGraph(graph, title='MCTS two-step')
-                    fig.show()
-                
-                # action probability
-                actionProb = searcher.root.actionProb
-                if actionProb is not None:
-                    actionProb[actionProb>args.threshold_prob] += 0.5
-                    plt.imshow(np.mean(actionProb, axis=0))
-                    plt.savefig('data/mcts-%s/scene-%d/actionprob_%d.png'%(log_name, sidx, step))
-
-                # expected result in mcts #
-                nextTable = searcher.root.takeAction(action)
-                print("Best Action:", action)
-                print("Best Child: \n %s"%nextTable[0])
-                logger.info("Best Action: %s"%str(action))
-                logger.info("Best Child: \n %s"%nextTable[0])
-                tableRgb = renderer.getRGB(nextTable)
-                plt.imshow(tableRgb)
-                plt.savefig('data/mcts-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
-                #plt.show()
-
-                # simulation step in pybullet #
-                target_object, target_position, rot_angle = renderer.convert_action(action)
-                obs = env.step(target_object, target_position, rot_angle)
-                currentRgb = obs[args.view]['rgb']
-                currentSeg = obs[args.view]['segmentation']
-                table = searcher.reset(currentRgb, currentSeg)
-                #table = copy.deepcopy(nextTable)
-                print("Current state: \n %s"%table[0])
-                logger.info("Current state: \n %s"%table[0])
-                plt.imshow(currentRgb)
-                plt.savefig('data/mcts-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
-                terminal, reward = searcher.isTerminal(None, table, checkReward=True)
-                print("Current Score:", reward)
+            logger.info("Current Score: %f" %reward)
+            logger.info("-"*50)
+            if terminal:
+                print("Arrived at the final state:")
+                print("Score:", reward)
+                if reward > args.threshold_success:
+                    success += 1
+                print(table[0])
                 print("--------------------------------")
-                logger.info("Current Score: %f" %reward)
-                logger.info("-"*50)
-                if terminal:
-                    print("Arrived at the final state:")
-                    print("Score:", reward)
-                    print(table[0])
-                    print("--------------------------------")
-                    print("--------------------------------")
-                    logger.info("Arrived at the final state:")
-                    logger.info("Score: %f"%reward)
-                    logger.info(table[0])
-                    plt.imshow(currentRgb)
-                    plt.savefig('data/mcts-%s/scene-%d/final.png'%(log_name, sidx))
-                    # plt.show()
-                    break
-        except KeyboardInterrupt:
-            break
-        except:
-            continue
+                print("--------------------------------")
+                logger.info("Arrived at the final state:")
+                logger.info("Score: %f"%reward)
+                logger.info(table[0])
+                plt.imshow(currentRgb)
+                plt.savefig('data/mcts-%s/scene-%d/final.png'%(log_name, sidx))
+                # plt.show()
+                break
+    print("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
+
