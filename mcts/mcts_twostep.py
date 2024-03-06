@@ -352,7 +352,7 @@ class MCTS(object):
         if table is None:
             table = node.table
         # check collision and reward for Pick Nodes
-        if node.type=='pick':
+        if node is None or node.type=='pick':
             collision = self.renderer.checkCollision(table)
             if collision:
                 reward = -1.0
@@ -524,7 +524,7 @@ if __name__=='__main__':
     success = 0
     for sidx in range(args.num_scenes):
         # setup logger
-        os.makedirs('data/twotep-%s/scene-%d'%(log_name, sidx), exist_ok=True)
+        os.makedirs('data/twostep-%s/scene-%d'%(log_name, sidx), exist_ok=True)
         with open('data/twostep-%s/config.json'%log_name, 'w') as f:
             json.dump(args.__dict__, f, indent=2)
 
