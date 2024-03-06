@@ -422,10 +422,11 @@ def setupEnvironment(objects, args):
     camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
     camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
     
+    data_dir = args.data_dir
     objects_cfg = { 'paths': {
-            'pybullet_object_path' : '/ssd/disk/pybullet-URDF-models/urdf_models/models',
-            'ycb_object_path' : '/ssd/disk/YCB_dataset',
-            'housecat_object_path' : '/ssd/disk/housecat6d/obj_models_small_size_final',
+            'pybullet_object_path' : os.path.join(data_dir, 'pybullet-URDF-models/urdf_models/models'),
+            'ycb_object_path' : os.path.join(data_dir, 'YCB_dataset'),
+            'housecat_object_path' : os.path.join(data_dir, 'housecat6d/obj_models_small_size_final'),
         },
         'split' : 'inference' #'train'
     }
@@ -445,6 +446,8 @@ def setupEnvironment(objects, args):
 
 if __name__=='__main__':
     parser = ArgumentParser()
+    # Data directory
+    parser.add_argument('--data-dir', type=str, default='/ssd/disk')
     # Inference
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--num-objects', type=int, default=4)
