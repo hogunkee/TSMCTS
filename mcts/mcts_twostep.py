@@ -34,12 +34,12 @@ class NodePick(object):
         else:
             self.depth = self.parent.depth + 1
 
-        #self.isTerminal = False
         self.numVisits = 0
         self.totalReward = 0.
         self.children = {}
         self.actionCandidates = np.arange(1, numObjects+1).tolist()
         self.actionProb = None
+        self.terminal = False
     
     def takeAction(self, obj_pick):
         posMap, rotMap = self.table
@@ -70,7 +70,7 @@ class NodePick(object):
         s=[]
         s.append("Reward: %s"%(self.totalReward))
         s.append("Visits: %d"%(self.numVisits))
-        #s.append("Terminal: %s"%(self.isTerminal))
+        s.append("Terminal: %s"%(self.terminal))
         s.append("Children: %d"%(len(self.children.keys())))
         return "%s: %s"%(self.__class__.__name__, ' / '.join(s))
 
@@ -88,12 +88,12 @@ class NodePlace(object):
         else:
             self.depth = self.parent.depth + 1
 
-        #self.isTerminal = False
         self.numVisits = 0
         self.totalReward = 0.
         self.children = {}
         self.actionCandidates = []
         self.actionProb = None
+        self.terminal = False
     
     def takeAction(self, placement):
         py, px, rot = placement
@@ -128,7 +128,7 @@ class NodePlace(object):
         s.append("Select: %d"%(self.selected))
         s.append("Reward: %s"%(self.totalReward))
         s.append("Visits: %d"%(self.numVisits))
-        #s.append("Terminal: %s"%(self.isTerminal))
+        #s.append("Terminal: %s"%(self.terminal))
         s.append("Children: %d"%(len(self.children.keys())))
         return "%s: %s"%(self.__class__.__name__, ' / '.join(s))
 
@@ -169,6 +169,7 @@ class MCTS(object):
             self.rollout = self.oneStepPolicy
         else:
             self.rollout = lambda n: self.greedyPolicy(n, rolloutPolicy)
+        self.binaryReward = args.binary_reward
 
         self.thresholdSuccess = args.threshold_success #0.6
         self.thresholdQ = args.threshold_q #0.5
@@ -224,7 +225,7 @@ class MCTS(object):
 
     def selectNode(self, node):
         # print('selectNode.')
-        while not self.isTerminal(node)[0]:
+        while not node.terminal: # self.isTerminal(node)[0]:
             if len(node.children)==0:
                 return self.expand(node)
             elif random.uniform(0, 1) < 0.5:
@@ -285,7 +286,7 @@ class MCTS(object):
             rewards = np.concatenate(rewards)
         else:
             rewards = self.VNet(s).cpu().detach().numpy()
-        return rewards
+        return rewards.reshape(-1)
 
     def backpropogate(self, node, reward):
         # print('backpropagate.')
@@ -348,22 +349,37 @@ class MCTS(object):
         # print('isTerminal')
         terminal = False
         reward = 0.0
+        if table is None:
+            table = node.table
+        # check collision and reward for Pick Nodes
+        if node.type=='pick':
+            collision = self.renderer.checkCollision(table)
+            if collision:
+                reward = -1.0
+                terminal = True
+            elif checkReward:
+                reward = self.getReward([table])[0]
+                if reward > self.thresholdSuccess:
+                    terminal = True
+        # check depth
         if node is not None:
             if node.depth >= self.maxDepth:
                 terminal = True
-        if checkReward:
-            if table is None:
-                table = node.table
-            reward = self.getReward([table])[0]
-            if reward > self.thresholdSuccess:
-                terminal = True
+            node.terminal = terminal
         return terminal, reward
 
     def noStepPolicy(self, node):
         # print('noStepPolicy.')
         # st = time.time()
-        rewards = self.getReward([node.table])
-        maxReward = np.max(rewards)
+        terminal, reward = self.isTerminal(node, checkReward=True)
+        if self.binaryReward:
+            if reward > self.thresholdSuccess:
+                reward = 1.0
+            elif reward == -1.0:
+                reward = -1.0
+            else:
+                reward = 0.0
+        maxReward = reward
         # et = time.time()
         # print(et - st, 'seconds.')
         return maxReward
@@ -430,6 +446,7 @@ def setupEnvironment(objects, args):
 if __name__=='__main__':
     parser = ArgumentParser()
     # Inference
+    parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--num-objects', type=int, default=4)
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--H', type=int, default=12)
@@ -443,11 +460,12 @@ if __name__=='__main__':
     parser.add_argument('--max-depth', type=int, default=14)
     parser.add_argument('--rollout-policy', type=str, default='nostep')
     parser.add_argument('--tree-policy', type=str, default='random')
-    parser.add_argument('--threshold-success', type=float, default=0.85)
+    parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
     parser.add_argument('--threshold-q', type=float, default=0.5)
     parser.add_argument('--threshold-v', type=float, default=0.5)
     parser.add_argument('--threshold-prob', type=float, default=0.1)
     parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--binary-reward', action="store_true")
     # Reward model
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
@@ -463,6 +481,19 @@ if __name__=='__main__':
     log_name = now.strftime("%m%d_%H%M")
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
+
+    # Random seed
+    seed = args.seed
+    if seed is not None:
+        print("Random seed: %d"%seed)
+        logger.info("Random seed: %d"%seed)
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
     # Environment setup
     objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
@@ -490,6 +521,7 @@ if __name__=='__main__':
         pnet = pnet.to("cuda:0")
         searcher.setPolicyNet(pnet)
     
+    success = 0
     for sidx in range(args.num_scenes):
         # setup logger
         os.makedirs('data/twotep-%s/scene-%d'%(log_name, sidx), exist_ok=True)
@@ -587,6 +619,10 @@ if __name__=='__main__':
             print("Best Child: \n %s"%nextTable[0])
             logger.info("Best Action: %s"%str(action))
             logger.info("Best Child: \n %s"%nextTable[0])
+            if True:
+                nextCollision = renderer.checkCollision(nextTable)
+                logger.info("Collision: %s"%nextCollision)
+                logger.info("Save fig: scene-%d/expect_%d.png"%(sidx, step))
             tableRgb = renderer.getRGB(nextTable)
             plt.imshow(tableRgb)
             plt.savefig('data/twostep-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
@@ -597,12 +633,18 @@ if __name__=='__main__':
             obs = env.step(target_object, target_position, rot_angle)
             currentRgb = obs[args.view]['rgb']
             currentSeg = obs[args.view]['segmentation']
+            plt.imshow(currentRgb)
+            plt.savefig('data/twostep-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
+
             table = searcher.reset(currentRgb, currentSeg)
+            if table is None:
+                print("Scenario ended.")
+                logger.info("Scenario ended.")
+                break
             #table = copy.deepcopy(nextTable)
             print("Current state: \n %s"%table[0])
             logger.info("Current state: \n %s"%table[0])
-            plt.imshow(currentRgb)
-            plt.savefig('data/twostep-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
+
             terminal, reward = searcher.isTerminal(None, table, checkReward=True)
             print("Current Score:", reward)
             print("--------------------------------")
@@ -611,6 +653,8 @@ if __name__=='__main__':
             if terminal:
                 print("Arrived at the final state:")
                 print("Score:", reward)
+                if reward > args.threshold_success:
+                    success += 1
                 print(table[0])
                 print("--------------------------------")
                 print("--------------------------------")
@@ -621,3 +665,5 @@ if __name__=='__main__':
                 plt.savefig('data/twostep-%s/scene-%d/final.png'%(log_name, sidx))
                 # plt.show()
                 break
+    print("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
+

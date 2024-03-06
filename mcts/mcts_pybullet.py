@@ -339,8 +339,6 @@ class MCTS(object):
         # print('isTerminal')
         terminal = False
         reward = 0.0
-        # check depth
-        
         if table is None:
             table = node.table
         # check collision and reward
@@ -352,6 +350,7 @@ class MCTS(object):
             reward = self.getReward([table])[0]
             if reward > self.thresholdSuccess:
                 terminal = True
+        # check depth
         if node is not None:
             if node.depth >= self.maxDepth:
                 terminal = True
@@ -639,7 +638,7 @@ if __name__=='__main__':
                 print(i, c, searcher.root.children[c])
                 logger.info(f"{i} {c} {str(searcher.root.children[c])}")
             action = resultDict['action']
-            
+
             summary = summaryGraph(searcher.root)
             if args.visualize_graph:
                 graph = getGraph(searcher.root)
