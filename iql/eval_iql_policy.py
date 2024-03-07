@@ -182,7 +182,7 @@ def evaluate(args, log_name):
                         texts.append(txt)
                 plt.subplot(1, 3, 3)
                 plt.imshow(labels.cpu().detach().numpy()[b], vmin=0., vmax=1.)
-                plt.savefig(os.path.join(args.log_dir, log_name, 's-%d.png'%count_steps))
+                plt.savefig(os.path.join(args.log_dir, log_name, 'p-%d.png'%count_steps))
                 for txt in texts:
                     txt.remove()
                 #plt.savefig('../mcts/data/weekly/s-%d.png'%count_steps)
