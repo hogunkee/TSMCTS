@@ -241,10 +241,10 @@ class MCTS(object):
 
     def expand(self, node):
         # print('expand.')
+        actions, prob = self.getPossibleActions(node, self.treePolicy)
+        # print('Num possible actions:', len(actions))
+        assert actions is not None
         while True:
-            actions, prob = self.getPossibleActions(node, self.treePolicy)
-            # print('Num possible actions:', len(actions))
-            assert actions is not None
             action = random.choice(actions)
             if type(action)!=int:
                 action = tuple(action)
