@@ -166,15 +166,10 @@ class MCTS(object):
         while not node.terminal: # self.isTerminal(node)[0]:
             if len(node.children)==0:
                 return self.expand(node)
-            elif random.uniform(0, 1) < 0.5:
+            elif node.isFullyExpanded() or random.uniform(0, 1) < 0.5:
                 node = self.getBestChild(node, self.explorationConstant)
             else:
-                if node.isFullyExpanded():
-                    # print('fully expanded.')
-                    # print('nodes:', len(node.children))
-                    node = self.getBestChild(node, self.explorationConstant)
-                else:
-                    return self.expand(node)
+                return self.expand(node)
         return node
 
     def expand(self, node):

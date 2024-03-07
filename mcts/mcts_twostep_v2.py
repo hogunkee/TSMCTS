@@ -229,20 +229,16 @@ class MCTS(object):
             assert nodePick.type=='pick'
             if len(nodePick.children)==0:
                 return self.expand(nodePick)
-            elif random.uniform(0, 1) < 0.5:
+            elif nodePick.isFullyExpanded() or random.uniform(0, 1) < 0.5:
                 nodePlace = self.getBestChild(nodePick, self.explorationConstant)
-                nodePick = self.getBestChild(nodePlace, self.explorationConstant)
-            else:
-                if nodePick.isFullyExpanded():
-                    nodePlace = self.getBestChild(nodePick, self.explorationConstant)
-                    if len(nodePlace.children)==0:
-                        return self.expandPlace(nodePlace)
-                    elif random.uniform(0, 1) < 0.5:
-                        nodePick = self.getBestChild(nodePlace, self.explorationConstant)
-                    else:
-                        return self.expandPlace(nodePlace)
+                if len(nodePlace.children)==0:
+                    return self.expandPlace(nodePlace)
+                elif nodePlace.isFullyExpanded() or random.uniform(0, 1) < 0.5:
+                    nodePick = self.getBestChild(nodePlace, self.explorationConstant)
                 else:
-                    return self.expand(nodePick)
+                    return self.expandPlace(nodePlace)
+            else:
+                return self.expand(nodePick)
         return nodePick
 
     def expand(self, nodePick):
