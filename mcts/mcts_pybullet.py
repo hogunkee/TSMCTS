@@ -175,10 +175,10 @@ class MCTS(object):
     def expand(self, node):
         # print('expand.')
         actions, prob = self.getPossibleActions(node, self.treePolicy)
+        actions = [tuple(a) for a in actions]
         # print('Num possible actions:', len(actions))
-        assert actions is not None
 
-        action = random.choice([a for a in actions if a not in node.children])
+        action = random.choice([a for a in actions if tuple(a) not in node.children])
         newNode = Node(self.renderer.numObjects, node.takeAction(action), node)
         node.children[tuple(action)] = newNode
         return newNode
@@ -574,7 +574,7 @@ if __name__=='__main__':
     
     success = 0
     for sidx in range(args.num_scenes):
-        np.random.seed(seed + sidx)
+        if seed is not None: np.random.seed(seed + sidx)
         # setup logger
         os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
         with open('data/mcts-%s/config.json'%log_name, 'w') as f:

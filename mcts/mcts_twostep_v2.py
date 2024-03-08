@@ -249,12 +249,10 @@ class MCTS(object):
     
     def expandPick(self, node):
         # print('expandPick.')
-        assert not node.isFullyExpanded()
         actions, prob = self.getPossibleActions(node, self.treePolicy)
         # print('Num possible actions:', len(actions))
-        assert actions is not None
         
-        action = random.choice([a for a in actions if a not in node.children])
+        action = np.random.choice([a for a in actions if a not in node.children])
         ey, ex = np.where(node.table[0]==action)
         if len(ey)==0 and len(ex)==0:
             newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), action, None, node)
@@ -266,11 +264,9 @@ class MCTS(object):
 
     def expandPlace(self, node):
         # print('expandPlace.')
-        assert not node.isFullyExpanded()
         actions, prob = self.getPossibleActions(node, self.treePolicy)
         actions = [tuple(a) for a in actions]
         # print('Num possible actions:', len(actions))
-        assert actions is not None
         
         action = random.choice([a for a in actions if a not in node.children])
         newNode = NodePick(self.renderer.numObjects, node.takeAction(action), node)
@@ -540,7 +536,7 @@ if __name__=='__main__':
     
     success = 0
     for sidx in range(args.num_scenes):
-        np.random.seed(seed + sidx)
+        if seed is not None: np.random.seed(seed + sidx)
         # setup logger
         os.makedirs('data/twostep-%s/scene-%d'%(log_name, sidx), exist_ok=True)
         with open('data/twostep-%s/config.json'%log_name, 'w') as f:

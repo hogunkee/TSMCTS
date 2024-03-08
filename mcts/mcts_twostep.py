@@ -239,7 +239,6 @@ class MCTS(object):
         actions, prob = self.getPossibleActions(node, self.treePolicy)
         actions = [tuple(a) if type(a)!=int else a for a in actions]
         # print('Num possible actions:', len(actions))
-        assert actions is not None
         
         action = random.choice([a for a in actions if a not in node.children])
         if node.type=='pick':
@@ -518,7 +517,7 @@ if __name__=='__main__':
     
     success = 0
     for sidx in range(args.num_scenes):
-        np.random.seed(seed + sidx)
+        if seed is not None: np.random.seed(seed + sidx)
         # setup logger
         os.makedirs('data/twostep-%s/scene-%d'%(log_name, sidx), exist_ok=True)
         with open('data/twostep-%s/config.json'%log_name, 'w') as f:
