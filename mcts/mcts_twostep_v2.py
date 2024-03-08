@@ -506,11 +506,11 @@ if __name__=='__main__':
         logger.info("Random seed: %d"%seed)
         random.seed(seed)
         np.random.seed(seed)
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+        # torch.manual_seed(seed)
+        # torch.cuda.manual_seed(seed)
+        # torch.cuda.manual_seed_all(seed)
+        # torch.backends.cudnn.deterministic = True
+        # torch.backends.cudnn.benchmark = False
 
     # Environment setup
     objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
@@ -540,6 +540,7 @@ if __name__=='__main__':
     
     success = 0
     for sidx in range(args.num_scenes):
+        np.random.seed(seed + sidx)
         # setup logger
         os.makedirs('data/twostep-%s/scene-%d'%(log_name, sidx), exist_ok=True)
         with open('data/twostep-%s/config.json'%log_name, 'w') as f:
