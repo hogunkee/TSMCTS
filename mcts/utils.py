@@ -1,4 +1,6 @@
 import cv2
+import os
+import sys
 import numpy as np
 import igraph as ig
 import plotly.graph_objects as go
@@ -9,6 +11,8 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 from torchvision.models import resnet18
+
+FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 
 
 def summaryGraph(root):
@@ -154,6 +158,26 @@ def visualizeGraph(graph, title):
               plot_bgcolor='rgb(248,248,248)'
               )
     return fig
+
+
+def loadPolicyNetwork(model_path, args):
+    sys.path.append(os.path.join(FILE_PATH, '..', 'policy_learning'))
+    from model import ResNet
+    pnet = ResNet()
+    pnet.load_state_dict(torch.load(model_path))
+    return pnet
+
+def loadIQLPolicyNetwork(model_path, args):
+    sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
+    from src.policy import DiscreteResNetPolicy, DiscreteTransportPolicy
+    if args.policy_net=='transport':
+        policy = DiscreteTransportPolicy(crop_size=args.crop_size)
+    elif args.policy_net=='resnet':
+        policy = DiscreteResNetPolicy(crop_size=args.crop_size)
+    state_dict = torch.load(model_path)
+    state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
+    policy.load_state_dict(state_dict)
+    return policy
 
 
 def loadRewardFunction(model_path):

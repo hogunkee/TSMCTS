@@ -16,6 +16,7 @@ from matplotlib import pyplot as plt
 import torch
 from data_loader import TabletopTemplateDataset
 from utils import loadRewardFunction, Renderer, getGraph, visualizeGraph, summaryGraph
+from utils import loadPolicyNetwork, loadIQLPolicyNetwork
 
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
@@ -568,24 +569,11 @@ if __name__=='__main__':
 
     # Policy-based MCTS
     if args.tree_policy=='policy':
-        sys.path.append(os.path.join(FILE_PATH, '..', 'policy_learning'))
-        from model import ResNet
-        pnet = ResNet()
-        pnet.load_state_dict(torch.load(args.policynet_path))
-        pnet = pnet.to("cuda:0")
-        searcher.setPolicyNet(pnet)
+        pnet = loadPolicyNetwork(args.policynet_path, args)
     elif args.tree_policy=='iql-policy':
-        sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
-        from src.policy import DiscreteResNetPolicy, DiscreteTransportPolicy
-        if args.policy_net=='transport':
-            policy = DiscreteTransportPolicy(crop_size=args.crop_size)
-        elif args.policy_net=='resnet':
-            policy = DiscreteResNetPolicy(crop_size=args.crop_size)
-        state_dict = torch.load(args.policynet_path)
-        state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
-        policy.load_state_dict(state_dict)
-        policy = policy.to("cuda:0")
-        searcher.setPolicyNet(policy)
+        pnet = loadIQLPolicyNetwork(args.policynet_path, args)
+    pnet = pnet.to("cuda:0")
+    searcher.setPolicyNet(pnet)
     
     success = 0
     for sidx in range(args.num_scenes):
