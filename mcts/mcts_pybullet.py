@@ -177,12 +177,11 @@ class MCTS(object):
         actions, prob = self.getPossibleActions(node, self.treePolicy)
         # print('Num possible actions:', len(actions))
         assert actions is not None
-        while True:
-            action = random.choice(actions)
-            if tuple(action) not in node.children:
-                newNode = Node(self.renderer.numObjects, node.takeAction(action), node)
-                node.children[tuple(action)] = newNode
-                return newNode
+
+        action = random.choice([a for a in actions if a not in node.children])
+        newNode = Node(self.renderer.numObjects, node.takeAction(action), node)
+        node.children[tuple(action)] = newNode
+        return newNode
 
     def getReward(self, tables):
         # print('getReward.')
@@ -326,6 +325,7 @@ class MCTS(object):
                                 )).T.reshape(-1, 4)
                 actionCandidates = [a for a in allPossibleActions if node.table[0][a[1], a[2]]==0]
                 probMap = np.ones([nb, th, tw])
+                probMap[:, node.table[0]>0] = 0
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
                 node.setActions(actionCandidates, probMap)
             return node.actionCandidates, node.actionProb

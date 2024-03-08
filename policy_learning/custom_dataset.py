@@ -55,7 +55,7 @@ class TabletopOfflineDataset(Dataset):
                         image = os.path.join(trajectory_path, steps[i+1], 'rgb_%s.png'%self.view)
                         next_seg = os.path.join(trajectory_path, steps[i], 'seg_%s.npy'%self.view)
                         seg = os.path.join(trajectory_path, steps[i+1], 'seg_%s.npy'%self.view)
-                        data_next_obj_info = os.path.join(trajectory_path, steps[i], 'obj_info.json')
+                        next_obj_info = os.path.join(trajectory_path, steps[i], 'obj_info.json')
                         obj_info = os.path.join(trajectory_path, steps[i + 1], 'obj_info.json')
                         data_rewards.append(reward)
                         data_terminals.append(terminal)
@@ -63,7 +63,7 @@ class TabletopOfflineDataset(Dataset):
                         data_images.append(image)
                         data_next_segs.append(next_seg)
                         data_segs.append(seg)
-                        data_next_obj_infos.append(data_next_obj_info)
+                        data_next_obj_infos.append(next_obj_info)
                         data_obj_infos.append(obj_info)
         self.data_rewards = data_rewards
         self.data_terminals = data_terminals
@@ -131,7 +131,6 @@ class TabletopOfflineDataset(Dataset):
         # n' = N' / N * (n + 0.5) - 0.5
         action[0] = (action[0]+0.5)/360 * self.H - 0.5
         action[1] = (action[1]+0.5)/480 * self.W - 0.5
-        
         
         y, x = action
         y1, x1 = np.trunc(action)

@@ -237,28 +237,25 @@ class MCTS(object):
     def expand(self, node):
         # print('expand.')
         actions, prob = self.getPossibleActions(node, self.treePolicy)
+        actions = [tuple(a) if type(a)!=int else a for a in actions]
         # print('Num possible actions:', len(actions))
         assert actions is not None
-        while True:
-            action = random.choice(actions)
-            if type(action)!=int:
-                action = tuple(action)
-            if action not in node.children:
-                if node.type=='pick':
-                    ey, ex = np.where(node.table[0]==action)
-                    if len(ey)==0 and len(ex)==0:
-                        newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), action, None, node)
-                    else:
-                        ey, ex = np.mean(ey).astype(int), np.mean(ex).astype(int)
-                        newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), action, (ey, ex), node)
-                    
-                    node.children[action] = newNode
-                    return newNode   
-                else:
-                    newNode = NodePick(self.renderer.numObjects, node.takeAction(action), node)
-                    node.children[action] = newNode
-                    return newNode
-
+        
+        action = random.choice([a for a in actions if a not in node.children])
+        if node.type=='pick':
+            ey, ex = np.where(node.table[0]==action)
+            if len(ey)==0 and len(ex)==0:
+                newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), action, None, node)
+            else:
+                ey, ex = np.mean(ey).astype(int), np.mean(ex).astype(int)
+                newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), action, (ey, ex), node)
+            node.children[action] = newNode
+            return newNode   
+        else:
+            newNode = NodePick(self.renderer.numObjects, node.takeAction(action), node)
+            node.children[action] = newNode
+            return newNode
+                
     def getReward(self, tables):
         # print('getReward.')
         states = []

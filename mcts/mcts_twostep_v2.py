@@ -248,36 +248,34 @@ class MCTS(object):
         return newNodePick
     
     def expandPick(self, node):
-        assert not node.isFullyExpanded()
         # print('expandPick.')
+        assert not node.isFullyExpanded()
         actions, prob = self.getPossibleActions(node, self.treePolicy)
         # print('Num possible actions:', len(actions))
         assert actions is not None
-        while True:
-            action = random.choice(actions)
-            if action not in node.children:
-                ey, ex = np.where(node.table[0]==action)
-                if len(ey)==0 and len(ex)==0:
-                    newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), action, None, node)
-                else:
-                    ey, ex = np.mean(ey).astype(int), np.mean(ex).astype(int)
-                    newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), action, (ey, ex), node)
-                node.children[action] = newNode
-                return newNode
+        
+        action = random.choice([a for a in actions if a not in node.children])
+        ey, ex = np.where(node.table[0]==action)
+        if len(ey)==0 and len(ex)==0:
+            newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), action, None, node)
+        else:
+            ey, ex = np.mean(ey).astype(int), np.mean(ex).astype(int)
+            newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), action, (ey, ex), node)
+        node.children[action] = newNode
+        return newNode
 
     def expandPlace(self, node):
-        assert not node.isFullyExpanded()
         # print('expandPlace.')
+        assert not node.isFullyExpanded()
         actions, prob = self.getPossibleActions(node, self.treePolicy)
+        actions = [tuple(a) for a in actions]
         # print('Num possible actions:', len(actions))
         assert actions is not None
-        while True:
-            action = random.choice(actions)
-            action = tuple(action)
-            if action not in node.children:
-                newNode = NodePick(self.renderer.numObjects, node.takeAction(action), node)
-                node.children[action] = newNode
-                return newNode
+        
+        action = random.choice([a for a in actions if a not in node.children])
+        newNode = NodePick(self.renderer.numObjects, node.takeAction(action), node)
+        node.children[action] = newNode
+        return newNode
 
     def getReward(self, tables):
         # print('getReward.')

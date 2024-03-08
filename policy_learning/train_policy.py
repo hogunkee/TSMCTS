@@ -218,6 +218,7 @@ if __name__=='__main__':
     parser.add_argument('--crop-size', type=int, default=64)
     parser.add_argument('--learning-rate', type=float, default=1e-4)
     parser.add_argument('--alpha', type=float, default=0.1)
+    parser.add_argument('--action-distribution', action='store_true')
     parser.add_argument('--loss', type=str, default='ce') # mse / sum / ce:cross-entropy
     parser.add_argument('--model', type=str, default='resnet') # pnet / resnet
     parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
@@ -225,7 +226,6 @@ if __name__=='__main__':
     parser.add_argument('--log-freq', type=int, default=100)
     parser.add_argument('--log-dir', type=str, default='logs')
     parser.add_argument('--wandb-off', action='store_true')
-    parser.add_argument('--action-distribution', action='store_true')
     args = parser.parse_args()
 
     now = datetime.datetime.now()
