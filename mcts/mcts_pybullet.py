@@ -271,10 +271,12 @@ class MCTS(object):
                 probMap = probMap.cpu().detach().numpy()
                 ros, pys, pxs = np.where(probMap > self.thresholdProb)
                 for ro, py, px in zip(ros, pys, pxs):
+                    if node.table[0][py, px] != 0:
+                        continue
                     rot = ro // self.renderer.numObjects
                     o = ro % self.renderer.numObjects
                     actionCandidates.append((o, py, px, rot+1))
-                actionCandidates = [a for a in actionCandidates if node.table[0][a[1], a[2]]==0]
+                # actionCandidates = [a for a in actionCandidates if node.table[0][a[1], a[2]]==0]
                 node.setActions(actionCandidates, probMap)
             #print('possible actions:', len(node.actionCandidates))
             return node.actionCandidates, node.actionProb

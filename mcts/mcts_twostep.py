@@ -336,6 +336,40 @@ class MCTS(object):
                     probMap /= np.sum(probMap, axis=(0,1), keepdims=True)
                     node.setActions(actionCandidates, probMap)
             return node.actionCandidates, node.actionProb
+        
+        elif policy=='iql-policy':
+            if len(node.actionCandidates)==0:
+                if node.type=='pick':
+                    nb = self.renderer.numObjects
+                    actionCandidates = np.arange(1, nb+1)
+                    probMap = np.ones(self.renderer.numObjects)
+                    probMap /= np.sum(probMap)
+                    node.setActions(actionCandidates, probMap)
+                elif node.type=='place':
+                    actionCandidates = []
+                    states = []
+                    objectPatches = []
+                    for r in range(1,3):
+                        rgbWoTarget = self.renderer.getRGB(node.table)
+                        objPatch = self.renderer.objectPatches[r][node.selected-1]
+                        states.append(rgbWoTarget)
+                        objectPatches.append(objPatch)
+                    s = torch.Tensor(np.array(states)/255.).to(torch.float32).cuda()
+                    p = torch.Tensor(np.array(objectPatches)/255.).to(torch.float32).cuda()
+                    obs = [None, s, p]
+                    _, probMap, _ = self.policyNet(obs)
+                    probMap = probMap.cpu().detach().numpy()
+                    rs, pys, pxs = np.where(probMap > self.thresholdProb)
+                    for rot, py, px in zip(rs, pys, pxs):
+                        if node.table[0][py, px]!=0:
+                            continue
+                        if node.exceptPlace is not None and (py, px)==tuple(node.exceptPlace):
+                            continue
+                        actionCandidates.append((py, px, rot+1))
+                    node.setActions(actionCandidates, probMap)
+            # print('possible actions:', len(node.actionCandidates))
+            return node.actionCandidates, node.actionProb
+        
         else:
             raise NotImplementedError
 
