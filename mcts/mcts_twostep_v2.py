@@ -249,7 +249,10 @@ class MCTS(object):
     
     def expandPick(self, node):
         # print('expandPick.')
-        actions, prob = self.getPossibleActions(node, self.treePolicy)
+        if len(node.actionCandidates)==0:
+            actions, prob = self.getPossibleActions(node, self.treePolicy)
+        else:
+            actions, prob = node.actionCandidates, node.actionProb
         # print('Num possible actions:', len(actions))
         
         action = np.random.choice([a for a in actions if a not in node.children])
@@ -264,7 +267,10 @@ class MCTS(object):
 
     def expandPlace(self, node):
         # print('expandPlace.')
-        actions, prob = self.getPossibleActions(node, self.treePolicy)
+        if len(node.actionCandidates)==0:
+            actions, prob = self.getPossibleActions(node, self.treePolicy)
+        else:
+            actions, prob = node.actionCandidates, node.actionProb
         actions = [tuple(a) for a in actions]
         # print('Num possible actions:', len(actions))
         
@@ -472,7 +478,8 @@ if __name__=='__main__':
     parser.add_argument('--iteration-limit', type=int, default=10000)
     parser.add_argument('--max-depth', type=int, default=14)
     parser.add_argument('--rollout-policy', type=str, default='nostep')
-    parser.add_argument('--tree-policy', type=str, default='random')
+    parser.add_argument('--tree-policy', type=str, default='random') # 'random' / 'policy' / 'iql-policy'
+    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
     parser.add_argument('--threshold-q', type=float, default=0.5)
     parser.add_argument('--threshold-v', type=float, default=0.5)
@@ -533,6 +540,18 @@ if __name__=='__main__':
         pnet.load_state_dict(torch.load(args.policynet_path))
         pnet = pnet.to("cuda:0")
         searcher.setPolicyNet(pnet)
+    elif args.tree_policy=='iql-policy':
+        sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
+        from src.policy import DiscreteResNetPolicy, DiscreteTransportPolicy
+        if args.policy_net=='transport':
+            policy = DiscreteTransportPolicy(crop_size=args.crop_size)
+        elif args.policy_net=='resnet':
+            policy = DiscreteResNetPolicy(crop_size=args.crop_size)
+        state_dict = torch.load(args.policynet_path)
+        state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
+        policy.load_state_dict(state_dict)
+        policy = policy.to("cuda:0")
+        searcher.setPolicyNet(policy)
     
     success = 0
     for sidx in range(args.num_scenes):

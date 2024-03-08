@@ -174,7 +174,10 @@ class MCTS(object):
 
     def expand(self, node):
         # print('expand.')
-        actions, prob = self.getPossibleActions(node, self.treePolicy)
+        if len(node.actionCandidates)==0:
+            actions, prob = self.getPossibleActions(node, self.treePolicy)
+        else:
+            actions, prob = node.actionCandidates, node.actionProb
         actions = [tuple(a) for a in actions]
         # print('Num possible actions:', len(actions))
 
@@ -236,49 +239,46 @@ class MCTS(object):
 
     def getPossibleActions(self, node, policy='random', needValues=False):
         # print('getPossibleActions.')
-        if policy=='Q':
-            if len(node.actionCandidates)==0:
-                actionCandidates = []
-                states = []
-                objectPatches = []
-                for o in range(self.renderer.numObjects):
-                    rgbWoTarget = self.renderer.getRGB(node.table, remove=o)
-                    objPatch = self.renderer.objectPatches[o]
-                    states.append(rgbWoTarget)
-                    objectPatches.append(objPatch)
-                s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
-                p = torch.Tensor(np.array(objectPatches)/255.).permute([0,3,1,2]).cuda()
-                if self.preProcess is not None:
-                    s = self.preProcess(s)
-                    p = self.reProcess(p)
-                QHeatmap = self.QNet(s, p).cpu().detach().numpy()
-                for o, py, px in np.where(QHeatmap > self.thresholdQ):
-                    actionCandidates.append((o, py, px))
-                node.setActions(actionCandidates)
-            return node.actionCandidates, node.actionProb
-
-        elif policy=='V':
+        if policy=='random':
             if len(node.actionCandidates)==0:
                 nb = self.renderer.numObjects
                 th, tw = self.renderer.tableSize
                 allPossibleActions = np.array(np.meshgrid(
-                                np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
+                                np.arange(1, nb+1), np.arange(1, th-1), np.arange(1, tw-1), np.arange(1,3)
                                 )).T.reshape(-1, 4)
-                nextStates = []
-                for action in allPossibleActions:
-                    nextState = self.renderer.getRGB(node.takeAction(action))
-                    nextStates.append(nextState)
-                s = torch.Tensor(np.array(nextStates)/255.).permute([0,3,1,2]).cuda()
-                if self.preProcess is not None:
-                    s = self.preProcess(s)
-                values = self.VNet(s).cpu().detach().numpy()
-                possibleIdx = values > self.thresholdV
-                node.setActions(allPossibleActions[possibleIdx])
-            if needValues:
-                return node,actionCandidates, values[possibleIdx]
-            else:
-                return node.actionCandidates, node.actionProb
-            
+                actionCandidates = [a for a in allPossibleActions if node.table[0][a[1], a[2]]==0]
+                probMap = np.ones([nb, th, tw])
+                probMap[:, node.table[0]>0] = 0
+                probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+                node.setActions(actionCandidates, probMap)
+            return node.actionCandidates, node.actionProb
+        
+        elif policy=='iql-policy':
+            if len(node.actionCandidates)==0:
+                actionCandidates = []
+                states = []
+                objectPatches = []
+                for r in range(1,3):
+                    for o in range(self.renderer.numObjects):
+                        rgbWoTarget = self.renderer.getRGB(node.table, remove=o)
+                        objPatch = self.renderer.objectPatches[r][o]
+                        states.append(rgbWoTarget)
+                        objectPatches.append(objPatch)
+                s = torch.Tensor(np.array(states)/255.).to(torch.float32).cuda()
+                p = torch.Tensor(np.array(objectPatches)/255.).to(torch.float32).cuda()
+                obs = [None, s, p]
+                _, probMap, _ = self.policyNet(obs)
+                probMap = probMap.cpu().detach().numpy()
+                ros, pys, pxs = np.where(probMap > self.thresholdProb)
+                for ro, py, px in zip(ros, pys, pxs):
+                    rot = ro // self.renderer.numObjects
+                    o = ro % self.renderer.numObjects
+                    actionCandidates.append((o, py, px, rot+1))
+                actionCandidates = [a for a in actionCandidates if node.table[0][a[1], a[2]]==0]
+                node.setActions(actionCandidates, probMap)
+            #print('possible actions:', len(node.actionCandidates))
+            return node.actionCandidates, node.actionProb
+        
         elif policy=='policy':
             if len(node.actionCandidates)==0:
                 actionCandidates = []
@@ -316,19 +316,6 @@ class MCTS(object):
                             txt.remove()
             return node.actionCandidates, node.actionProb
 
-        elif policy=='random':
-            if len(node.actionCandidates)==0:
-                nb = self.renderer.numObjects
-                th, tw = self.renderer.tableSize
-                allPossibleActions = np.array(np.meshgrid(
-                                np.arange(1, nb+1), np.arange(1, th-1), np.arange(1, tw-1), np.arange(1,3)
-                                )).T.reshape(-1, 4)
-                actionCandidates = [a for a in allPossibleActions if node.table[0][a[1], a[2]]==0]
-                probMap = np.ones([nb, th, tw])
-                probMap[:, node.table[0]>0] = 0
-                probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
-                node.setActions(actionCandidates, probMap)
-            return node.actionCandidates, node.actionProb
 
     def isTerminal(self, node, table=None, checkReward=False):
         # print('isTerminal')
@@ -510,7 +497,8 @@ if __name__=='__main__':
     parser.add_argument('--iteration-limit', type=int, default=10000)
     parser.add_argument('--max-depth', type=int, default=7)
     parser.add_argument('--rollout-policy', type=str, default='nostep')
-    parser.add_argument('--tree-policy', type=str, default='random')
+    parser.add_argument('--tree-policy', type=str, default='random') # 'random' / 'policy' / 'iql-policy'
+    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
     parser.add_argument('--threshold-q', type=float, default=0.5)
     parser.add_argument('--threshold-v', type=float, default=0.5)
@@ -571,7 +559,19 @@ if __name__=='__main__':
         pnet.load_state_dict(torch.load(args.policynet_path))
         pnet = pnet.to("cuda:0")
         searcher.setPolicyNet(pnet)
-    
+    elif args.tree_policy=='iql-policy':
+        sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
+        from src.policy import DiscreteResNetPolicy, DiscreteTransportPolicy
+        if args.policy_net=='transport':
+            policy = DiscreteTransportPolicy(crop_size=args.crop_size)
+        elif args.policy_net=='resnet':
+            policy = DiscreteResNetPolicy(crop_size=args.crop_size)
+        state_dict = torch.load(args.policynet_path)
+        state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
+        policy.load_state_dict(state_dict)
+        policy = policy.to("cuda:0")
+        searcher.setPolicyNet(policy)
+
     success = 0
     for sidx in range(args.num_scenes):
         if seed is not None: np.random.seed(seed + sidx)
