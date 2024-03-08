@@ -321,7 +321,7 @@ class MCTS(object):
                 nb = self.renderer.numObjects
                 th, tw = self.renderer.tableSize
                 allPossibleActions = np.array(np.meshgrid(
-                                np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
+                                np.arange(1, nb+1), np.arange(1, th-1), np.arange(1, tw-1), np.arange(1,3)
                                 )).T.reshape(-1, 4)
                 actionCandidates = [a for a in allPossibleActions if node.table[0][a[1], a[2]]==0]
                 probMap = np.ones([nb, th, tw])

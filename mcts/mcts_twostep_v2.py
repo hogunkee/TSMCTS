@@ -339,7 +339,7 @@ class MCTS(object):
                     nb = self.renderer.numObjects
                     th, tw = self.renderer.tableSize
                     allPossibleActions = np.array(np.meshgrid(
-                                    np.arange(th), np.arange(tw), np.arange(1,3)
+                                    np.arange(1, th-1), np.arange(1, tw-1), np.arange(1,3)
                                     )).T.reshape(-1, 3)
                     if node.exceptPlace is None:
                         actionCandidates = [a for a in allPossibleActions 
