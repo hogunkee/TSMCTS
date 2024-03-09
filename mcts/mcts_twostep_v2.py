@@ -572,11 +572,13 @@ if __name__=='__main__':
     # Policy-based MCTS
     if args.tree_policy=='policy':
         pnet = loadPolicyNetwork(args.policynet_path, args)
+        pnet = pnet.to("cuda:0")
+        searcher.setPolicyNet(pnet)
     elif args.tree_policy=='iql-policy':
         pnet = loadIQLPolicyNetwork(args.policynet_path, args)
-    pnet = pnet.to("cuda:0")
-    searcher.setPolicyNet(pnet)
-    
+        pnet = pnet.to("cuda:0")
+        searcher.setPolicyNet(pnet)
+        
     success = 0
     for sidx in range(args.num_scenes):
         if seed is not None: np.random.seed(seed + sidx)
