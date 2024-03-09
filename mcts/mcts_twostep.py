@@ -152,6 +152,7 @@ class MCTS(object):
                 raise ValueError("Iteration limit must be greater than one")
             self.searchLimit = iterationLimit
             self.limitType = 'iterations'
+        self.searchCount = 0
         self.renderer = renderer
         if self.renderer is None:
             self.domain = 'grid'
@@ -208,7 +209,7 @@ class MCTS(object):
             while time.time() < timeLimit:
                 self.executeRound()
         else:
-            for i in range(self.searchLimit):
+            while self.searchCount < self.searchLimit:
                 self.executeRound()
         bestPickChild = self.getBestChild(self.root, explorationValue=0.)
         pickAction=(action for action, node in self.root.children.items() if node is bestPickChild).__next__()
@@ -295,6 +296,8 @@ class MCTS(object):
         node = self.selectNode(self.root)
         reward = self.rollout(node)
         self.backpropogate(node, reward)
+        if node.type=='pick':
+            self.searchCount += 1
 
     def getBestChild(self, node, explorationValue):
         # print('getBestChild.')
