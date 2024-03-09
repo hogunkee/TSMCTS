@@ -305,7 +305,7 @@ class MCTS(object):
             rewards = self.VNet(s).cpu().detach().numpy()
         return rewards.reshape(-1)
 
-    def backpropogate(self, node, reward):
+    def backpropagate(self, node, reward):
         # print('backpropagate.')
         while node is not None:
             node.numVisits += 1
@@ -317,7 +317,7 @@ class MCTS(object):
         node = self.selectNode(self.root)
         assert node.type=='pick'
         reward = self.rollout(node)
-        self.backpropogate(node, reward)
+        self.backpropagate(node, reward)
         self.searchCount += 1
 
     def getBestChild(self, node, explorationValue):

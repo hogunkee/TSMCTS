@@ -284,7 +284,7 @@ class MCTS(object):
             rewards = self.VNet(s).cpu().detach().numpy()
         return rewards.reshape(-1)
 
-    def backpropogate(self, node, reward):
+    def backpropagate(self, node, reward):
         # print('backpropagate.')
         while node is not None:
             node.numVisits += 1
@@ -295,7 +295,7 @@ class MCTS(object):
         # print('executeRound.')
         node = self.selectNode(self.root)
         reward = self.rollout(node)
-        self.backpropogate(node, reward)
+        self.backpropagate(node, reward)
         if node.type=='pick':
             self.searchCount += 1
 
