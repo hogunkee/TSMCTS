@@ -561,7 +561,7 @@ if __name__=='__main__':
 
     # MCTS setup
     renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
-    searcher = MCTS(renderer, args)
+    searcher = MCTS(renderer, args, explorationConstant=1/np.sqrt(20))
 
     # Network setup
     model_path = args.reward_model_path
