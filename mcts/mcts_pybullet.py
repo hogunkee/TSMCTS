@@ -97,7 +97,7 @@ class MCTS(object):
                 raise ValueError("Iteration limit must be greater than one")
             self.searchLimit = iterationLimit
             self.limitType = 'iterations'
-        self.searchCount = 0
+        
         self.renderer = renderer
         if self.renderer is None:
             self.domain = 'grid'
@@ -127,9 +127,11 @@ class MCTS(object):
         self.policyNet = None
         self.batchSize = args.batch_size #32
         self.preProcess = None
+        self.searchCount = 0
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
+        self.searchCount = 0
         return table
 
     def setQNet(self, QNet):
