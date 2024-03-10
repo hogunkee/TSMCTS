@@ -45,7 +45,7 @@ class Node(object):
         self.terminal = False
 
         self.reward = 0.
-        self.qvalue = 0.
+        # self.qvalue = 0.
         self.prob = 0.
         self.value = 0.
     
@@ -111,6 +111,7 @@ class MCTS(object):
         self.explorationConstant = explorationConstant
         self.puctLambda = args.puct_lambda
 
+        self.treePolicy = args.tree_policy
         self.maxDepth = args.max_depth
         rolloutPolicy = args.rollout_policy
         if rolloutPolicy=='random':
@@ -123,10 +124,8 @@ class MCTS(object):
             self.rollout = lambda n: self.greedyPolicy(n, rolloutPolicy)
         self.binaryReward = args.binary_reward
 
-        self.thresholdSuccess = args.threshold_success #0.6
-        self.thresholdQ = args.threshold_q #0.5
-        self.thresholdV = args.threshold_v #0.5
-        self.thresholdProb = args.threshold_prob #0.1
+        self.thresholdSuccess = args.threshold_success
+        self.thresholdProb = args.threshold_prob
         self.rewardNet = None
         self.QNet = None
         self.valueNet = None
@@ -205,7 +204,7 @@ class MCTS(object):
         else:
             prob = node.actionProb
         
-        if self.args.mode=='uniform':
+        if self.treePolicy=='uniform':
             prob[prob>0] = 1.
             prob /= np.sum(prob)
 
@@ -267,7 +266,7 @@ class MCTS(object):
         bestValue = float("-inf")
         bestNodes = []
         for child in node.children.values():
-            nodeValue = child.qvalue + explorationValue * child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
+            nodeValue = child.totalReward + explorationValue * child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
             if nodeValue > bestValue:
                 bestValue = nodeValue
                 bestNodes = [child]
@@ -482,13 +481,12 @@ if __name__=='__main__':
     parser.add_argument('--iteration-limit', type=int, default=10000)
     parser.add_argument('--max-depth', type=int, default=7)
     parser.add_argument('--rollout-policy', type=str, default='nostep')
+    parser.add_argument('--tree-policy', type=str, default='p') # 'p' / 'uniform
     parser.add_argument('--puct-lambda', type=float, default=0.5)
     parser.add_argument('--puct-constant', type=float, default=5)
     parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
-    parser.add_argument('--threshold-q', type=float, default=0.5)
-    parser.add_argument('--threshold-v', type=float, default=0.5)
-    parser.add_argument('--threshold-prob', type=float, default=0.1)
+    parser.add_argument('--threshold-prob', type=float, default=0.01)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--binary-reward', action="store_true")
     # Reward model
@@ -620,6 +618,9 @@ if __name__=='__main__':
             # action probability
             actionProb = searcher.root.actionProb
             if actionProb is not None:
+                if args.tree_policy=='uniform':
+                    actionProb[actionProb>0] = 1.
+                    actionProb /= np.sum(actionProb)
                 actionProb[actionProb>args.threshold_prob] += 0.5
                 plt.imshow(np.mean(actionProb, axis=(0, 1)))
                 plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
