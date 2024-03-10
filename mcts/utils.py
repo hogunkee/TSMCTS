@@ -179,13 +179,27 @@ def loadIQLPolicyNetwork(model_path, args):
     policy.load_state_dict(state_dict)
     return policy
 
+def loadIQLNetworks(model_path, args):
+    sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
+    from src.policy import DiscreteResNetPolicy, DiscreteTransportPolicy
+    if args.policy_net=='transport':
+        policy = DiscreteTransportPolicy(crop_size=args.crop_size)
+    elif args.policy_net=='resnet':
+        policy = DiscreteResNetPolicy(crop_size=args.crop_size)
+    from src.value_functions import ValueFunction
+    valueNet = ValueFunction(hidden_dim=256)
+    state_dict = torch.load(model_path)
+    policy_state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
+    policy.load_state_dict(policy_state_dict)
+    value_state_dict = {k.replace('vf.', ''): v for k, v in state_dict.items() if k.startswith('vf.')}
+    valueNet.load_state_dict(value_state_dict)
+    return policy, valueNet
+
 
 def loadRewardFunction(model_path):
     vNet = resnet18(pretrained=False)
     fc_in_features = vNet.fc.in_features
-    vNet.fc = nn.Sequential(
-        nn.Linear(fc_in_features, 1),
-    )
+    vNet.fc = nn.Sequential(nn.Linear(fc_in_features, 1))
     vNet.load_state_dict(torch.load(model_path))
     vNet.to("cuda:0")
     vNet.eval()

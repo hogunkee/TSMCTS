@@ -16,7 +16,7 @@ from matplotlib import pyplot as plt
 import torch
 from data_loader import TabletopTemplateDataset
 from utils import loadRewardFunction, Renderer, getGraph, visualizeGraph, summaryGraph
-from utils import loadPolicyNetwork, loadIQLPolicyNetwork
+from utils import loadIQLNetworks
 
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
@@ -25,9 +25,10 @@ from utilities import Camera, Camera_front_top
 
         
 class Node(object):
-    def __init__(self, numObjects, table, parent=None):
+    def __init__(self, numObjects, table, parent=None, pre_action=None):
         self.table = table
         self.parent = parent
+        self.pre_action = pre_action
         self.numObjcts = numObjects
         if parent is None:
             self.depth = 0
@@ -38,9 +39,15 @@ class Node(object):
         self.numVisits = 0
         self.totalReward = 0.
         self.children = {}
-        self.actionCandidates = []
+        # self.actionCandidates = []
         self.actionProb = None
+        self.numActionCandidates = 0
         self.terminal = False
+
+        self.reward = 0.
+        self.qvalue = 0.
+        self.prob = 0.
+        self.value = 0.
     
     def takeAction(self, move):
         obj, py, px, rot = move
@@ -54,21 +61,20 @@ class Node(object):
         newTable = [newPosMap, newRotMap]
         return newTable
     
-    def setActions(self, actionCandidates, actionProb=None):
-        self.actionCandidates = actionCandidates
-        if actionProb is not None:
-            self.actionProb = actionProb
-            if False: # blurring
-                newActionProb = np.zeros_like(actionProb)
-                for i in range(len(actionProb)):
-                    ap = actionProb[i]
-                    kernel = np.ones((2, 2))
-                    ap_blur = cv2.dilate(cv2.erode(ap, kernel), kernel)
-                    newActionProb[i] = ap_blur
-                self.actionProb = newActionProb
+    def setActions(self, actionProb):
+        self.actionProb = actionProb
+        self.numActionCandidates = (actionProb>0).astype(float).sum().astype(int)
+        if False: # blurring
+            newActionProb = np.zeros_like(actionProb)
+            for i in range(len(actionProb)):
+                ap = actionProb[i]
+                kernel = np.ones((2, 2))
+                ap_blur = cv2.dilate(cv2.erode(ap, kernel), kernel)
+                newActionProb[i] = ap_blur
+            self.actionProb = newActionProb
 
     def isFullyExpanded(self):
-        return len(self.children)!=0 and len(self.children)==len(self.actionCandidates)
+        return len(self.children)!=0 and len(self.children)==self.numActionCandidates
 
     def __str__(self):
         s=[]
@@ -97,13 +103,13 @@ class MCTS(object):
                 raise ValueError("Iteration limit must be greater than one")
             self.searchLimit = iterationLimit
             self.limitType = 'iterations'
-        self.searchCount = 0
         self.renderer = renderer
         if self.renderer is None:
             self.domain = 'grid'
         else:
             self.domain = 'image'
         self.explorationConstant = explorationConstant
+        self.puctLambda = args.puct_lambda
 
         self.maxDepth = args.max_depth
         rolloutPolicy = args.rollout_policy
@@ -121,21 +127,27 @@ class MCTS(object):
         self.thresholdQ = args.threshold_q #0.5
         self.thresholdV = args.threshold_v #0.5
         self.thresholdProb = args.threshold_prob #0.1
+        self.rewardNet = None
         self.QNet = None
-        self.VNet = None
+        self.valueNet = None
         self.policyNet = None
         self.batchSize = args.batch_size #32
         self.preProcess = None
+        self.searchCount = 0
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
+        self.searchCount = 0
         return table
 
     def setQNet(self, QNet):
         self.QNet = QNet
     
-    def setVNet(self, VNet):
-        self.VNet = VNet
+    def setRewardNet(self, rewardNet):
+        self.rewardNet = rewardNet
+
+    def setValueNet(self, valueNet):
+        self.valueNet = valueNet
 
     def setPolicyNet(self, policyNet):
         self.policyNet = policyNet
@@ -173,17 +185,34 @@ class MCTS(object):
                 return self.expand(node)
         return node
 
+    def sampleFromProb(self, prob, exceptActions=[]):
+        # shape: r x n x h x w
+        for action in exceptActions:
+            o, py, px, r = action
+            prob[r-1, o, py, px] = 0.
+        prob /= np.sum(prob)
+        rs, nbs, ys, xs = np.where(prob>0.)
+        assert len(rs)>0
+        idx = np.random.choice(len(rs), p=prob[rs, nbs, ys, xs])
+        rot, nb, y, x = rs[idx], nbs[idx], ys[idx], xs[idx]
+        action = (nb, y, x, rot+1)
+        return action
+    
     def expand(self, node):
         # print('expand.')
-        if len(node.actionCandidates)==0:
-            actions, prob = self.getPossibleActions(node)
+        if node.numActionCandidates==0:
+            prob = self.getPossibleActions(node)
         else:
-            actions, prob = node.actionCandidates, node.actionProb
-        actions = [tuple(a) for a in actions]
-        # print('Num possible actions:', len(actions))
+            prob = node.actionProb
+        
+        if self.args.mode=='uniform':
+            prob[prob>0] = 1.
+            prob /= np.sum(prob)
 
-        action = random.choice([a for a in actions if tuple(a) not in node.children])
-        newNode = Node(self.renderer.numObjects, node.takeAction(action), node)
+        exceptActions = [a for a in node.children.keys()]
+        action = self.sampleFromProb(prob, exceptActions)
+
+        newNode = Node(self.renderer.numObjects, node.takeAction(action), node, action)
         node.children[tuple(action)] = newNode
         return newNode
 
@@ -193,36 +222,44 @@ class MCTS(object):
         for table in tables:
             rgb = self.renderer.getRGB(table)
             states.append(rgb)
-        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
+        s_value = torch.Tensor(np.array(states)/255.).to(torch.float32).cuda()
+        s_reward = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
-            s = self.preProcess(s)
+            s_reward = self.preProcess(s_reward)
 
         if len(states) > self.batchSize:
             rewards = []
+            values = []
             numBatches = len(states)//self.batchSize
             if len(states)%self.batchSize > 0:
                 numBatches += 1
             for b in range(numBatches):
-                batchS = s[b*self.batchSize:(b+1)*self.batchSize]
-                batchRewards = self.VNet(batchS).cpu().detach().numpy()
+                batchStatesR = s_reward[b*self.batchSize:(b+1)*self.batchSize]
+                batchStatesV = [s_value[b*self.batchSize:(b+1)*self.batchSize], None, None]
+                batchRewards = self.rewardNet(batchStatesR).cpu().detach().numpy()
+                batchValues  = self.valueNet(batchStatesV).cpu().detach().numpy()
                 rewards.append(batchRewards)
+                values.append(batchValues)
             rewards = np.concatenate(rewards)
+            values = np.concatenate(values)
         else:
-            rewards = self.VNet(s).cpu().detach().numpy()
-        return rewards.reshape(-1)
+            rewards = self.rewardNet(s_reward).cpu().detach().numpy()
+            values = self.valueNet([s_value, None, None]).cpu().detach().numpy()
+        return rewards.reshape(-1), values.reshape(-1)
 
-    def backpropagate(self, node, reward):
+    def backpropagate(self, node, reward, value):
         # print('backpropagate.')
+        puctValue = self.puctLambda * reward + (1-self.puctLambda) * value
         while node is not None:
             node.numVisits += 1
-            node.totalReward += reward
+            node.totalReward += puctValue
             node = node.parent
 
     def executeRound(self):
         # print('executeRound.')
         node = self.selectNode(self.root)
-        reward = self.rollout(node)
-        self.backpropagate(node, reward)
+        reward, value= self.rollout(node)
+        self.backpropagate(node, reward, value)
         self.searchCount += 1
 
     def getBestChild(self, node, explorationValue):
@@ -230,8 +267,7 @@ class MCTS(object):
         bestValue = float("-inf")
         bestNodes = []
         for child in node.children.values():
-            nodeValue = child.totalReward / child.numVisits + explorationValue * \
-                    np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
+            nodeValue = child.qvalue + explorationValue * child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
             if nodeValue > bestValue:
                 bestValue = nodeValue
                 bestNodes = [child]
@@ -239,10 +275,9 @@ class MCTS(object):
                 bestNodes.append(child)
         return np.random.choice(bestNodes)
 
-    def getPossibleActions(self, node, needValues=False):
+    def getPossibleActions(self, node):
         # print('getPossibleActions.')
-        if len(node.actionCandidates)==0:
-            actionCandidates = []
+        if node.numActionCandidates==0:
             states = []
             objectPatches = []
             for r in range(1,3):
@@ -256,32 +291,33 @@ class MCTS(object):
             obs = [None, s, p]
             _, probMap, _ = self.policyNet(obs)
             probMap = probMap.cpu().detach().numpy()
-            ros, pys, pxs = np.where(probMap > self.thresholdProb)
-            for ro, py, px in zip(ros, pys, pxs):
-                if node.table[0][py, px] != 0:
-                    continue
-                rot = ro // self.renderer.numObjects
-                o = ro % self.renderer.numObjects
-                actionCandidates.append((o, py, px, rot+1))
-            # actionCandidates = [a for a in actionCandidates if node.table[0][a[1], a[2]]==0]
-            node.setActions(actionCandidates, probMap)
+            # shape: r x n x h x w
+            probMap = probMap.reshape(2, self.renderer.numObjects, self.renderer.tableSize[0], self.renderer.tableSize[1])
+            probMap[probMap <= self.thresholdProb] = 0.0
+            pys, pxs = np.where(node.table[0]!=0)
+            for py, px in zip(pys, pxs):
+                probMap[:, :, py, px] = 0
+            probMap /= np.sum(probMap)
+            node.setActions(probMap)
         #print('possible actions:', len(node.actionCandidates))
-        return node.actionCandidates, node.actionProb
+        return node.actionProb
         
-
     def isTerminal(self, node, table=None, checkReward=False):
         # print('isTerminal')
         terminal = False
         reward = 0.0
+        value = 0.0
         if table is None:
             table = node.table
         # check collision and reward
         collision = self.renderer.checkCollision(table)
         if collision:
             reward = -1.0
+            value = -1.0
             terminal = True
         elif checkReward:
-            reward = self.getReward([table])[0]
+            reward, value = self.getReward([table])
+            reward, value = reward[0], value[0]
             if reward > self.thresholdSuccess:
                 terminal = True
         # check depth
@@ -289,14 +325,12 @@ class MCTS(object):
             if node.depth >= self.maxDepth:
                 terminal = True
             node.terminal = terminal
-        return terminal, reward
+        return terminal, reward, value
 
     def noStepPolicy(self, node):
         # print('noStepPolicy.')
         # st = time.time()
-        # rewards = self.getReward([node.table])
-        # maxReward = np.max(rewards)
-        terminal, reward = self.isTerminal(node, checkReward=True)
+        terminal, reward, value = self.isTerminal(node, checkReward=True)
         if self.binaryReward:
             if reward > self.thresholdSuccess:
                 reward = 1.0
@@ -304,10 +338,9 @@ class MCTS(object):
                 reward = -1.0
             else:
                 reward = 0.0
-        maxReward = reward
         # et = time.time()
         # print(et - st, 'seconds.')
-        return maxReward
+        return reward, value
 
     def oneStepPolicy(self, node):
         # print('oneStepPolicy.')
@@ -332,7 +365,7 @@ class MCTS(object):
             numBatches += 1
         for b in range(numBatches):
             batchS = s[b*self.batchSize:(b+1)*self.batchSize]
-            batchRewards = self.VNet(batchS).cpu().detach().numpy()
+            batchRewards = self.rewardNet(batchS).cpu().detach().numpy()
             rewards.append(batchRewards)
         rewards = np.concatenate(rewards)
         maxReward = np.max(rewards)
@@ -379,7 +412,7 @@ class MCTS(object):
         s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
             s = self.preProcess(s)
-        rewards = self.VNet(s).cpu().detach().numpy()
+        rewards = self.rewardNet(s).cpu().detach().numpy()
         maxReward = np.max(rewards)
         return maxReward
 
@@ -388,7 +421,7 @@ class MCTS(object):
         s = torch.Tensor(state/255.).permute([0,3,1,2]).cuda()
         if self.preProcess is not None:
             s = self.preProcess(s)
-        value = self.VNet(s).cpu().detach().numpy()[0]
+        value = self.rewardNet(s).cpu().detach().numpy()[0]
         values = [value]
         while not self.isTerminal(node)[0]:
             try:
@@ -449,6 +482,8 @@ if __name__=='__main__':
     parser.add_argument('--iteration-limit', type=int, default=10000)
     parser.add_argument('--max-depth', type=int, default=7)
     parser.add_argument('--rollout-policy', type=str, default='nostep')
+    parser.add_argument('--puct-lambda', type=float, default=0.5)
+    parser.add_argument('--puct-constant', type=float, default=5)
     parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
     parser.add_argument('--threshold-q', type=float, default=0.5)
@@ -461,9 +496,7 @@ if __name__=='__main__':
     parser.add_argument('--label-type', type=str, default='linspace')
     parser.add_argument('--view', type=str, default='top') 
     # Pretrained Models
-    parser.add_argument('--qnet-path', type=str, default='')
-    parser.add_argument('--vnet-path', type=str, default='')
-    parser.add_argument('--policynet-path', type=str, default='../policy_learning/logs/0224_1815/pnet_e30.pth')
+    parser.add_argument('--iql-path', type=str, default='../iql/logs/0308_0121/iql_e1.pth')
     args = parser.parse_args()
 
     # Logger
@@ -494,30 +527,33 @@ if __name__=='__main__':
 
     # MCTS setup
     renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
-    searcher = MCTS(renderer, args)
+    searcher = MCTS(renderer, args, explorationConstant=args.puct_constant)
 
     # Network setup
     model_path = args.reward_model_path
-    vNet, preprocess = loadRewardFunction(model_path)
-    searcher.setVNet(vNet)
+    rewardNet, preprocess = loadRewardFunction(model_path)
+    searcher.setRewardNet(rewardNet)
     searcher.setPreProcess(preprocess)
 
     # IQL policy
-    pnet = loadIQLPolicyNetwork(args.policynet_path, args)
+    pnet, valuenet = loadIQLNetworks(args.iql_path, args)
     pnet = pnet.to("cuda:0")
+    valuenet = valuenet.to("cuda:0")
     searcher.setPolicyNet(pnet)
+    searcher.setValueNet(valuenet)
 
     success = 0
+    log_dir = 'data/alphago'
     for sidx in range(args.num_scenes):
         if seed is not None: np.random.seed(seed + sidx)
         # setup logger
-        os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
-        with open('data/mcts-%s/config.json'%log_name, 'w') as f:
+        os.makedirs('%s-%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
+        with open('%s-%s/config.json'%(log_dir, log_name), 'w') as f:
             json.dump(args.__dict__, f, indent=2)
 
         logger.handlers.clear()
         formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
-        file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
+        file_handler = logging.FileHandler('%s-%s/scene-%d/mcts.log'%(log_dir, log_name, sidx))
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
@@ -556,7 +592,7 @@ if __name__=='__main__':
                 break
 
         plt.imshow(initRgb)
-        plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
+        plt.savefig('%s-%s/scene-%d/initial.png'%(log_dir, log_name, sidx))
         initTable = searcher.reset(initRgb, initSeg)
         print('initTable: \n %s' % initTable[0])
         logger.info('initTable: \n %s' % initTable[0])
@@ -576,7 +612,7 @@ if __name__=='__main__':
             summary = summaryGraph(searcher.root)
             if args.visualize_graph:
                 graph = getGraph(searcher.root)
-                fig = visualizeGraph(graph, title='Naive MCTS')
+                fig = visualizeGraph(graph, title='AlphaGo')
                 fig.show()
             print(summary)
             logger.info(summary)
@@ -585,8 +621,8 @@ if __name__=='__main__':
             actionProb = searcher.root.actionProb
             if actionProb is not None:
                 actionProb[actionProb>args.threshold_prob] += 0.5
-                plt.imshow(np.mean(actionProb, axis=0))
-                plt.savefig('data/mcts-%s/scene-%d/actionprob_%d.png'%(log_name, sidx, step))
+                plt.imshow(np.mean(actionProb, axis=(0, 1)))
+                plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
 
             # expected result in mcts #
             nextTable = searcher.root.takeAction(action)
@@ -600,7 +636,7 @@ if __name__=='__main__':
                 logger.info("Save fig: scene-%d/expect_%d.png"%(sidx, step))
             tableRgb = renderer.getRGB(nextTable)
             plt.imshow(tableRgb)
-            plt.savefig('data/mcts-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
+            plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
             #plt.show()
 
             # simulation step in pybullet #
@@ -609,7 +645,7 @@ if __name__=='__main__':
             currentRgb = obs[args.view]['rgb']
             currentSeg = obs[args.view]['segmentation']
             plt.imshow(currentRgb)
-            plt.savefig('data/mcts-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
+            plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
 
             table = searcher.reset(currentRgb, currentSeg)
             if table is None:
@@ -620,7 +656,7 @@ if __name__=='__main__':
             print("Current state: \n %s"%table[0])
             logger.info("Current state: \n %s"%table[0])
 
-            terminal, reward = searcher.isTerminal(None, table, checkReward=True)
+            terminal, reward, _ = searcher.isTerminal(None, table, checkReward=True)
             print("Current Score:", reward)
             print("--------------------------------")
             logger.info("Current Score: %f" %reward)
@@ -637,7 +673,7 @@ if __name__=='__main__':
                 logger.info("Score: %f"%reward)
                 logger.info(table[0])
                 plt.imshow(currentRgb)
-                plt.savefig('data/mcts-%s/scene-%d/final.png'%(log_name, sidx))
+                plt.savefig('%s-%s/scene-%d/final.png'%(log_dir, log_name, sidx))
                 # plt.show()
                 break
     print("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
