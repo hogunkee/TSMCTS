@@ -268,6 +268,18 @@ class MCTS(object):
                 obs = [None, s, p]
                 _, probMap, _ = self.policyNet(obs)
                 probMap = probMap.cpu().detach().numpy()
+
+                if self.blurring>1:
+                    newProbMap = np.zeros_like(probMap)
+                    for i in range(len(probMap)):
+                        ap = probMap[i]
+                        k = int(self.blurring)
+                        kernel = np.ones((k, k))
+                        ap_blur = cv2.dilate(cv2.erode(ap, kernel), kernel)
+                        ap_blur /= np.sum(ap_blur)
+                        newProbMap[i] = ap_blur
+                    probMap = newProbMap
+                    
                 ros, pys, pxs = np.where(probMap > self.thresholdProb)
                 for ro, py, px in zip(ros, pys, pxs):
                     if node.table[0][py, px] != 0:
