@@ -169,10 +169,11 @@ def loadPolicyNetwork(model_path, args):
 
 def loadIQLPolicyNetwork(model_path, args):
     sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
-    from src.policy import DiscreteResNetPolicy, DiscreteTransportPolicy
     if args.policy_net=='transport':
+        from src.policy import DiscreteTransportPolicy
         policy = DiscreteTransportPolicy(crop_size=args.crop_size)
     elif args.policy_net=='resnet':
+        from src.policy import DiscreteResNetPolicy
         policy = DiscreteResNetPolicy(crop_size=args.crop_size)
     state_dict = torch.load(model_path)
     state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
@@ -181,10 +182,11 @@ def loadIQLPolicyNetwork(model_path, args):
 
 def loadIQLNetworks(model_path, args):
     sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
-    from src.policy import DiscreteResNetPolicy, DiscreteTransportPolicy
     if args.policy_net=='transport':
+        from src.policy import DiscreteTransportPolicy
         policy = DiscreteTransportPolicy(crop_size=args.crop_size)
     elif args.policy_net=='resnet':
+        from src.policy import DiscreteResNetPolicy
         policy = DiscreteResNetPolicy(crop_size=args.crop_size)
     from src.value_functions import ValueFunction
     valueNet = ValueFunction(hidden_dim=256)
