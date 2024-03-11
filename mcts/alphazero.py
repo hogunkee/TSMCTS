@@ -25,10 +25,12 @@ from utilities import Camera, Camera_front_top
 
         
 class Node(object):
-    def __init__(self, numObjects, table, parent=None, pre_action=None):
+    def __init__(self, numObjects, table, parent=None, preAction=None, actionProb=0.):
         self.table = table
         self.parent = parent
-        self.pre_action = pre_action
+        self.pre_action = preAction
+        self.prob = actionProb
+
         self.numObjcts = numObjects
         if parent is None:
             self.depth = 0
@@ -45,9 +47,8 @@ class Node(object):
         self.terminal = False
 
         self.reward = 0.
-        # self.qvalue = 0.
-        self.prob = 0.
         self.value = 0.
+        # self.qvalue = 0.
     
     def takeAction(self, move):
         obj, py, px, rot = move
@@ -86,7 +87,7 @@ class Node(object):
 
 
 class MCTS(object):
-    def __init__(self, renderer, args, explorationConstant=1/np.sqrt(2)):
+    def __init__(self, renderer, args, explorationConstant):
         timeLimit = args.time_limit
         iterationLimit = args.iteration_limit
         if timeLimit != None:
@@ -195,7 +196,9 @@ class MCTS(object):
         idx = np.random.choice(len(rs), p=prob[rs, nbs, ys, xs])
         rot, nb, y, x = rs[idx], nbs[idx], ys[idx], xs[idx]
         action = (nb, y, x, rot+1)
-        return action
+        p = prob[rot, nb, y, x]
+        assert p==prob[rs, nbs, ys, xs][idx]
+        return action, p
     
     def expand(self, node):
         # print('expand.')
@@ -209,9 +212,9 @@ class MCTS(object):
             prob /= np.sum(prob)
 
         exceptActions = [a for a in node.children.keys()]
-        action = self.sampleFromProb(prob, exceptActions)
+        action, p = self.sampleFromProb(prob, exceptActions)
 
-        newNode = Node(self.renderer.numObjects, node.takeAction(action), node, action)
+        newNode = Node(self.renderer.numObjects, node.takeAction(action), node, action, p)
         node.children[tuple(action)] = newNode
         return newNode
 
@@ -266,7 +269,10 @@ class MCTS(object):
         bestValue = float("-inf")
         bestNodes = []
         for child in node.children.values():
-            nodeValue = child.totalReward + explorationValue * child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
+            # print('total reward:', child.totalReward / child.numVisits)
+            # print('exploration term:', explorationValue * child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits))
+            nodeValue = child.totalReward / child.numVisits + explorationValue * \
+                child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
             if nodeValue > bestValue:
                 bestValue = nodeValue
                 bestNodes = [child]
