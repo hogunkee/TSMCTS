@@ -58,14 +58,6 @@ class Node(object):
         self.actionCandidates = actionCandidates
         if actionProb is not None:
             self.actionProb = actionProb
-            if False: # blurring
-                newActionProb = np.zeros_like(actionProb)
-                for i in range(len(actionProb)):
-                    ap = actionProb[i]
-                    kernel = np.ones((2, 2))
-                    ap_blur = cv2.dilate(cv2.erode(ap, kernel), kernel)
-                    newActionProb[i] = ap_blur
-                self.actionProb = newActionProb
 
     def isFullyExpanded(self):
         return len(self.children)!=0 and len(self.children)==len(self.actionCandidates)
@@ -128,6 +120,7 @@ class MCTS(object):
         self.batchSize = args.batch_size #32
         self.preProcess = None
         self.searchCount = 0
+        self.blurring = args.blurring
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
@@ -299,6 +292,18 @@ class MCTS(object):
                 if self.preProcess is not None:
                     s = self.preProcess(s)
                 probMap  = self.policyNet(s).cpu().detach().numpy()
+
+                if self.blurring>1:
+                    newProbMap = np.zeros_like(probMap)
+                    for i in range(len(probMap)):
+                        ap = probMap[i]
+                        k = int(self.blurring)
+                        kernel = np.ones((k, k))
+                        ap_blur = cv2.dilate(cv2.erode(ap, kernel), kernel)
+                        ap_blur /= np.sum(ap_blur)
+                        newProbMap[i] = ap_blur
+                    probMap = newProbMap
+
                 os, pys, pxs = np.where(probMap > self.thresholdProb)
                 for o, py, px in zip(os, pys, pxs):
                     for rot in range(1, 3):
@@ -513,6 +518,7 @@ if __name__=='__main__':
     parser.add_argument('--threshold-prob', type=float, default=0.1)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--binary-reward', action="store_true")
+    parser.add_argument('--blurring', type=int, default=1)
     # Reward model
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
