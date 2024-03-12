@@ -275,7 +275,7 @@ class MCTS(object):
                         ap = probMap[i]
                         k = int(self.blurring)
                         kernel = np.ones((k, k))
-                        ap_blur = cv2.dilate(cv2.erode(ap, kernel), kernel)
+                        ap_blur = cv2.dilate(ap, kernel)
                         ap_blur /= np.sum(ap_blur)
                         newProbMap[i] = ap_blur
                     probMap = newProbMap
@@ -311,7 +311,7 @@ class MCTS(object):
                         ap = probMap[i]
                         k = int(self.blurring)
                         kernel = np.ones((k, k))
-                        ap_blur = cv2.dilate(cv2.erode(ap, kernel), kernel)
+                        ap_blur = cv2.dilate(ap, kernel)
                         ap_blur /= np.sum(ap_blur)
                         newProbMap[i] = ap_blur
                     probMap = newProbMap
