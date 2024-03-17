@@ -504,6 +504,7 @@ if __name__=='__main__':
     parser.add_argument('--threshold-prob', type=float, default=0.1)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--binary-reward', action="store_true")
+    parser.add_argument('--exploration', type=float, default=20)
     # Reward model
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
@@ -542,7 +543,7 @@ if __name__=='__main__':
 
     # MCTS setup
     renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
-    searcher = MCTS(renderer, args, explorationConstant=1/np.sqrt(20))
+    searcher = MCTS(renderer, args, explorationConstant=1/np.sqrt(args.exploration))
 
     # Network setup
     model_path = args.reward_model_path

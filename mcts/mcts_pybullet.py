@@ -242,7 +242,7 @@ class MCTS(object):
                 bestNodes.append(child)
         return np.random.choice(bestNodes)
 
-    def getPossibleActions(self, node, policy='random', needValues=False):
+    def getPossibleActions(self, node, policy='random'):
         # print('getPossibleActions.')
         if policy=='random':
             if len(node.actionCandidates)==0:
@@ -289,11 +289,11 @@ class MCTS(object):
                 ros, pys, pxs = np.where(probMap > self.thresholdProb)
                 for ro, py, px in zip(ros, pys, pxs):
                     if node.table[0][py, px] != 0:
+                        probMap[:, py, px] = 0
                         continue
                     rot = ro // self.renderer.numObjects
                     o = ro % self.renderer.numObjects
                     actionCandidates.append((o, py, px, rot+1))
-                # actionCandidates = [a for a in actionCandidates if node.table[0][a[1], a[2]]==0]
                 node.setActions(actionCandidates, probMap)
             #print('possible actions:', len(node.actionCandidates))
             return node.actionCandidates, node.actionProb
@@ -324,9 +324,11 @@ class MCTS(object):
 
                 os, pys, pxs = np.where(probMap > self.thresholdProb)
                 for o, py, px in zip(os, pys, pxs):
+                    if node.table[0][py, px] != 0:
+                        probMap[:, py, px] = 0
+                        continue
                     for rot in range(1, 3):
                         actionCandidates.append((o, py, px, rot))
-                actionCandidates = [a for a in actionCandidates if node.table[0][a[1], a[2]]==0]
                 node.setActions(actionCandidates, probMap)
 
                 if False:
@@ -442,6 +444,43 @@ class MCTS(object):
         # et = time.time()
         # print(et - st, 'seconds.')
         return maxReward
+    
+    def greedyPolicy(self, node, policy):
+        # print('greedyPolicy.')
+        # st = time.time()
+        c = 0
+        tables = [np.copy(node.table)]
+        while not (self.isTerminal(node)[0] or c>1):
+            c+= 1
+            if len(node.actionCandidates)==0:
+                actions, prob = self.getPossibleActions(node, policy)
+            else:
+                actions, prob = node.actionCandidates, node.actionProb
+            #actions = [tuple(a) for a in actions]
+            #action = random.choice(actions)
+            if policy=='policy':
+                os, pys, pxs = np.where(prob==np.max(prob))
+                o, py, px = os[0], pys[0], pxs[0]
+                action = (o, py, px, np.random.choice([1,2])) # random rotation
+            elif policy=='iql-policy':
+                ros, pys, pxs = np.where(prob==np.max(prob))
+                ro, py, px = ros[0], pys[0], pxs[0]
+                rot = ro // self.renderer.numObjects
+                o = ro % self.renderer.numObjects
+                action = (o, py, px, rot+1)
+            
+            newNode = Node(self.renderer.numObjects, node.takeAction(action), node)
+            node = newNode
+            # Collision check
+            # collision = self.renderer.checkCollision(node.table)
+            # if not collision:
+            tables.append(np.copy(node.table))
+            
+        rewards = self.getReward(tables)
+        maxReward = np.max(rewards)
+        # et = time.time()
+        # print(et - st, 'seconds.')
+        return maxReward
 
     def greedyPolicyWithQ(self, node):
         states = [self.renderer.getRGB(node.table)]
@@ -527,7 +566,7 @@ if __name__=='__main__':
     parser.add_argument('--time-limit', type=int, default=None)
     parser.add_argument('--iteration-limit', type=int, default=10000)
     parser.add_argument('--max-depth', type=int, default=7)
-    parser.add_argument('--rollout-policy', type=str, default='nostep')
+    parser.add_argument('--rollout-policy', type=str, default='nostep') # 'policy' / 'iql-policy'
     parser.add_argument('--tree-policy', type=str, default='random') # 'random' / 'policy' / 'iql-policy'
     parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
@@ -585,11 +624,11 @@ if __name__=='__main__':
     searcher.setPreProcess(preprocess)
 
     # Policy-based MCTS
-    if args.tree_policy=='policy':
+    if args.tree_policy=='policy' or args.rollout_policy=='policy':
         pnet = loadPolicyNetwork(args.policynet_path, args)
         pnet = pnet.to("cuda:0")
         searcher.setPolicyNet(pnet)
-    elif args.tree_policy=='iql-policy':
+    elif args.tree_policy=='iql-policy' or args.rollout_policy=='iql-policy':
         pnet = loadIQLPolicyNetwork(args.policynet_path, args)
         pnet = pnet.to("cuda:0")
         searcher.setPolicyNet(pnet)
@@ -652,6 +691,7 @@ if __name__=='__main__':
         print("--------------------------------")
         logger.info('-'*50)
         for step in range(10):
+            st = time.time()
             countNode = {}
             resultDict = searcher.search(table=table, needDetails=True)
             print("Num Children: %d"%len(searcher.root.children))
@@ -660,6 +700,9 @@ if __name__=='__main__':
                 print(i, c, searcher.root.children[c])
                 logger.info(f"{i} {c} {str(searcher.root.children[c])}")
             action = resultDict['action']
+            et = time.time()
+            print(f'{et-st} seconds to search.')
+            logger.info(f'{et-st} seconds to search.')
 
             summary = summaryGraph(searcher.root)
             if args.visualize_graph:
