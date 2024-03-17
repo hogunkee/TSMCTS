@@ -134,6 +134,7 @@ class MCTS(object):
         self.batchSize = args.batch_size #32
         self.preProcess = None
         self.searchCount = 0
+        self.blurring = args.blurring
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
@@ -157,6 +158,7 @@ class MCTS(object):
 
     def search(self, table, needDetails=False):
         # print('search.')
+        self.coverage = []
         self.root = Node(self.renderer.numObjects, table)
         if table is not None:
             self.root = Node(self.renderer.numObjects, table)
@@ -296,6 +298,18 @@ class MCTS(object):
             obs = [None, s, p]
             _, probMap, _ = self.policyNet(obs)
             probMap = probMap.cpu().detach().numpy()
+
+            if self.blurring>1:
+                newProbMap = np.zeros_like(probMap)
+                for i in range(len(probMap)):
+                    ap = probMap[i]
+                    k = int(self.blurring)
+                    kernel = np.ones((k, k))
+                    ap_blur = cv2.dilate(ap, kernel)
+                    ap_blur /= np.sum(ap_blur)
+                    newProbMap[i] = ap_blur
+                probMap = newProbMap
+
             # shape: r x n x h x w
             probMap = probMap.reshape(2, self.renderer.numObjects, self.renderer.tableSize[0], self.renderer.tableSize[1])
             probMap[probMap <= self.thresholdProb] = 0.0
@@ -304,6 +318,9 @@ class MCTS(object):
                 probMap[:, :, py, px] = 0
             probMap /= np.sum(probMap)
             node.setActions(probMap)
+
+            coverageRatio = (probMap>0).sum() / probMap.reshape(-1).shape[0]
+            self.coverage.append(coverageRatio)
         #print('possible actions:', len(node.actionCandidates))
         return node.actionProb
         
@@ -317,7 +334,7 @@ class MCTS(object):
         # check collision and reward
         collision = self.renderer.checkCollision(table)
         if collision:
-            reward = -1.0
+            reward = -1.0세팅
             value = -1.0
             terminal = True
         elif checkReward:
@@ -495,6 +512,7 @@ if __name__=='__main__':
     parser.add_argument('--threshold-prob', type=float, default=0.01)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--binary-reward', action="store_true")
+    parser.add_argument('--blurring', type=int, default=1)
     # Reward model
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
@@ -613,6 +631,9 @@ if __name__=='__main__':
                 logger.info(f"{i} {c} {str(searcher.root.children[c])}")
             action = resultDict['action']
 
+            print("Action coverage: %f"%np.mean(searcher.coverage))
+            logger.info("Action coverage: %f"%np.mean(searcher.coverage))
+
             summary = summaryGraph(searcher.root)
             if args.visualize_graph:
                 graph = getGraph(searcher.root)
@@ -620,7 +641,7 @@ if __name__=='__main__':
                 fig.show()
             print(summary)
             logger.info(summary)
-            
+
             # action probability
             actionProb = searcher.root.actionProb
             if actionProb is not None:

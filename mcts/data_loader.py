@@ -113,3 +113,36 @@ class TabletopTemplateDataset(Dataset):
     def __len__(self):
         return len(self.data_paths)
 
+
+class SimDataset(Dataset):
+    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', view='top'):
+        super().__init__()
+        self.data_dir = data_dir
+        self.view = view
+        self.data_paths = self.get_data_paths()
+    
+    def get_data_paths(self):
+        data_paths = []
+        for scene in sorted(os.listdir(self.data_dir)):
+            scene_path = os.path.join(self.data_dir, scene)
+            for template in sorted(os.listdir(scene_path)):
+                template_path = os.path.join(scene_path, template)
+                trajectories = sorted(os.listdir(template_path))
+                for trajectory in trajectories:
+                    trajectory_path = os.path.join(template_path, trajectory)
+                    steps = sorted(os.listdir(trajectory_path))
+                    num_steps = len(steps)
+                    for step in steps[:min(3, num_steps)]:
+                        data_path = os.path.join(trajectory_path, step)
+                        data_paths.append(data_path)
+        return data_paths
+
+    def __getitem__(self, index):
+        data_path = self.data_paths[index]
+        rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
+        mask = np.load(os.path.join(data_path, 'seg_%s.npy'%self.view))
+        #rgb = rgb * (mask!=mask.max())[:, :, None]
+        return rgb, mask
+
+    def __len__(self):
+        return len(self.data_paths)

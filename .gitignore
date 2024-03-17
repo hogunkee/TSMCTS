@@ -18,5 +18,6 @@ images/
 logs/
 sample/
 test/
+runs/
 
 step-*.png

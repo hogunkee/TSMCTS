@@ -23,6 +23,7 @@ sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5
 from custom_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
 
+countNode = {}
         
 class Node(object):
     def __init__(self, numObjects, table, parent=None):
@@ -41,6 +42,11 @@ class Node(object):
         self.actionCandidates = []
         self.actionProb = None
         self.terminal = False
+        
+        if str(table) not in countNode:
+            countNode[str(table)] = 1
+        else:
+            countNode[str(table)] += 1
     
     def takeAction(self, move):
         obj, py, px, rot = move
@@ -645,6 +651,7 @@ if __name__=='__main__':
         print("--------------------------------")
         logger.info('-'*50)
         for step in range(10):
+            countNode = {}
             resultDict = searcher.search(table=table, needDetails=True)
             print("Num Children: %d"%len(searcher.root.children))
             logger.info("Num Children: %d"%len(searcher.root.children))
@@ -705,6 +712,12 @@ if __name__=='__main__':
             print("--------------------------------")
             logger.info("Current Score: %f" %reward)
             logger.info("-"*50)
+            print("Counts:")
+            counts = [v for k,v in countNode.items() if v>1]
+            print('total nodes:', len(countNode.keys()))
+            print('num duplicate nodes:', len(counts))
+            print('total duplicates:', np.sum(counts))
+            print()
             if terminal:
                 print("Arrived at the final state:")
                 print("Score:", reward)

@@ -135,7 +135,6 @@ def main(args, log_name):
     # dataset = TabletopOfflineDataset(data_dir=args.data_dir, crop_size=args.crop_size, view='top')
     # dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     set_seed(args.seed)
-
     
     if args.continuous_policy:
         policy = GaussianPolicy()
