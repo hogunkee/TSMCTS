@@ -357,7 +357,7 @@ class MCTS(object):
         # check collision and reward
         collision = self.renderer.checkCollision(table)
         if collision:
-            reward = -1.0
+            reward = 0.0 #-1.0
             terminal = True
         elif checkReward:
             reward = self.getReward([table])[0]
@@ -537,6 +537,7 @@ if __name__=='__main__':
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--binary-reward', action="store_true")
     parser.add_argument('--blurring', type=int, default=1)
+    parser.add_argument('--exploration', type=float, default=20)
     # Reward model
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
@@ -575,7 +576,7 @@ if __name__=='__main__':
 
     # MCTS setup
     renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
-    searcher = MCTS(renderer, args, explorationConstant=1/np.sqrt(20)) #1/np.sqrt(2)
+    searcher = MCTS(renderer, args, explorationConstant=1/np.sqrt(args.exploration)) #1/np.sqrt(2)
 
     # Network setup
     model_path = args.reward_model_path
