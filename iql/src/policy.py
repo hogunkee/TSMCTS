@@ -110,6 +110,16 @@ class DiscreteResNetPolicy(nn.Module):
         log_action_probs = torch.log(action_probs) # + z)
 
         return actions, action_probs, log_action_probs
+
+    def get_prob(self, obs):
+        _, state_q, patch = obs
+        q = self.q(state_q, patch)
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+        #action_probs = action_probs.clamp(min=1e-8, max=1.0)
+        return action_probs
     
     def act(self, obs, deterministic=False, enable_grad=False):
         with torch.set_grad_enabled(enable_grad):
@@ -139,6 +149,16 @@ class DeterministicResNetPolicy(nn.Module):
         z = z.float() * 1e-8
         log_action_probs = torch.log(action_probs + z)
         return actions, action_probs, log_action_probs
+    
+    def get_prob(self, obs):
+        _, state_q, patch = obs
+        q = self.q(state_q, patch)
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+        #action_probs = action_probs.clamp(min=1e-8, max=1.0)
+        return action_probs
     
     def act(self, obs, deterministic=False, enable_grad=False):
         with torch.set_grad_enabled(enable_grad):

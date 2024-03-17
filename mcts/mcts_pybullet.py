@@ -272,7 +272,7 @@ class MCTS(object):
                 s = torch.Tensor(np.array(states)/255.).to(torch.float32).cuda()
                 p = torch.Tensor(np.array(objectPatches)/255.).to(torch.float32).cuda()
                 obs = [None, s, p]
-                _, probMap, _ = self.policyNet(obs)
+                probMap = self.policyNet.get_prob(obs)
                 probMap = probMap.cpu().detach().numpy()
 
                 if self.blurring>1:
