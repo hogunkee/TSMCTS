@@ -438,7 +438,10 @@ class MCTS(object):
             newTable = node.takeAction(action)
             newNode = Node(self.renderer.numObjects, newTable)
             node = newNode
-            tables.append(np.copy(node.table))
+            # Collision check
+            collision = self.renderer.checkCollision(node.table)
+            if not collision:
+                tables.append(np.copy(node.table))
         rewards = self.getReward(tables)
         maxReward = np.max(rewards)
         # et = time.time()
