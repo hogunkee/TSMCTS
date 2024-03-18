@@ -12,6 +12,7 @@ import pybullet as p
 from argparse import ArgumentParser
 from PIL import Image
 from matplotlib import pyplot as plt
+from tqdm import tqdm
 
 import torch
 from data_loader import TabletopTemplateDataset
@@ -293,7 +294,7 @@ class MCTS(object):
                         continue
                     rot = ro // self.renderer.numObjects
                     o = ro % self.renderer.numObjects
-                    actionCandidates.append((o, py, px, rot+1))
+                    actionCandidates.append((o+1, py, px, rot+1))
                 node.setActions(actionCandidates, probMap)
             #print('possible actions:', len(node.actionCandidates))
             return node.actionCandidates, node.actionProb
@@ -328,25 +329,8 @@ class MCTS(object):
                         probMap[:, py, px] = 0
                         continue
                     for rot in range(1, 3):
-                        actionCandidates.append((o, py, px, rot))
+                        actionCandidates.append((o+1, py, px, rot))
                 node.setActions(actionCandidates, probMap)
-
-                if False:
-                    plt.imshow(self.renderer.getRGB(node.table))
-                    plt.savefig('data/weekly/orig.png')
-                    for o in range(self.renderer.numObjects):
-                        plt.imshow(states[o])
-                        plt.savefig('data/weekly/state_%d.png'%o)
-                    for o in range(self.renderer.numObjects):
-                        texts = []
-                        plt.imshow(probMap[o])
-                        for _y in range(probMap[o].shape[0]):
-                            for _x in range(probMap[o].shape[1]):
-                                txt = plt.text(_x, _y, '%.1f'%probMap[o][_y, _x], ha='center', va='center')
-                                texts.append(txt)
-                        plt.savefig('data/weekly/probmap_%d.png'%o)
-                        for txt in texts:
-                            txt.remove()
             return node.actionCandidates, node.actionProb
 
 
@@ -464,13 +448,13 @@ class MCTS(object):
             if policy=='policy':
                 os, pys, pxs = np.where(prob==np.max(prob))
                 o, py, px = os[0], pys[0], pxs[0]
-                action = (o, py, px, np.random.choice([1,2])) # random rotation
+                action = (o+1, py, px, np.random.choice([1,2])) # random rotation
             elif policy=='iql-policy':
                 ros, pys, pxs = np.where(prob==np.max(prob))
                 ro, py, px = ros[0], pys[0], pxs[0]
                 rot = ro // self.renderer.numObjects
                 o = ro % self.renderer.numObjects
-                action = (o, py, px, rot+1)
+                action = (o+1, py, px, rot+1)
             
             newNode = Node(self.renderer.numObjects, node.takeAction(action), node)
             node = newNode
@@ -565,6 +549,7 @@ if __name__=='__main__':
     parser.add_argument('--crop-size', type=int, default=128) #96
     parser.add_argument('--gui-off', action="store_true")
     parser.add_argument('--visualize-graph', action="store_true")
+    parser.add_argument('--logging', action="store_true")
     # MCTS
     parser.add_argument('--time-limit', type=int, default=None)
     parser.add_argument('--iteration-limit', type=int, default=10000)
@@ -593,14 +578,18 @@ if __name__=='__main__':
     # Logger
     now = datetime.datetime.now()
     log_name = now.strftime("%m%d_%H%M")
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    if args.logging:
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+    
+    def print_fn(s):
+        if args.logging: logger.info(s)
+        else: print(s)
 
     # Random seed
     seed = args.seed
     if seed is not None:
-        print("Random seed: %d"%seed)
-        logger.info("Random seed: %d"%seed)
+        print_fn("Random seed: %d"%seed)
         random.seed(seed)
         np.random.seed(seed)
         # torch.manual_seed(seed)
@@ -637,19 +626,32 @@ if __name__=='__main__':
         searcher.setPolicyNet(pnet)
 
     success = 0
-    for sidx in range(args.num_scenes):
-        if seed is not None: np.random.seed(seed + sidx)
-        # setup logger
-        os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
-        with open('data/mcts-%s/config.json'%log_name, 'w') as f:
-            json.dump(args.__dict__, f, indent=2)
+    if args.logging:
+        bar = tqdm(range(args.num_scenes))
+    else:
+        bar = range(args.num_scenes)
 
-        logger.handlers.clear()
-        formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
-        file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+    for sidx in bar:
+        if args.logging: 
+            bar.set_description("Episode %d/%d"%(sidx, args.num_scenes))
+            if sidx>0:
+                bar.set_postfix(success_rate="%.1f%% (%d/%d)"%(100*success/sidx, success, sidx))
+            else:
+                bar.set_postfix(success_rate="0.0% (0/0)")
+            
+            os.makedirs('data/mcts-%s/scene-%d'%(log_name, sidx), exist_ok=True)
+            with open('data/mcts-%s/config.json'%log_name, 'w') as f:
+                json.dump(args.__dict__, f, indent=2)
 
+            logger.handlers.clear()
+            formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
+            file_handler = logging.FileHandler('data/mcts-%s/scene-%d/mcts.log'%(log_name, sidx))
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+
+        if seed is not None: 
+            np.random.seed(seed + sidx)
+        
         # Initial state
         obs = env.reset()
         selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
@@ -666,119 +668,107 @@ if __name__=='__main__':
                 # get the segmentation mask of each object #
                 mask = (initSeg==o+4).astype(float)
                 if mask.sum()==0:
-                    print("Object %d is occluded."%o)
-                    logger.info("Object %d is occluded."%o)
+                    print_fn("Object %d is occluded."%o)
                     is_occluded = True
                     break
             # Check collision
             contact_objects = get_contact_objects()
             contact_objects = [c for c in list(get_contact_objects()) if 1 not in c and 2 not in c]
             if len(contact_objects) > 0:
-                print("Collision detected.")
-                print(contact_objects)
-                logger.info("Collision detected.")
-                logger.info(contact_objects)
+                print_fn("Collision detected.")
+                print_fn(contact_objects)
                 is_collision = True
             if is_occluded or is_collision:
                 continue
             else:
                 break
 
-        plt.imshow(initRgb)
-        plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
+        if args.logging:
+            plt.imshow(initRgb)
+            plt.savefig('data/mcts-%s/scene-%d/initial.png'%(log_name, sidx))
         initTable = searcher.reset(initRgb, initSeg)
-        print('initTable: \n %s' % initTable[0])
-        logger.info('initTable: \n %s' % initTable[0])
+        print_fn('initTable: \n %s' % initTable[0])
         table = initTable
 
-        print("--------------------------------")
-        logger.info('-'*50)
+        print_fn("--------------------------------")
         for step in range(10):
             st = time.time()
             countNode = {}
             resultDict = searcher.search(table=table, needDetails=True)
-            print("Num Children: %d"%len(searcher.root.children))
-            logger.info("Num Children: %d"%len(searcher.root.children))
+        
+            print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
-                print(i, c, searcher.root.children[c])
-                logger.info(f"{i} {c} {str(searcher.root.children[c])}")
+                print_fn(f"{i} {c} {str(searcher.root.children[c])}")
             action = resultDict['action']
             et = time.time()
-            print(f'{et-st} seconds to search.')
-            logger.info(f'{et-st} seconds to search.')
+            print_fn(f'{et-st} seconds to search.')
 
             summary = summaryGraph(searcher.root)
             if args.visualize_graph:
                 graph = getGraph(searcher.root)
                 fig = visualizeGraph(graph, title='Naive MCTS')
                 fig.show()
-            print(summary)
-            logger.info(summary)
+            print_fn(summary)
             
             # action probability
             actionProb = searcher.root.actionProb
-            if actionProb is not None:
+            if args.logging and actionProb is not None:
                 actionProb[actionProb>args.threshold_prob] += 0.5
                 plt.imshow(np.mean(actionProb, axis=0))
                 plt.savefig('data/mcts-%s/scene-%d/actionprob_%d.png'%(log_name, sidx, step))
 
             # expected result in mcts #
             nextTable = searcher.root.takeAction(action)
-            print("Best Action:", action)
-            print("Best Child: \n %s"%nextTable[0])
-            logger.info("Best Action: %s"%str(action))
-            logger.info("Best Child: \n %s"%nextTable[0])
-            if True:
-                nextCollision = renderer.checkCollision(nextTable)
-                logger.info("Collision: %s"%nextCollision)
-                logger.info("Save fig: scene-%d/expect_%d.png"%(sidx, step))
+            print_fn("Best Action: %s"%str(action))
+            print_fn("Best Child: \n %s"%nextTable[0])
+            
+            nextCollision = renderer.checkCollision(nextTable)
+            print_fn("Collision: %s"%nextCollision)
+            print_fn("Save fig: scene-%d/expect_%d.png"%(sidx, step))
+
             tableRgb = renderer.getRGB(nextTable)
-            plt.imshow(tableRgb)
-            plt.savefig('data/mcts-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
-            #plt.show()
+            if args.logging:
+                plt.imshow(tableRgb)
+                plt.savefig('data/mcts-%s/scene-%d/expect_%d.png'%(log_name, sidx, step))
 
             # simulation step in pybullet #
             target_object, target_position, rot_angle = renderer.convert_action(action)
             obs = env.step(target_object, target_position, rot_angle)
             currentRgb = obs[args.view]['rgb']
             currentSeg = obs[args.view]['segmentation']
-            plt.imshow(currentRgb)
-            plt.savefig('data/mcts-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
+            if args.logging:
+                plt.imshow(currentRgb)
+                plt.savefig('data/mcts-%s/scene-%d/real_%d.png'%(log_name, sidx, step))
 
             table = searcher.reset(currentRgb, currentSeg)
             if table is None:
-                print("Scenario ended.")
-                logger.info("Scenario ended.")
+                print_fn("Scenario ended.")
                 break
             #table = copy.deepcopy(nextTable)
-            print("Current state: \n %s"%table[0])
-            logger.info("Current state: \n %s"%table[0])
+            print_fn("Current state: \n %s"%table[0])
 
             terminal, reward = searcher.isTerminal(None, table, checkReward=True)
-            print("Current Score:", reward)
-            print("--------------------------------")
-            logger.info("Current Score: %f" %reward)
-            logger.info("-"*50)
-            print("Counts:")
+            print_fn("Current Score: %f" %reward)
+            print_fn("--------------------------------")
+            
+            print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
-            print('total nodes:', len(countNode.keys()))
-            print('num duplicate nodes:', len(counts))
-            print('total duplicates:', np.sum(counts))
-            print()
+            print_fn('total nodes: %d' %len(countNode.keys()))
+            print_fn('num duplicate nodes: %d'%len(counts))
+            print_fn('total duplicates: %f'%np.sum(counts))
+            print_fn()
             if terminal:
-                print("Arrived at the final state:")
-                print("Score:", reward)
+                print_fn("Arrived at the final state:")
+                print_fn("Score: %f"%reward)
                 if reward > args.threshold_success:
                     success += 1
-                print(table[0])
-                print("--------------------------------")
-                print("--------------------------------")
-                logger.info("Arrived at the final state:")
-                logger.info("Score: %f"%reward)
-                logger.info(table[0])
-                plt.imshow(currentRgb)
-                plt.savefig('data/mcts-%s/scene-%d/final.png'%(log_name, sidx))
-                # plt.show()
+                print_fn(table[0])
+                print_fn("--------------------------------")
+                print_fn("--------------------------------")
+                if args.logging:
+                    plt.imshow(currentRgb)
+                    plt.savefig('data/mcts-%s/scene-%d/final.png'%(log_name, sidx))
                 break
+    print_fn("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
     print("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
 
