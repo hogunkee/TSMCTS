@@ -363,8 +363,6 @@ class MCTS(object):
         if self.binaryReward:
             if reward > self.thresholdSuccess:
                 reward = 1.0
-            elif reward == -1.0:
-                reward = -1.0
             else:
                 reward = 0.0
         maxReward = reward

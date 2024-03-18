@@ -12,6 +12,7 @@ import pybullet as p
 from argparse import ArgumentParser
 from PIL import Image
 from matplotlib import pyplot as plt
+from tqdm import tqdm
 
 import torch
 from data_loader import TabletopTemplateDataset
@@ -23,6 +24,7 @@ sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5
 from custom_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
 
+countNode = {}
         
 class Node(object):
     def __init__(self, numObjects, table, parent=None, preAction=None, actionProb=0.):
@@ -49,6 +51,11 @@ class Node(object):
         self.reward = 0.
         self.value = 0.
         # self.qvalue = 0.
+        
+        if str(table) not in countNode:
+            countNode[str(table)] = 1
+        else:
+            countNode[str(table)] += 1
     
     def takeAction(self, move):
         obj, py, px, rot = move
@@ -104,6 +111,7 @@ class MCTS(object):
                 raise ValueError("Iteration limit must be greater than one")
             self.searchLimit = iterationLimit
             self.limitType = 'iterations'
+
         self.renderer = renderer
         if self.renderer is None:
             self.domain = 'grid'
@@ -115,9 +123,7 @@ class MCTS(object):
         self.treePolicy = args.tree_policy
         self.maxDepth = args.max_depth
         rolloutPolicy = args.rollout_policy
-        if rolloutPolicy=='random':
-            self.rollout = self.randomPolicy
-        elif rolloutPolicy=='nostep':
+        if rolloutPolicy=='nostep':
             self.rollout = self.noStepPolicy
         elif rolloutPolicy=='onestep':
             self.rollout = self.oneStepPolicy
@@ -197,7 +203,7 @@ class MCTS(object):
         assert len(rs)>0
         idx = np.random.choice(len(rs), p=prob[rs, nbs, ys, xs])
         rot, nb, y, x = rs[idx], nbs[idx], ys[idx], xs[idx]
-        action = (nb, y, x, rot+1)
+        action = (nb+1, y, x, rot+1)
         p = prob[rot, nb, y, x]
         assert p==prob[rs, nbs, ys, xs][idx]
         return action, p
@@ -296,7 +302,7 @@ class MCTS(object):
             s = torch.Tensor(np.array(states)/255.).to(torch.float32).cuda()
             p = torch.Tensor(np.array(objectPatches)/255.).to(torch.float32).cuda()
             obs = [None, s, p]
-            _, probMap, _ = self.policyNet(obs)
+            probMap = self.policyNet.get_prob(obs)
             probMap = probMap.cpu().detach().numpy()
 
             if self.blurring>1:
@@ -334,8 +340,8 @@ class MCTS(object):
         # check collision and reward
         collision = self.renderer.checkCollision(table)
         if collision:
-            reward = -1.0세팅
-            value = -1.0
+            reward = 0.0 #-1.0
+            value = 0.0 #-1.0
             terminal = True
         elif checkReward:
             reward, value = self.getReward([table])
@@ -356,8 +362,6 @@ class MCTS(object):
         if self.binaryReward:
             if reward > self.thresholdSuccess:
                 reward = 1.0
-            elif reward == -1.0:
-                reward = -1.0
             else:
                 reward = 0.0
         # et = time.time()
@@ -395,29 +399,50 @@ class MCTS(object):
         # print(et - st, 'seconds.')
         return maxReward
 
-    def randomPolicy(self, node):
-        # print('randomPolicy.')
+    def greedyPolicy(self, node, policy):
+        # print('greedyPolicy.')
         # st = time.time()
-        nb = self.renderer.numObjects
-        th, tw = self.renderer.tableSize
-        allPossibleActions = np.array(np.meshgrid(
-                            np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
-                            )).T.reshape(-1, 4)
+        c = 0
         tables = [np.copy(node.table)]
-        while not self.isTerminal(node)[0]:
-            try:
+        while not (self.isTerminal(node)[0] or c>1):
+            c+= 1
+            if policy=='random':
+                nb = self.renderer.numObjects
+                th, tw = self.renderer.tableSize
+                allPossibleActions = np.array(np.meshgrid(
+                            np.arange(1, nb+1), np.arange(1, th-1), np.arange(1, tw-1), np.arange(1,3)
+                            )).T.reshape(-1, 4)
                 action = random.choice(allPossibleActions)
-            except IndexError:
-                raise Exception("Non-terminal state has no possible actions: " + str(state))
-            newTable = node.takeAction(action)
-            newNode = Node(self.renderer.numObjects, newTable)
+            else:
+                if len(node.actionCandidates)==0:
+                    prob = self.getPossibleActions(node, policy)
+                else:
+                    prob = node.actionProb
+                #actions = [tuple(a) for a in actions]
+                #action = random.choice(actions)
+                if policy=='uniform':
+                    ros, pys, pxs = np.where(prob>0)
+                elif policy=='greedy':
+                    ros, pys, pxs = np.where(prob==np.max(prob))
+                idx = np.random.choice(len(ros))
+                ro, py, px = ros[idx], pys[idx], pxs[idx]
+                rot = ro // self.renderer.numObjects
+                o = ro % self.renderer.numObjects
+                action = (o+1, py, px, rot+1)
+            
+            newNode = Node(self.renderer.numObjects, node.takeAction(action), node)
             node = newNode
-            tables.append(np.copy(node.table))
-        rewards = self.getReward(tables)
+            # Collision check
+            collision = self.renderer.checkCollision(node.table)
+            if not collision:
+                tables.append(np.copy(node.table))
+            
+        rewards, values = self.getReward(tables)
         maxReward = np.max(rewards)
+        value = values[0]
         # et = time.time()
         # print(et - st, 'seconds.')
-        return maxReward
+        return maxReward, value
 
     def greedyPolicyWithQ(self, node):
         states = [self.renderer.getRGB(node.table)]
@@ -499,11 +524,12 @@ if __name__=='__main__':
     parser.add_argument('--crop-size', type=int, default=128) #96
     parser.add_argument('--gui-off', action="store_true")
     parser.add_argument('--visualize-graph', action="store_true")
+    parser.add_argument('--logging', action="store_true")
     # MCTS
     parser.add_argument('--time-limit', type=int, default=None)
     parser.add_argument('--iteration-limit', type=int, default=10000)
     parser.add_argument('--max-depth', type=int, default=7)
-    parser.add_argument('--rollout-policy', type=str, default='nostep')
+    parser.add_argument('--rollout-policy', type=str, default='nostep') # 'greedy' / 'uniform'
     parser.add_argument('--tree-policy', type=str, default='p') # 'p' / 'uniform
     parser.add_argument('--puct-lambda', type=float, default=0.5)
     parser.add_argument('--puct-constant', type=float, default=5)
@@ -524,14 +550,18 @@ if __name__=='__main__':
     # Logger
     now = datetime.datetime.now()
     log_name = now.strftime("%m%d_%H%M")
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    if args.logging:
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+
+    def print_fn(s=''):
+        if args.logging: logger.info(s)
+        else: print(s)
 
     # Random seed
     seed = args.seed
     if seed is not None:
-        print("Random seed: %d"%seed)
-        logger.info("Random seed: %d"%seed)
+        print_fn("Random seed: %d"%seed)
         random.seed(seed)
         np.random.seed(seed)
         # torch.manual_seed(seed)
@@ -566,19 +596,32 @@ if __name__=='__main__':
 
     success = 0
     log_dir = 'data/alphago'
-    for sidx in range(args.num_scenes):
-        if seed is not None: np.random.seed(seed + sidx)
-        # setup logger
-        os.makedirs('%s-%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
-        with open('%s-%s/config.json'%(log_dir, log_name), 'w') as f:
-            json.dump(args.__dict__, f, indent=2)
+    if args.logging:
+        bar = tqdm(range(args.num_scenes))
+    else:
+        bar = range(args.num_scenes)
 
-        logger.handlers.clear()
-        formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
-        file_handler = logging.FileHandler('%s-%s/scene-%d/mcts.log'%(log_dir, log_name, sidx))
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+    for sidx in bar:
+        if args.logging: 
+            bar.set_description("Episode %d/%d"%(sidx, args.num_scenes))
+            if sidx>0:
+                bar.set_postfix(success_rate="%.1f%% (%d/%d)"%(100*success/sidx, success, sidx))
+            else:
+                bar.set_postfix(success_rate="0.0% (0/0)")
+            
+            os.makedirs('%s-%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
+            with open('%s-%s/config.json'%(log_dir, log_name), 'w') as f:
+                json.dump(args.__dict__, f, indent=2)
 
+            logger.handlers.clear()
+            formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
+            file_handler = logging.FileHandler('%s-%s/scene-%d/alphago.log'%(log_dir, log_name, sidx))
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+
+        if seed is not None: 
+            np.random.seed(seed + sidx)
+        
         # Initial state
         obs = env.reset()
         selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
@@ -595,56 +638,51 @@ if __name__=='__main__':
                 # get the segmentation mask of each object #
                 mask = (initSeg==o+4).astype(float)
                 if mask.sum()==0:
-                    print("Object %d is occluded."%o)
-                    logger.info("Object %d is occluded."%o)
+                    print_fn("Object %d is occluded."%o)
                     is_occluded = True
                     break
             # Check collision
             contact_objects = get_contact_objects()
             contact_objects = [c for c in list(get_contact_objects()) if 1 not in c and 2 not in c]
             if len(contact_objects) > 0:
-                print("Collision detected.")
-                print(contact_objects)
-                logger.info("Collision detected.")
-                logger.info(contact_objects)
+                print_fn("Collision detected.")
+                print_fn(contact_objects)
                 is_collision = True
             if is_occluded or is_collision:
                 continue
             else:
                 break
 
-        plt.imshow(initRgb)
-        plt.savefig('%s-%s/scene-%d/initial.png'%(log_dir, log_name, sidx))
+        if args.logging:
+            plt.imshow(initRgb)
+            plt.savefig('%s-%s/scene-%d/initial.png'%(log_dir, log_name, sidx))
         initTable = searcher.reset(initRgb, initSeg)
-        print('initTable: \n %s' % initTable[0])
-        logger.info('initTable: \n %s' % initTable[0])
+        print_fn('initTable: \n %s' % initTable[0])
         table = initTable
 
-        print("--------------------------------")
-        logger.info('-'*50)
+        print_fn("--------------------------------")
         for step in range(10):
+            st = time.time()
+            countNode = {}
             resultDict = searcher.search(table=table, needDetails=True)
-            print("Num Children: %d"%len(searcher.root.children))
-            logger.info("Num Children: %d"%len(searcher.root.children))
+            print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
-                print(i, c, searcher.root.children[c])
-                logger.info(f"{i} {c} {str(searcher.root.children[c])}")
+                print_fn(f"{i} {c} {str(searcher.root.children[c])}")
             action = resultDict['action']
-
-            print("Action coverage: %f"%np.mean(searcher.coverage))
-            logger.info("Action coverage: %f"%np.mean(searcher.coverage))
+            et = time.time()
+            print_fn(f'{et-st} seconds to search.')
+            print_fn("Action coverage: %f"%np.mean(searcher.coverage))
 
             summary = summaryGraph(searcher.root)
             if args.visualize_graph:
                 graph = getGraph(searcher.root)
                 fig = visualizeGraph(graph, title='AlphaGo')
                 fig.show()
-            print(summary)
-            logger.info(summary)
+            print_fn(summary)
 
             # action probability
             actionProb = searcher.root.actionProb
-            if actionProb is not None:
+            if args.logging and actionProb is not None:
                 if args.tree_policy=='uniform':
                     actionProb[actionProb>0] = 1.
                     actionProb /= np.sum(actionProb)
@@ -654,55 +692,48 @@ if __name__=='__main__':
 
             # expected result in mcts #
             nextTable = searcher.root.takeAction(action)
-            print("Best Action:", action)
-            print("Best Child: \n %s"%nextTable[0])
-            logger.info("Best Action: %s"%str(action))
-            logger.info("Best Child: \n %s"%nextTable[0])
-            if True:
-                nextCollision = renderer.checkCollision(nextTable)
-                logger.info("Collision: %s"%nextCollision)
-                logger.info("Save fig: scene-%d/expect_%d.png"%(sidx, step))
+            print_fn("Best Action: %s"%str(action))
+            print_fn("Best Child: \n %s"%nextTable[0])
+
+            nextCollision = renderer.checkCollision(nextTable)
+            print_fn("Collision: %s"%nextCollision)
+            print_fn("Save fig: scene-%d/expect_%d.png"%(sidx, step))
             tableRgb = renderer.getRGB(nextTable)
-            plt.imshow(tableRgb)
-            plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
-            #plt.show()
+            if args.logging:
+                plt.imshow(tableRgb)
+                plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
 
             # simulation step in pybullet #
             target_object, target_position, rot_angle = renderer.convert_action(action)
             obs = env.step(target_object, target_position, rot_angle)
             currentRgb = obs[args.view]['rgb']
             currentSeg = obs[args.view]['segmentation']
-            plt.imshow(currentRgb)
-            plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
+            if args.logging:
+                plt.imshow(currentRgb)
+                plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
 
             table = searcher.reset(currentRgb, currentSeg)
             if table is None:
-                print("Scenario ended.")
-                logger.info("Scenario ended.")
+                print_fn("Scenario ended.")
                 break
             #table = copy.deepcopy(nextTable)
-            print("Current state: \n %s"%table[0])
-            logger.info("Current state: \n %s"%table[0])
+            print_fn("Current state: \n %s"%table[0])
 
             terminal, reward, _ = searcher.isTerminal(None, table, checkReward=True)
-            print("Current Score:", reward)
-            print("--------------------------------")
-            logger.info("Current Score: %f" %reward)
-            logger.info("-"*50)
+            print_fn("Current Score: %f" %reward)
+            print_fn("--------------------------------")
             if terminal:
-                print("Arrived at the final state:")
-                print("Score:", reward)
+                print_fn("Arrived at the final state:")
+                print_fn("Score: %f"%reward)
                 if reward > args.threshold_success:
                     success += 1
-                print(table[0])
-                print("--------------------------------")
-                print("--------------------------------")
-                logger.info("Arrived at the final state:")
-                logger.info("Score: %f"%reward)
-                logger.info(table[0])
-                plt.imshow(currentRgb)
-                plt.savefig('%s-%s/scene-%d/final.png'%(log_dir, log_name, sidx))
-                # plt.show()
+                print_fn(table[0])
+                print_fn("--------------------------------")
+                print_fn("--------------------------------")
+                if args.logging:
+                    plt.imshow(currentRgb)
+                    plt.savefig('%s-%s/scene-%d/final.png'%(log_dir, log_name, sidx))
                 break
+    print_fn("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
     print("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
 
