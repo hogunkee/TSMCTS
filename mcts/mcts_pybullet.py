@@ -555,7 +555,7 @@ if __name__=='__main__':
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
     
-    def print_fn(s):
+    def print_fn(s=''):
         if args.logging: logger.info(s)
         else: print(s)
 
