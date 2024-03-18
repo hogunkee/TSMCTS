@@ -197,7 +197,7 @@ class MCTS(object):
         # shape: r x n x h x w
         for action in exceptActions:
             o, py, px, r = action
-            prob[r-1, o, py, px] = 0.
+            prob[r-1, o-1, py, px] = 0.
         prob /= np.sum(prob)
         rs, nbs, ys, xs = np.where(prob>0.)
         assert len(rs)>0
