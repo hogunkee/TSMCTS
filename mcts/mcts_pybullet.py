@@ -107,9 +107,7 @@ class MCTS(object):
         self.treePolicy = args.tree_policy
         self.maxDepth = args.max_depth
         rolloutPolicy = args.rollout_policy
-        if rolloutPolicy=='random':
-            self.rollout = self.randomPolicy
-        elif rolloutPolicy=='nostep':
+        if rolloutPolicy=='nostep':
             self.rollout = self.noStepPolicy
         elif rolloutPolicy=='onestep':
             self.rollout = self.oneStepPolicy
@@ -405,33 +403,6 @@ class MCTS(object):
         # print(et - st, 'seconds.')
         return maxReward
 
-    def randomPolicy(self, node):
-        # print('randomPolicy.')
-        # st = time.time()
-        nb = self.renderer.numObjects
-        th, tw = self.renderer.tableSize
-        allPossibleActions = np.array(np.meshgrid(
-                            np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
-                            )).T.reshape(-1, 4)
-        tables = [np.copy(node.table)]
-        while not self.isTerminal(node)[0]:
-            try:
-                action = random.choice(allPossibleActions)
-            except IndexError:
-                raise Exception("Non-terminal state has no possible actions: " + str(state))
-            newTable = node.takeAction(action)
-            newNode = Node(self.renderer.numObjects, newTable)
-            node = newNode
-            # Collision check
-            collision = self.renderer.checkCollision(node.table)
-            if not collision:
-                tables.append(np.copy(node.table))
-        rewards = self.getReward(tables)
-        maxReward = np.max(rewards)
-        # et = time.time()
-        # print(et - st, 'seconds.')
-        return maxReward
-    
     def greedyPolicy(self, node, policy):
         # print('greedyPolicy.')
         # st = time.time()
@@ -445,7 +416,9 @@ class MCTS(object):
                 actions, prob = node.actionCandidates, node.actionProb
             #actions = [tuple(a) for a in actions]
             #action = random.choice(actions)
-            if policy=='policy':
+            if policy=='random':
+                action = random.choice(actions)
+            elif policy=='policy':
                 os, pys, pxs = np.where(prob==np.max(prob))
                 o, py, px = os[0], pys[0], pxs[0]
                 action = (o+1, py, px, np.random.choice([1,2])) # random rotation
