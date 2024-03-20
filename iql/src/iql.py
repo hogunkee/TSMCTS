@@ -51,7 +51,7 @@ class ImplicitQLearning(nn.Module):
         self.v_optimizer.step()
 
         # Update reward function
-        r = self.rf(observations)
+        r = self.rf(next_observations)
         r_loss = F.mse_loss(r, rewards.view(-1, 1))
         self.r_optimizer.zero_grad(set_to_none=True)
         r_loss.backward()
