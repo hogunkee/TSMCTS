@@ -180,23 +180,49 @@ def loadIQLPolicyNetwork(model_path, args):
     policy.load_state_dict(state_dict)
     return policy
 
-def loadIQLNetworks(model_path, args):
+def loadIQLRewardNetwork(model_path, args):
     sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
+    from src.value_functions import ValueFunction
+    rewardNet = ValueFunction(hidden_dim=256)
+    state_dict = torch.load(model_path)
+    state_dict = {k.replace('rf.', ''): v for k, v in state_dict.items() if k.startswith('rf.')}
+    rewardNet.load_state_dict(state_dict)
+    return rewardNet
+
+def loadIQLValueNetwork(model_path, args):
+    sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
+    from src.value_functions import ValueFunction
+    valueNet = ValueFunction(hidden_dim=256)
+    state_dict = torch.load(model_path)
+    state_dict = {k.replace('vf.', ''): v for k, v in state_dict.items() if k.startswith('vf.')}
+    valueNet.load_state_dict(state_dict)
+    return valueNet
+
+def loadIQLNetworks(model_path, args):
+    state_dict = torch.load(model_path)
+    sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
+    # policy
     if args.policy_net=='transport':
         from src.policy import DiscreteTransportPolicy
         policy = DiscreteTransportPolicy(crop_size=args.crop_size)
     elif args.policy_net=='resnet':
         from src.policy import DiscreteResNetPolicy
         policy = DiscreteResNetPolicy(crop_size=args.crop_size)
-    from src.value_functions import ValueFunction
-    valueNet = ValueFunction(hidden_dim=256)
-    state_dict = torch.load(model_path)
     policy_state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
     policy.load_state_dict(policy_state_dict)
+    # value function
+    from src.value_functions import ValueFunction
+    valueNet = ValueFunction(hidden_dim=256)
     value_state_dict = {k.replace('vf.', ''): v for k, v in state_dict.items() if k.startswith('vf.')}
     valueNet.load_state_dict(value_state_dict)
-    return policy, valueNet
-
+    # reward function
+    reward_state_dict = {k.replace('rf.', ''): v for k, v in state_dict.items() if k.startswith('rf.')}
+    if len(reward_state_dict)>0:
+        rewardNet = ValueFunction(hidden_dim=256)
+        rewardNet.load_state_dict(reward_state_dict)
+    else:
+        rewardNet = None
+    return policy, valueNet, rewardNet
 
 def loadRewardFunction(model_path):
     vNet = resnet18(pretrained=False)
@@ -210,7 +236,6 @@ def loadRewardFunction(model_path):
                              std=[0.229, 0.224, 0.225]),
     ])
     return vNet, preprocess
-
 
 class Renderer(object):
     def __init__(self, tableSize, imageSize, cropSize):
