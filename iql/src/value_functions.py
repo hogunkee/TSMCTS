@@ -75,7 +75,6 @@ class ResNetTwinQ(nn.Module):
         q1, q2 = self.both(obs)
         #print(q1.shape, q2.shape)
         return torch.min(q1, q2)
-    
 
 class ValueFunction(nn.Module):
     def __init__(self, hidden_dim=16):

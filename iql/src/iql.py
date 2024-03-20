@@ -14,15 +14,17 @@ def asymmetric_l2_loss(u, tau):
     return torch.mean(torch.abs(tau - (u < 0).float()) * u**2)
 
 class ImplicitQLearning(nn.Module):
-    def __init__(self, qf, vf, policy, v_optimizer_factory, q_optimizer_factory, policy_optimizer_factory,
+    def __init__(self, qf, vf, rf, policy, q_optimizer_factory, v_optimizer_factory, r_optimizer_factory, policy_optimizer_factory,
                  max_steps, tau, beta, discount=0.99, alpha=0.005):
         super().__init__()
         self.qf = qf.to(DEFAULT_DEVICE)
         self.q_target = copy.deepcopy(qf).requires_grad_(False).to(DEFAULT_DEVICE)
         self.vf = vf.to(DEFAULT_DEVICE)
+        self.rf = rf.to(DEFAULT_DEVICE)
         self.policy = policy.to(DEFAULT_DEVICE)
-        self.v_optimizer = v_optimizer_factory(self.vf.parameters())
         self.q_optimizer = q_optimizer_factory(self.qf.parameters())
+        self.v_optimizer = v_optimizer_factory(self.vf.parameters())
+        self.r_optimizer = r_optimizer_factory(self.rf.parameters())
         self.policy_optimizer = policy_optimizer_factory(self.policy.parameters())
         self.policy_lr_schedule = CosineAnnealingLR(self.policy_optimizer, max_steps)
         self.tau = tau
@@ -47,6 +49,13 @@ class ImplicitQLearning(nn.Module):
         self.v_optimizer.zero_grad(set_to_none=True)
         v_loss.backward()
         self.v_optimizer.step()
+
+        # Update reward function
+        r = self.rf(observations)
+        r_loss = F.mse_loss(r, rewards.view(-1, 1))
+        self.r_optimizer.zero_grad(set_to_none=True)
+        r_loss.backward()
+        self.r_optimizer.step()
 
         # Update Q function
         targets = rewards.view(-1, 1) + (1. - terminals.float().view(-1, 1)) * self.discount * next_v.detach()
@@ -85,4 +94,7 @@ class ImplicitQLearning(nn.Module):
         self.policy_optimizer.step()
         self.policy_lr_schedule.step()
 
-        return {'V-loss': v_loss.detach().cpu().numpy(), 'Q-loss': q_loss.detach().cpu().numpy(), 'Policy-loss': policy_loss.detach().cpu().numpy()}
+        return {'V-loss': v_loss.detach().cpu().numpy(), 
+                'Q-loss': q_loss.detach().cpu().numpy(), 
+                'R-loss': r_loss.detach().cpu().numpy(), 
+                'Policy-loss': policy_loss.detach().cpu().numpy()}

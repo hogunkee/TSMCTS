@@ -28,21 +28,21 @@ import nonechucks as nc
 
 
 def loadRewardFunction(model_path):
-    vNet = resnet18(pretrained=False)
-    fc_in_features = vNet.fc.in_features
-    vNet.fc = nn.Sequential(
+    gNet = resnet18(pretrained=False)
+    fc_in_features = gNet.fc.in_features
+    gNet.fc = nn.Sequential(
         nn.Linear(fc_in_features, 1),
     )
-    vNet.load_state_dict(torch.load(model_path))
-    vNet.to(DEFAULT_DEVICE)
-    vNet.eval()
+    gNet.load_state_dict(torch.load(model_path))
+    gNet.to(DEFAULT_DEVICE)
+    gNet.eval()
     preprocess = transforms.Compose([
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225]),
     ])
-    return vNet, preprocess
+    return gNet, preprocess
 
-def evaluateBatch(data, policy, vNet, preprocess, H, W, cropSize):
+def evaluateBatch(data, policy, gNet, preprocess, H, W, cropSize):
     images_after_pick = data['image_after_pick'].to(torch.float32).to(DEFAULT_DEVICE)
     patches = data['next_patch'].to(torch.float32).to(DEFAULT_DEVICE)
     obs = [None, images_after_pick, patches]
@@ -84,30 +84,13 @@ def evaluateBatch(data, policy, vNet, preprocess, H, W, cropSize):
                             max(0, -xMin): max(0, -xMin) + (min(imageSize[1], xMax) - max(0, xMin)),
                             ]
         images_after_action.append(image_after_action)
-        if False:
-            plt.subplot(2, 3, 1)
-            plt.imshow(patch)
-            plt.subplot(2, 3, 2)
-            plt.imshow(action_prob)
-            plt.subplot(2, 3, 3)
-            gt_action_prob = np.zeros_like(action_prob)
-            gt_action_prob[gt_action[0], gt_action[1]] = 1
-            plt.imshow(gt_action_prob)
-            #plt.imshow(action_prob==action_prob.max())
-            plt.subplot(2, 3, 4)
-            plt.imshow(image)
-            plt.subplot(2, 3, 5)
-            plt.imshow(image_after_action)
-            plt.subplot(2, 3, 6)
-            plt.imshow(next_image)
-            plt.show()
     images_after_action = np.concatenate(images_after_action, 0).reshape([-1, 360, 480, 3])
     
     s = preprocess(torch.Tensor(next_images).permute([0,3,1,2])).cuda()
-    rewards = vNet(s).cpu().detach().numpy()
+    rewards = gNet(s).cpu().detach().numpy()
 
     s_prime = preprocess(torch.Tensor(images_after_action).permute([0,3,1,2])).cuda()
-    rewards_prime = vNet(s_prime).cpu().detach().numpy()
+    rewards_prime = gNet(s_prime).cpu().detach().numpy()
     return (rewards_prime - rewards).mean()
 
 
@@ -155,12 +138,15 @@ def main(args, log_name):
     else:
         qNet = ResNetTwinQ(crop_size=args.crop_size)
     vNet = ValueFunction(hidden_dim=args.hidden_dim)
+    rNet = ValueFunction(hidden_dim=args.hidden_dim)
     iql = ImplicitQLearning(
         qf=qNet, #winQ(crop_size=args.crop_size),
         vf=vNet, #ValueFunction(hidden_dim=args.hidden_dim),
+        rf=rNet, #ValueFunction(hidden_dim=args.hidden_dim),
         policy=policy,
-        v_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.v_learning_rate, weight_decay=1e-5),
         q_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.q_learning_rate, weight_decay=1e-5),
+        v_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.v_learning_rate, weight_decay=1e-5),
+        r_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.r_learning_rate, weight_decay=1e-5),
         policy_optimizer_factory=lambda params: torch.optim.Adam(params, lr=args.policy_learning_rate, weight_decay=1e-5),
         max_steps=args.n_epochs * len(train_loader) // args.batch_size,
         tau=args.tau,
@@ -168,7 +154,7 @@ def main(args, log_name):
         alpha=args.alpha,
         discount=args.discount
     )
-    vNet, preprocess = loadRewardFunction(args.reward_model_path)
+    gNet, preprocess = loadRewardFunction(args.reward_model_path)
 
     torch.autograd.set_detect_anomaly(True)
     count_steps = 0
@@ -194,7 +180,7 @@ def main(args, log_name):
                     s_prime = preprocess(next_images.permute([0,3,1,2]))
                     states = torch.cat([s, s_prime], 0)
                     with torch.no_grad():
-                        scores = vNet(states) #.cpu().detach().numpy()
+                        scores = gNet(states) #.cpu().detach().numpy()
                         rewards = scores[len(scores)//2:] - scores[:len(scores)//2]
                     rewards = rewards.view(-1)
                 else:
@@ -211,7 +197,7 @@ def main(args, log_name):
                     # Evaluate policy
                     delta_rewards = []
                     for t_data in test_loader:
-                        delta_reward = evaluateBatch(t_data, iql.policy, vNet, preprocess, H, W, args.crop_size)
+                        delta_reward = evaluateBatch(t_data, iql.policy, gNet, preprocess, H, W, args.crop_size)
                         delta_rewards.append(delta_reward)
                     print('rewards:', np.mean(delta_rewards))
                     if not args.wandb_off:
@@ -231,13 +217,14 @@ if __name__ == '__main__':
     parser.add_argument('--data-dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/train')
     parser.add_argument('--log-dir', type=str, default='logs')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--discount', type=float, default=0.99)
-    parser.add_argument('--crop-size', type=int, default=96) #160
+    parser.add_argument('--discount', type=float, default=0.9)
+    parser.add_argument('--crop-size', type=int, default=128) #96
     parser.add_argument('--hidden-dim', type=int, default=256)
     parser.add_argument('--n-epochs', type=int, default=30)
-    parser.add_argument('--batch-size', type=int, default=1)
-    parser.add_argument('--v-learning-rate', type=float, default=1e-4)
+    parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--q-learning-rate', type=float, default=1e-4)
+    parser.add_argument('--v-learning-rate', type=float, default=1e-4)
+    parser.add_argument('--r-learning-rate', type=float, default=1e-4)
     parser.add_argument('--policy-learning-rate', type=float, default=1e-4)
     parser.add_argument('--alpha', type=float, default=0.005)
     parser.add_argument('--tau', type=float, default=0.7)
@@ -249,7 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('--policy-net', type=str, default='resnet') # 'transport' / 'resnet
     parser.add_argument('--reward', type=str, default='') # '' / 'classifier'
     parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
-    parser.add_argument('--eval-period', type=int, default=5000)
+    parser.add_argument('--eval-period', type=int, default=2000)
     parser.add_argument('--wandb-off', action='store_true')
     args = parser.parse_args()
 

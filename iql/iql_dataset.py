@@ -46,7 +46,7 @@ class TabletopOfflineDataset(Dataset):
                     if num_steps!=5:
                         print('skip %s (%d steps)'%(trajectory_path, num_steps))
                         continue
-                    rewards = [1.] + [0.1] * (num_steps - 2)
+                    rewards = [1.] + [0.] * (num_steps - 2)
                     terminals = [True] + [False] * (num_steps - 2)
                     for i in range(num_steps-1):
                         # Forward sequence
@@ -68,8 +68,8 @@ class TabletopOfflineDataset(Dataset):
                         data_obj_infos.append(obj_info)
 
                         # Reverse sequence
-                        reward = -0.1 #rewards[i]
-                        terminal = False #terminals[i]
+                        reward = 0.
+                        terminal = False
                         image = os.path.join(trajectory_path, steps[i], 'rgb_%s.png'%self.view)
                         next_image = os.path.join(trajectory_path, steps[i+1], 'rgb_%s.png'%self.view)
                         seg = os.path.join(trajectory_path, steps[i], 'seg_%s.npy'%self.view)
