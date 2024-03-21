@@ -611,7 +611,7 @@ class MCTS(object):
         # print(et - st, 'seconds.')
         return maxReward, value
 
-def setupEnvironment(objects, args):
+def setupEnvironment(args):
     camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
     camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
     
@@ -631,9 +631,6 @@ def setupEnvironment(objects, args):
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
 
     env.reset()
-    env.spawn_objects(objects)
-    
-    env.arrange_objects(random=True)
     return env
 
 
@@ -643,6 +640,7 @@ if __name__=='__main__':
     parser.add_argument('--data-dir', type=str, default='/ssd/disk')
     # Inference
     parser.add_argument("--seed", default=None, type=int)
+    parser.add_argument('--use-template', action="store_true")
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--H', type=int, default=12)
@@ -704,11 +702,31 @@ if __name__=='__main__':
         # torch.backends.cudnn.benchmark = False
 
     # Environment setup
-    objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
-    objects = [(o, 'medium') for o in objects]
-    #objects = [('bowl', 'medium'), ('can_drink','medium'), ('plate','medium'), ('marker', 'medium'), ('soap_dish', 'medium'), ('book', 'medium'), ('remote', 'medium')]
-    selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
-    env = setupEnvironment(selected_objects, args)
+    env = setupEnvironment(args)
+    if args.use_template:
+        dataset = 'train'
+        #if 'unseen' in [args.scene_split, args.object_split]:
+        #    dataset = f'test-{args.object_split}_obj-{args.scene_split}_template'
+        #else: 
+        #    dataset = 'train'
+        template_folder = os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/tempaltes')
+        template_files = os.listdir(template_folder)
+        template_files = [f for f in template_files if f.lower().endswith('.json')]
+        for template_file in template_files:
+            scene = template_file.split('_')[0]
+            template_id = template_file.split('_')[-1].split('.')[0]
+            with open(os.path.join(template_folder, template_file), 'r') as f:
+                templates = json.load(f)
+            augmented_templates = ts.get_augmented_templates(templates, 2)
+            augmented_template = augmented_templates[-1]
+            env.load_template(scene_id, augmented_template)
+            break
+    else:
+        objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
+        objects = [(o, 'medium') for o in objects]
+        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+        env.spawn_objects(objects)
+        env.arrange_objects(random=True)
 
     # MCTS setup
     renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
@@ -773,7 +791,10 @@ if __name__=='__main__':
         # Initial state
         obs = env.reset()
         selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
-        env.spawn_objects(selected_objects)
+        if args.use_template:
+            pass
+        else:
+            env.spawn_objects(selected_objects)
         while True:
             is_occluded = False
             is_collision = False
