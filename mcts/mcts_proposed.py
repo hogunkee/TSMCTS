@@ -39,16 +39,18 @@ class Node(object):
         else:
             self.depth = self.parent.depth + 1
 
-        #self.isTerminal = False
         self.numVisits = 0
-        self.totalReward = 0.
+        self.Qmean = 0.
+        self.Qnorm = 0.
+        self.G = None
+        self.Gmin = None
+        self.Gmax = None
+        #self.totalReward = 0.
+
         self.children = {}
         self.actionProb = None
         self.numActionCandidates = 0
         self.terminal = False
-
-        self.reward = None
-        self.value = None
         
         if str(table) not in countNode:
             countNode[str(table)] = 1
@@ -76,7 +78,9 @@ class Node(object):
 
     def __str__(self):
         s=[]
-        s.append("Reward: %s"%(self.totalReward))
+        # s.append("Reward: %s"%(self.totalReward))
+        s.append("Q-mean: %.3f"%(self.Qmean))
+        s.append("Q-norm: %.3f"%(self.Qnorm))
         s.append("Visits: %d"%(self.numVisits))
         s.append("Terminal: %s"%(self.terminal))
         s.append("Children: %d"%(len(self.children.keys())))
@@ -121,6 +125,7 @@ class MCTS(object):
         self.thresholdProb = args.threshold_prob
 
         self.rewardType = args.reward_type
+        self.normalize_reward = args.normalize_reward
         self.gtRewardNet = None
         self.rewardNet = None
         self.valueNet = None
@@ -167,7 +172,7 @@ class MCTS(object):
         bestChild = self.getBestChild(self.root, explorationValue=0.)
         action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
         if needDetails:
-            return {"action": action, "expectedReward": bestChild.totalReward / bestChild.numVisits}
+            return {"action": action, "expectedReward": (bestChild.Qmean, bestChild.Qnorm)}
         else:
             return action
 
@@ -305,23 +310,30 @@ class MCTS(object):
                 rewards = self.rewardNet([s_value, None, None]).cpu().detach().numpy()
         return rewards.reshape(-1), [0.0]
 
-    def backpropagate(self, node, reward, value):
+    def backpropagate(self, node, G):
         # print('backpropagate.')
-        if self.algorithm=='alphago':
-            nodeReward = self.puctLambda * reward + (1-self.puctLambda) * value
-        else:
-            nodeReward = reward
         while node is not None:
+            # calcuate average node value
+            node.Qmean = (node.Qmean * node.numVisits + G) / (node.numVisits + 1)
             node.numVisits += 1
-            node.totalReward += nodeReward 
+            # update node's upper and lower bound
+            if node.G is None:
+                node.G = G
+                node.Gmin = G
+                node.Gmax = G
+            else:
+                if G < node.Gmin:
+                    node.Gmin = G
+                if G > node.Gmax:
+                    node.Gmax = G
             node = node.parent
-            # nodeReward *= self.gamma
+            G *= self.gamma
 
     def executeRound(self):
         # print('executeRound.')
         node = self.selectNode(self.root)
-        reward, value = self.rollout(node)
-        self.backpropagate(node, reward, value)
+        G = self.rollout(node)
+        self.backpropagate(node, G)
         self.searchCount += 1
 
     def getBestChild(self, node, explorationValue):
@@ -329,12 +341,21 @@ class MCTS(object):
         bestValue = float("-inf")
         bestNodes = []
         for child in node.children.values():
-            if self.algorithm=='alphago':
-                nodeValue = child.totalReward / child.numVisits + explorationValue * \
-                    child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
+            if self.normalize_reward:
+                Qvalue = (self.gamma * child.Gmax - node.Gmin) / (node.Gmax - node.Gmin + 1e-6)
+                child.Qnorm = Qvalue
             else:
-                nodeValue = child.totalReward / child.numVisits + explorationValue * \
+                Qvalue = child.Qmean
+            if self.algorithm=='alphago':
+                nodeValue = Qvalue + explorationValue * \
+                    child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
+                # nodeValue = child.totalReward / child.numVisits + explorationValue * \
+                #     child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
+            else:
+                nodeValue = Qvalue + explorationValue * \
                         np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
+                # nodeValue = child.totalReward / child.numVisits + explorationValue * \
+                #         np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
             if nodeValue > bestValue:
                 bestValue = nodeValue
                 bestNodes = [child]
@@ -474,17 +495,21 @@ class MCTS(object):
         return terminal, reward, value
 
     def rollout(self, node):
-        if node.reward is not None:
-            return node.reward, node.value
+        if node.G is not None:
+            return node.G
+        
         if self.rolloutPolicy=='nostep':
             reward, value = self.noStepPolicy(node)
         elif self.rolloutPolicy=='onestep':
             reward, value = self.oneStepPolicy(node)
         else:
             reward, value = self.greedyPolicy(node, self.rolloutPolicy)
-        node.reward = reward
-        node.value = value
-        return reward, value
+        
+        if self.algorithm=='alphago':
+            nodeReward = self.puctLambda * reward + (1-self.puctLambda) * value
+        else:
+            nodeReward = reward
+        return nodeReward
 
     def noStepPolicy(self, node):
         # print('noStepPolicy.')
@@ -579,7 +604,7 @@ class MCTS(object):
         else:
             rewards, values = self.getReward(tables)
         # discounted rewards
-        # rewards = rewards * (self.gamma ** np.arange(len(rewards)))
+        rewards = rewards * (self.gamma ** np.arange(len(rewards)))
         maxReward = np.max(rewards)
         value = values[0]
         # et = time.time()
@@ -643,6 +668,7 @@ if __name__=='__main__':
     parser.add_argument('--exploration', type=float, default=20)
     parser.add_argument('--gamma', type=float, default=0.9)
     # Reward model
+    parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
