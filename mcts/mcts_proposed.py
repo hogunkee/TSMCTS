@@ -18,11 +18,15 @@ import torch
 from data_loader import TabletopTemplateDataset
 from utils import loadRewardFunction, Renderer, getGraph, visualizeGraph, summaryGraph
 from utils import loadPolicyNetwork, loadIQLPolicyNetwork, loadIQLRewardNetwork, loadIQLValueNetwork
+from utils import suppress_stdout
 
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
 from custom_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
+
+import warnings
+warnings.filterwarnings("ignore")
 
 countNode = {}
         
@@ -363,6 +367,19 @@ class MCTS(object):
                 bestNodes.append(child)
         return np.random.choice(bestNodes)
 
+    def removeBoundaryActions(self, probMap):
+        if len(probMap.shape)==3:
+            probMap[:, 0, :] = 0
+            probMap[:, -1, :] = 0
+            probMap[:, :, 0] = 0
+            probMap[:, :, -1] = 0
+        else:
+            probMap[:, :, 0, :] = 0
+            probMap[:, :, -1, :] = 0
+            probMap[:, :, :, 0] = 0
+            probMap[:, :, :, -1] = 0
+        return probMap
+    
     def getPossibleActions(self, node, policy='random'):
         # random / iql / policy / iql-uniform / policy-uniform
         # print('getPossibleActions.')
@@ -381,6 +398,7 @@ class MCTS(object):
                             continue
                         # avoid placing on the occupied position
                         probMap[o, py, px] = 0
+                probMap = self.removeBoundaryActions(probMap)
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
         
             elif policy.startswith('iql'):
@@ -423,6 +441,7 @@ class MCTS(object):
                             # probMap[rot, o, py, px] = 0
                         # avoid placing on the occupied position
                         probMap[:, o, py, px] = 0
+                probMap = self.removeBoundaryActions(probMap)
                 probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
         
             elif policy.startswith('policy'):
@@ -457,6 +476,7 @@ class MCTS(object):
                             continue
                         # avoid placing on the occupied position
                         probMap[o, py, px] = 0
+                probMap = self.removeBoundaryActions(probMap)
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
             node.setActions(probMap)   
         else:
@@ -625,7 +645,7 @@ def setupEnvironment(args):
     }
     
     gui_on = not args.gui_off
-    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, num_objs=args.num_objects, gripper_type='85')
+    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85')
     p.resetDebugVisualizerCamera(2.0, -270., -60., (0., 0., 0.))
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
@@ -641,6 +661,8 @@ if __name__=='__main__':
     # Inference
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--use-template', action="store_true")
+    parser.add_argument('--scene-split', type=str, default='seen')
+    parser.add_argument('--object-split', type=str, default='seen')
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--H', type=int, default=12)
@@ -702,31 +724,34 @@ if __name__=='__main__':
         # torch.backends.cudnn.benchmark = False
 
     # Environment setup
-    env = setupEnvironment(args)
+    with suppress_stdout():
+        env = setupEnvironment(args)
     if args.use_template:
-        dataset = 'train'
-        #if 'unseen' in [args.scene_split, args.object_split]:
-        #    dataset = f'test-{args.object_split}_obj-{args.scene_split}_template'
-        #else: 
-        #    dataset = 'train'
-        template_folder = os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/tempaltes')
+        if 'unseen' in [args.scene_split, args.object_split]:
+           dataset = f'test-{args.object_split}_obj-{args.scene_split}_template'
+        else: 
+           dataset = 'train'
+        template_folder = os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/templates')
         template_files = os.listdir(template_folder)
         template_files = [f for f in template_files if f.lower().endswith('.json')]
-        for template_file in template_files:
-            scene = template_file.split('_')[0]
-            template_id = template_file.split('_')[-1].split('.')[0]
-            with open(os.path.join(template_folder, template_file), 'r') as f:
-                templates = json.load(f)
-            augmented_templates = ts.get_augmented_templates(templates, 2)
-            augmented_template = augmented_templates[-1]
-            env.load_template(scene_id, augmented_template)
-            break
+        
+        template_file = random.choice(template_files)
+        # scene = template_file.split('_')[0]
+        # template_id = template_file.split('_')[-1].split('.')[0]
+        with open(os.path.join(template_folder, template_file), 'r') as f:
+            templates = json.load(f)
+        augmented_template = env.get_augmented_templates(templates, 2)[-1]
+        selected_objects = [v for k,v in augmented_template['objects'].items()]
+        # env.load_template(augmented_template)
     else:
-        objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
+        objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
+                    'glue', 'knife', 'lotion', 'marker', 'pitcher', 'plate', 'remote', 'scissors', 'shampoo', \
+                    'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
+        # objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
         objects = [(o, 'medium') for o in objects]
         selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
-        env.spawn_objects(objects)
-        env.arrange_objects(random=True)
+    env.spawn_objects(selected_objects)
+    env.arrange_objects(random=True)
 
     # MCTS setup
     renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
@@ -761,6 +786,7 @@ if __name__=='__main__':
         searcher.setPolicyNet(pnet)
 
     success = 0
+    success_elpen = []
     log_dir = 'data/%s' %args.algorithm
     if args.logging:
         bar = tqdm(range(args.num_scenes))
@@ -771,9 +797,10 @@ if __name__=='__main__':
         if args.logging: 
             bar.set_description("Episode %d/%d"%(sidx, args.num_scenes))
             if sidx>0:
-                bar.set_postfix(success_rate="%.1f%% (%d/%d)"%(100*success/sidx, success, sidx))
+                bar.set_postfix(success_rate="%.1f%% (%d/%d)"%(100*success/sidx, success, sidx),
+                                eplen="%.1f"%(np.mean(success_elpen) if len(success_elpen)>0 else 0))
             else:
-                bar.set_postfix(success_rate="0.0% (0/0)")
+                bar.set_postfix(success_rate="0.0% (0/0)", eplen="0.0")
             
             os.makedirs('%s-%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
             with open('%s-%s/config.json'%(log_dir, log_name), 'w') as f:
@@ -789,12 +816,17 @@ if __name__=='__main__':
             np.random.seed(seed + sidx)
         
         # Initial state
-        obs = env.reset()
-        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+        with suppress_stdout():
+            obs = env.reset()
         if args.use_template:
-            pass
+            template_file = random.choice(template_files)
+            with open(os.path.join(template_folder, template_file), 'r') as f:
+                templates = json.load(f)
+            augmented_template = env.get_augmented_templates(templates, 2)[-1]
+            selected_objects = [v for k,v in augmented_template['objects'].items()]
         else:
-            env.spawn_objects(selected_objects)
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+        env.spawn_objects(selected_objects)
         while True:
             is_occluded = False
             is_collision = False
@@ -803,7 +835,7 @@ if __name__=='__main__':
             initRgb = obs[args.view]['rgb']
             initSeg = obs[args.view]['segmentation']
             # Check occlusions
-            for o in range(args.num_objects):
+            for o in range(len(selected_objects)):
                 # get the segmentation mask of each object #
                 mask = (initSeg==o+4).astype(float)
                 if mask.sum()==0:
@@ -821,6 +853,7 @@ if __name__=='__main__':
                 continue
             else:
                 break
+        print_fn('Objects: %s' %[o for o,s in selected_objects])
 
         if args.logging:
             plt.imshow(initRgb)
@@ -905,6 +938,7 @@ if __name__=='__main__':
                 print_fn("Score: %f"%reward)
                 if reward > args.threshold_success:
                     success += 1
+                    success_elpen.append(step+1)
                 print_fn(table[0])
                 print_fn("--------------------------------")
                 print_fn("--------------------------------")
@@ -913,5 +947,7 @@ if __name__=='__main__':
                     plt.savefig('%s-%s/scene-%d/final.png'%(log_dir, log_name, sidx))
                 break
     print_fn("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
+    print_fn("Episode length: %.1f"%(np.mean(success_elpen) if len(success_elpen)>0 else 0))
     print("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
+    print("Episode length: %.1f"%(np.mean(success_elpen) if len(success_elpen)>0 else 0))
 
