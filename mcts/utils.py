@@ -351,10 +351,14 @@ class Renderer(object):
                 rect = cv2.minAreaRect(X)
                 phi = rect[2]
             else:
-                reg = LsqEllipse().fit(X)
-                center, width, height, phi = reg.as_parameters()
-                if np.abs(width-height) < 6:
-                    # can be a rectangle
+                try:
+                    reg = LsqEllipse().fit(X)
+                    center, width, height, phi = reg.as_parameters()
+                    if np.abs(width-height) < 6:
+                        # can be a rectangle
+                        rect = cv2.minAreaRect(X)
+                        phi = rect[2]
+                except:
                     rect = cv2.minAreaRect(X)
                     phi = rect[2]
             for r in range(numRotations):
