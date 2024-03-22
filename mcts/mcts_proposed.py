@@ -579,8 +579,12 @@ class MCTS(object):
         # random / iql / policy / iql-uniform / policy-uniform
         # print('greedyPolicy.')
         # st = time.time()
-        c = 0
+        if self.isTerminal(node)[0]:
+            return 0., 0.
+        
         tables = [np.copy(node.table)]
+        # while not (self.isTerminal(node)[0] or node.depth >= self.maxDepth):
+        c = 0
         while not (self.isTerminal(node)[0] or c>1):
             c+= 1
             if node.numActionCandidates==0:
