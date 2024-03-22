@@ -32,7 +32,7 @@ class ImplicitQLearning(nn.Module):
         self.discount = discount
         self.alpha = alpha
 
-    def update(self, observations, action_dist, next_observations, rewards, terminals):
+    def update(self, observations, action_dist, next_observations, rewards, terminals, scores=None):
         B = action_dist.shape[0]
         # B = actions.shape[0]
         with torch.no_grad():
@@ -52,7 +52,10 @@ class ImplicitQLearning(nn.Module):
 
         # Update reward function
         r = self.rf(next_observations)
-        r_loss = F.mse_loss(r, rewards.view(-1, 1))
+        if scores is None:
+            r_loss = F.mse_loss(r, rewards.view(-1, 1))
+        else:
+            r_loss = F.mse_loss(r, scores.view(-1, 1))
         self.r_optimizer.zero_grad(set_to_none=True)
         r_loss.backward()
         self.r_optimizer.step()

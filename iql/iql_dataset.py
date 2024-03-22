@@ -34,6 +34,8 @@ class TabletopOfflineDataset(Dataset):
         data_segs = []
         data_next_obj_infos = []
         data_obj_infos = []
+        data_next_scores = []
+        data_scores = []
         for scene in sorted(os.listdir(self.data_dir)):
             scene_path = os.path.join(self.data_dir, scene)
             for template in sorted(os.listdir(scene_path)):
@@ -48,6 +50,7 @@ class TabletopOfflineDataset(Dataset):
                         continue
                     rewards = [1.] + [0.] * (num_steps - 2)
                     terminals = [True] + [False] * (num_steps - 2)
+                    scores = np.linspace(1, 0, num_steps)
                     for i in range(num_steps-1):
                         # Forward sequence
                         reward = rewards[i]
@@ -57,7 +60,9 @@ class TabletopOfflineDataset(Dataset):
                         next_seg = os.path.join(trajectory_path, steps[i], 'seg_%s.npy'%self.view)
                         seg = os.path.join(trajectory_path, steps[i+1], 'seg_%s.npy'%self.view)
                         next_obj_info = os.path.join(trajectory_path, steps[i], 'obj_info.json')
-                        obj_info = os.path.join(trajectory_path, steps[i + 1], 'obj_info.json')
+                        obj_info = os.path.join(trajectory_path, steps[i+1], 'obj_info.json')
+                        next_score = scores[i]
+                        score = scores[i+1]
                         data_rewards.append(reward)
                         data_terminals.append(terminal)
                         data_next_images.append(next_image)
@@ -66,6 +71,8 @@ class TabletopOfflineDataset(Dataset):
                         data_segs.append(seg)
                         data_next_obj_infos.append(next_obj_info)
                         data_obj_infos.append(obj_info)
+                        data_next_scores.append(next_score)
+                        data_scores.append(score)
 
                         # Reverse sequence
                         reward = 0.
@@ -75,7 +82,9 @@ class TabletopOfflineDataset(Dataset):
                         seg = os.path.join(trajectory_path, steps[i], 'seg_%s.npy'%self.view)
                         next_seg = os.path.join(trajectory_path, steps[i+1], 'seg_%s.npy'%self.view)
                         obj_info = os.path.join(trajectory_path, steps[i], 'obj_info.json')
-                        next_obj_info = os.path.join(trajectory_path, steps[i + 1], 'obj_info.json')
+                        next_obj_info = os.path.join(trajectory_path, steps[i+1], 'obj_info.json')
+                        score = scores[i]
+                        next_score = scores[i+1]
                         data_rewards.append(reward)
                         data_terminals.append(terminal)
                         data_next_images.append(next_image)
@@ -84,6 +93,8 @@ class TabletopOfflineDataset(Dataset):
                         data_segs.append(seg)
                         data_next_obj_infos.append(next_obj_info)
                         data_obj_infos.append(obj_info)
+                        data_next_scores.append(next_score)
+                        data_scores.append(score)
         self.data_rewards = data_rewards
         self.data_terminals = data_terminals
         self.data_next_images = data_next_images
@@ -92,6 +103,8 @@ class TabletopOfflineDataset(Dataset):
         self.data_segs = data_segs
         self.data_next_obj_infos = data_next_obj_infos
         self.data_obj_infos = data_obj_infos
+        self.data_next_scores = data_next_scores
+        self.data_scores = data_scores
         return
 
     def __getitem__(self, index):
@@ -123,7 +136,9 @@ class TabletopOfflineDataset(Dataset):
                 'action': np.array(action),
                 'action_dist': np.array(action_dist),
                 'reward': reward, 
-                'terminal': terminal
+                'terminal': terminal,
+                'score': self.data_scores[index],
+                'next_score': self.data_next_scores[index],
                 }
         return data
 

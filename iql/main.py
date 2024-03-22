@@ -183,12 +183,19 @@ def main(args, log_name):
                         scores = gNet(states) #.cpu().detach().numpy()
                         rewards = scores[len(scores)//2:] - scores[:len(scores)//2]
                     rewards = rewards.view(-1)
+                elif args.reward=='score':
+                    rewards = batch['next_score'] - batch['score']
+                    rewards = rewards.to(torch.float32).to(DEFAULT_DEVICE)
                 else:
                     rewards = batch['reward'].to(torch.float32).to(DEFAULT_DEVICE)
                 terminals = batch['terminal'].to(DEFAULT_DEVICE)
                 observations = [images, images_after_pick, patches]
                 next_observations = [next_images, None, None]
-                losses = iql.update(observations, action_labels, next_observations, rewards, terminals)
+                if args.reward=='score':
+                    scores = batch['next_score'].to(torch.float32).to(DEFAULT_DEVICE)
+                    losses = iql.update(observations, action_labels, next_observations, rewards, terminals, scores)
+                else:
+                    losses = iql.update(observations, action_labels, next_observations, rewards, terminals)
                 bar.set_postfix(losses)
                 if not args.wandb_off:
                     wandb.log(losses, count_steps)
@@ -234,7 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--deterministic-policy', action='store_true') # otherwise, use a categorical policy
     parser.add_argument('--q-net', type=str, default='resnet') # 'transport' / 'resnet
     parser.add_argument('--policy-net', type=str, default='resnet') # 'transport' / 'resnet
-    parser.add_argument('--reward', type=str, default='') # '' / 'classifier'
+    parser.add_argument('--reward', type=str, default='') # '' / 'classifier' / 'score'
     parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--sigmoid', action='store_true')
     parser.add_argument('--eval-period', type=int, default=2000)
