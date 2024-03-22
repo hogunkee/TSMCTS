@@ -98,3 +98,29 @@ class ValueFunction(nn.Module):
         h = torch.relu(self.fc1(h))
         out = self.fc2(h)
         return out
+
+class RewardFunction(nn.Module):
+    def __init__(self, hidden_dim=16, sigmoid=False):
+        super().__init__()
+        self.v = resnet(
+            num_blocks=4,
+            in_channels=3,
+            out_channels=4,
+            hidden_dim=hidden_dim,
+            output_activation=None,
+            stride=2
+            )
+        self.fc1 = nn.Linear(4 * 23 * 30, 128)
+        self.fc2 = nn.Linear(128, 1)
+        self.sigmoid = sigmoid
+
+    def forward(self, obs):
+        state_v, _, _ = obs
+        state_v = state_v.permute(0, 3, 1, 2)
+        h = self.v(state_v)
+        h = h.reshape(-1, 4 * 23 * 30)
+        h = torch.relu(self.fc1(h))
+        out = self.fc2(h)
+        if self.sigmoid:
+            out = torch.sigmoid(out)
+        return out

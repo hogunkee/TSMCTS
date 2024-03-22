@@ -702,6 +702,7 @@ if __name__=='__main__':
     parser.add_argument('--vnet-path', type=str, default='')
     parser.add_argument('--policynet-path', type=str, default='../policy_learning/logs/0224_1815/pnet_e1.pth')
     parser.add_argument('--iql-path', type=str, default='../iql/logs/0308_0121/iql_e1.pth')
+    parser.add_argument('--sigmoid', action='store_true')
     args = parser.parse_args()
 
     # Logger

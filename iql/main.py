@@ -13,7 +13,7 @@ from torchvision import transforms
 
 from src.iql import ImplicitQLearning
 from src.policy import DiscreteResNetPolicy, DeterministicResNetPolicy, DiscreteTransportPolicy, DeterministicTransportPolicy, GaussianPolicy
-from src.value_functions import TransportQ, ResNetTwinQ, ValueFunction
+from src.value_functions import TransportQ, ResNetTwinQ, ValueFunction, RewardFunction
 from src.util import return_range, set_seed, Log, sample_batch, torchify, evaluate_policy
 from src.util import DEFAULT_DEVICE
 from iql_dataset import TabletopOfflineDataset
@@ -138,7 +138,7 @@ def main(args, log_name):
     else:
         qNet = ResNetTwinQ(crop_size=args.crop_size)
     vNet = ValueFunction(hidden_dim=args.hidden_dim)
-    rNet = ValueFunction(hidden_dim=args.hidden_dim)
+    rNet = RewardFunction(hidden_dim=args.hidden_dim, sigmoid=args.sigmoid)
     iql = ImplicitQLearning(
         qf=qNet, #winQ(crop_size=args.crop_size),
         vf=vNet, #ValueFunction(hidden_dim=args.hidden_dim),
@@ -236,6 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('--policy-net', type=str, default='resnet') # 'transport' / 'resnet
     parser.add_argument('--reward', type=str, default='') # '' / 'classifier'
     parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
+    parser.add_argument('--sigmoid', action='store_true')
     parser.add_argument('--eval-period', type=int, default=2000)
     parser.add_argument('--wandb-off', action='store_true')
     args = parser.parse_args()
