@@ -356,7 +356,7 @@ class MCTS(object):
                 # nodeValue = child.totalReward / child.numVisits + explorationValue * \
                 #     child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
             else:
-                nodeValue = Qvalue + explorationValue * \
+                nodeValue = Qvalue + 1/np.sqrt(explorationValue) * \
                         np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
                 # nodeValue = child.totalReward / child.numVisits + explorationValue * \
                 #         np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
@@ -760,7 +760,7 @@ if __name__=='__main__':
 
     # MCTS setup
     renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
-    searcher = MCTS(renderer, args, explorationConstant=1/np.sqrt(args.exploration)) #1/np.sqrt(2)
+    searcher = MCTS(renderer, args, explorationConstant=args.exploration) #1/np.sqrt(2)
 
     # Network setup
     model_path = args.reward_model_path
