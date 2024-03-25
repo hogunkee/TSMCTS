@@ -199,10 +199,10 @@ def loadIQLPolicyNetwork(model_path, args):
     policy.load_state_dict(state_dict)
     return policy
 
-def loadIQLRewardNetwork(model_path, args):
+def loadIQLRewardNetwork(model_path, args, sigmoid=False):
     sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
     from src.value_functions import RewardFunction
-    rewardNet = RewardFunction(hidden_dim=256)
+    rewardNet = RewardFunction(hidden_dim=256, sigmoid=sigmoid)
     state_dict = torch.load(model_path)
     state_dict = {k.replace('rf.', ''): v for k, v in state_dict.items() if k.startswith('rf.')}
     rewardNet.load_state_dict(state_dict)

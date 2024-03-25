@@ -176,7 +176,7 @@ class MCTS(object):
         bestChild = self.getBestChild(self.root, explorationValue=0.)
         action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
         if needDetails:
-            return {"action": action, "expectedReward": (bestChild.Qmean, bestChild.Qnorm)}
+            return {"action": action, "expectedReward": (bestChild.Qmean, bestChild.Qnorm), "terminal": bestChild.terminal}
         else:
             return action
 
@@ -443,7 +443,7 @@ class MCTS(object):
                         probMap[:, o, py, px] = 0
                 probMap = self.removeBoundaryActions(probMap)
                 probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
-        
+                
             elif policy.startswith('policy'):
                 states = []
                 objectPatches = []
@@ -770,13 +770,13 @@ if __name__=='__main__':
 
     # IQL policy
     if args.algorithm=='alphago':
-        valuenet = loadIQLValueNetwork(args.iql_path, args)
+        valuenet = loadIQLValueNetwork(args.iql_path, args, args.sigmoid)
         valuenet = valuenet.to("cuda:0")
         searcher.setValueNet(valuenet)
 
     # Reward function
     if args.reward_type=='iql':
-        rnet = loadIQLRewardNetwork(args.iql_path, args)
+        rnet = loadIQLRewardNetwork(args.iql_path, args, args.sigmoid)
         rnet = rnet.to("cuda:0")
         searcher.setRewardNet(rnet)
 
@@ -901,6 +901,8 @@ if __name__=='__main__':
             # expected result in mcts #
             nextTable = searcher.root.takeAction(action)
             print_fn("Best Action: %s"%str(action))
+            print_fn("Expected Q-mean: %f / Q-norm: %f"%(resultDict['expectedReward'][0], resultDict['expectedReward'][1]))
+            print_fn("Terminal: %s"%resultDict['terminal'])
             print_fn("Best Child: \n %s"%nextTable[0])
             
             nextCollision = renderer.checkCollision(nextTable)
