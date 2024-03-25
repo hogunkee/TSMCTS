@@ -356,7 +356,7 @@ class MCTS(object):
                 # nodeValue = child.totalReward / child.numVisits + explorationValue * \
                 #     child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
             else:
-                nodeValue = Qvalue + 1/np.sqrt(explorationValue) * \
+                nodeValue = Qvalue + np.sqrt(explorationValue) * \
                         np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
                 # nodeValue = child.totalReward / child.numVisits + explorationValue * \
                 #         np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
@@ -689,7 +689,7 @@ if __name__=='__main__':
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--binary-reward', action="store_true")
     parser.add_argument('--blurring', type=int, default=3)
-    parser.add_argument('--exploration', type=float, default=20)
+    parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
     parser.add_argument('--gamma', type=float, default=0.9)
     # Reward model
     parser.add_argument('--normalize-reward', action="store_true")
