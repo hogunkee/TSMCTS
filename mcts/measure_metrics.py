@@ -24,8 +24,7 @@ def filter_log(log):
     log.append(success)
     return log
 
-scenes = np.arange(40).tolist()
-logs = [d for d in os.listdir('data') if d.startswith('mcts') or d.startswith('alphago')]
+logs = sorted([d for d in os.listdir('data') if d.startswith('mcts') or d.startswith('alphago')])
 for logname in logs:
     ep_length = []
     ep_success_length = []
