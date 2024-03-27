@@ -100,8 +100,8 @@ def main(args, log_name):
     log(f'Log dir: {log.dir}')
 
     H, W = 12, 15
-    train_dataset = TabletopOfflineDataset(args.data_dir, crop_size=args.crop_size, H=H, W=W, view='top')
-    test_dataset = TabletopOfflineDataset(args.data_dir, crop_size=args.crop_size, H=H, W=W, view='top')
+    train_dataset = TabletopOfflineDataset(args.data_dir, crop_size=args.crop_size, H=H, W=W, view='top', gaussian=args.gaussian)
+    test_dataset = TabletopOfflineDataset(args.data_dir, crop_size=args.crop_size, H=H, W=W, view='top', gaussian=args.gaussian)
     indices_test = np.arange(len(test_dataset))[::4][-1000:].tolist()
     test_dataset.data_rewards = [test_dataset.data_rewards[d] for d in indices_test]
     test_dataset.data_terminals = [test_dataset.data_terminals[d] for d in indices_test]
@@ -246,6 +246,7 @@ if __name__ == '__main__':
     parser.add_argument('--sigmoid', action='store_true')
     parser.add_argument('--eval-period', type=int, default=2000)
     parser.add_argument('--wandb-off', action='store_true')
+    parser.add_argument('--gaussian', action='store_true')
     args = parser.parse_args()
 
     now = datetime.datetime.now()

@@ -2,6 +2,7 @@ import os
 import numpy as np
 import json
 from PIL import Image
+from scipy.stats import multivariate_normal
 
 import torch
 from torch.utils.data import Dataset
@@ -129,7 +130,7 @@ class TabletopOfflineDataset(Dataset):
         obj_info = json.load(open(self.data_obj_infos[index], 'r'))
 
         moved_object = self.find_object(next_obj_info, obj_info)
-        action = self.find_action(moved_objects, next_seg, seg)
+        action = self.find_action(moved_object, next_seg, seg)
         sigma = self.data_sigma[index]
         action, action_dist = self.calcuate_action_dist(action, sigma)
         #action, action_dist = self.find_action(moved_object, next_seg, seg)
@@ -179,18 +180,17 @@ class TabletopOfflineDataset(Dataset):
         
         return action
     
-    def calcuate_action_dist(self, action, sigma)
-        action = np.round(action).astype(int).tolist()
+    def calcuate_action_dist(self, action, sigma):
         if self.gaussian:
             y = np.arange(self.H)
             x = np.arange(self.W)
-            x, y = np.meshgrid(x, y)
+            y, x = np.meshgrid(y, x)
 
-            x_ = x.flatten()
             y_ = y.flatten()
+            x_ = x.flatten()
             yx = np.vstack((y_, x_)).T
 
-            normal_rv = multivariate_normal(mu, sigma)
+            normal_rv = multivariate_normal(action, sigma)
             z = normal_rv.pdf(yx)
             z = z.reshape(self.H, self.W, order='F')
             action_dist = z
@@ -210,6 +210,7 @@ class TabletopOfflineDataset(Dataset):
             action_dist = np.zeros([self.H, self.W])
             action_dist[int(y1):int(y1)+cxy.shape[0], int(x1):int(x1)+cxy.shape[1]] = cxy
         action_dist = action_dist / action_dist.sum()
+        action = np.round(action).astype(int).tolist()
         return action, action_dist
 
     def extract_patch(self, image, seg, moved_object):
