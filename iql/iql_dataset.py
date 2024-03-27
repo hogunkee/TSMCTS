@@ -16,7 +16,7 @@ from torch.utils.data import Dataset
 #       seg_top.npy
 
 class TabletopOfflineDataset(Dataset):
-    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', crop_size=160, view='top', H=10, W=13):
+    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', crop_size=160, view='top', H=10, W=13, gaussian=False):
         super().__init__()
         self.data_dir = data_dir
         self.H, self.W = H, W
@@ -24,6 +24,7 @@ class TabletopOfflineDataset(Dataset):
         self.view = view
         self.get_data_paths()
         self.remove_bg = True
+        self.gaussian = gaussian
     
     def get_data_paths(self):
         data_rewards = []
@@ -36,6 +37,7 @@ class TabletopOfflineDataset(Dataset):
         data_obj_infos = []
         data_next_scores = []
         data_scores = []
+        data_sigma = []
         for scene in sorted(os.listdir(self.data_dir)):
             scene_path = os.path.join(self.data_dir, scene)
             for template in sorted(os.listdir(scene_path)):
@@ -51,6 +53,7 @@ class TabletopOfflineDataset(Dataset):
                     rewards = [1.] + [0.] * (num_steps - 2)
                     terminals = [True] + [False] * (num_steps - 2)
                     scores = np.linspace(1, 0, num_steps)
+                    sigmas = np.linspace(0.2, 1, num_steps)
                     for i in range(num_steps-1):
                         # Forward sequence
                         reward = rewards[i]
@@ -63,6 +66,7 @@ class TabletopOfflineDataset(Dataset):
                         obj_info = os.path.join(trajectory_path, steps[i+1], 'obj_info.json')
                         next_score = scores[i]
                         score = scores[i+1]
+                        sigma = sigmas[i]
                         data_rewards.append(reward)
                         data_terminals.append(terminal)
                         data_next_images.append(next_image)
@@ -73,6 +77,7 @@ class TabletopOfflineDataset(Dataset):
                         data_obj_infos.append(obj_info)
                         data_next_scores.append(next_score)
                         data_scores.append(score)
+                        data_sigma.append(sigma)
 
                         # Reverse sequence
                         reward = 0.
@@ -85,6 +90,7 @@ class TabletopOfflineDataset(Dataset):
                         next_obj_info = os.path.join(trajectory_path, steps[i+1], 'obj_info.json')
                         score = scores[i]
                         next_score = scores[i+1]
+                        sigma = sigmas[i+1]
                         data_rewards.append(reward)
                         data_terminals.append(terminal)
                         data_next_images.append(next_image)
@@ -95,6 +101,7 @@ class TabletopOfflineDataset(Dataset):
                         data_obj_infos.append(obj_info)
                         data_next_scores.append(next_score)
                         data_scores.append(score)
+                        data_sigma.append(sigma)
         self.data_rewards = data_rewards
         self.data_terminals = data_terminals
         self.data_next_images = data_next_images
@@ -105,6 +112,7 @@ class TabletopOfflineDataset(Dataset):
         self.data_obj_infos = data_obj_infos
         self.data_next_scores = data_next_scores
         self.data_scores = data_scores
+        self.data_sigma = data_sigma
         return
 
     def __getitem__(self, index):
@@ -121,7 +129,10 @@ class TabletopOfflineDataset(Dataset):
         obj_info = json.load(open(self.data_obj_infos[index], 'r'))
 
         moved_object = self.find_object(next_obj_info, obj_info)
-        action, action_dist = self.find_action(moved_object, next_seg, seg)
+        action = self.find_action(moved_objects, next_seg, seg)
+        sigma = self.data_sigma[index]
+        action, action_dist = self.calcuate_action_dist(action, sigma)
+        #action, action_dist = self.find_action(moved_object, next_seg, seg)
         image_after_pick, patch = self.extract_patch(image, seg, moved_object)
         next_image_before_place, next_patch = self.extract_patch(next_image, next_seg, moved_object)
         #image_after_pick, patch = self.extract_patch(image, seg, moved_object)
@@ -166,22 +177,39 @@ class TabletopOfflineDataset(Dataset):
         action[0] = (action[0]+0.5)/360 * self.H - 0.5
         action[1] = (action[1]+0.5)/480 * self.W - 0.5
         
-        y, x = action
-        y1, x1 = np.trunc(action)
-        y2, x2 = np.ceil(action)
-        if y1==y2:
-            cy = np.array([[1]])
-        else:
-            cy = np.array([[y2-y], [y-y1]])
-        if x1==x2:
-            cx = np.array([[1]])
-        else:
-            cx = np.array([[x2-x, x-x1]])
-        cxy = np.matmul(cy, cx)
-        action_dist = np.zeros([self.H, self.W])
-        action_dist[int(y1):int(y1)+cxy.shape[0], int(x1):int(x1)+cxy.shape[1]] = cxy
-
+        return action
+    
+    def calcuate_action_dist(self, action, sigma)
         action = np.round(action).astype(int).tolist()
+        if self.gaussian:
+            y = np.arange(self.H)
+            x = np.arange(self.W)
+            x, y = np.meshgrid(x, y)
+
+            x_ = x.flatten()
+            y_ = y.flatten()
+            yx = np.vstack((y_, x_)).T
+
+            normal_rv = multivariate_normal(mu, sigma)
+            z = normal_rv.pdf(yx)
+            z = z.reshape(self.H, self.W, order='F')
+            action_dist = z
+        else:
+            y, x = action
+            y1, x1 = np.trunc(action)
+            y2, x2 = np.ceil(action)
+            if y1==y2:
+                cy = np.array([[1]])
+            else:
+                cy = np.array([[y2-y], [y-y1]])
+            if x1==x2:
+                cx = np.array([[1]])
+            else:
+                cx = np.array([[x2-x, x-x1]])
+            cxy = np.matmul(cy, cx)
+            action_dist = np.zeros([self.H, self.W])
+            action_dist[int(y1):int(y1)+cxy.shape[0], int(x1):int(x1)+cxy.shape[1]] = cxy
+        action_dist = action_dist / action_dist.sum()
         return action, action_dist
 
     def extract_patch(self, image, seg, moved_object):
