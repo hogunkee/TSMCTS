@@ -185,7 +185,7 @@ class MCTS(object):
         while not node.terminal: # self.isTerminal(node)[0]:
             if len(node.children)==0:
                 return self.expand(node)
-            elif node.isFullyExpanded() or random.uniform(0, 1) < 0.5:
+            elif node.isFullyExpanded(): # or random.uniform(0, 1) < 0.5:
                 node = self.getBestChild(node, self.explorationConstant)
             else:
                 return self.expand(node)
@@ -231,18 +231,6 @@ class MCTS(object):
         newNode = Node(self.renderer.numObjects, node.takeAction(action), node, action, p)
         node.children[tuple(action)] = newNode
         return newNode
-
-        # if len(node.actionCandidates)==0:
-        #     actions, prob = self.getPossibleActions(node, self.treePolicy)
-        # else:
-        #     actions, prob = node.actionCandidates, node.actionProb
-        # actions = [tuple(a) for a in actions]
-        # # print('Num possible actions:', len(actions))
-
-        # action = random.choice([a for a in actions if tuple(a) not in node.children])
-        # newNode = Node(self.renderer.numObjects, node.takeAction(action), node, action)
-        # node.children[tuple(action)] = newNode
-        # return newNode
 
     def getRewardValue(self, tables, groundTruth=False):
         # print('getReward.')
