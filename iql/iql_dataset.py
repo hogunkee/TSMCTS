@@ -23,10 +23,10 @@ class TabletopOfflineDataset(Dataset):
         self.H, self.W = H, W
         self.crop_size = crop_size
         self.view = view
-        self.get_data_paths()
         self.remove_bg = True
         self.gaussian = gaussian
         self.reverse = reverse
+        self.get_data_paths()
     
     def get_data_paths(self):
         data_rewards = []
