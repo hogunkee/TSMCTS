@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 #       seg_top.npy
 
 class TabletopOfflineDataset(Dataset):
-    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', crop_size=160, view='top', H=10, W=13, gaussian=False):
+    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', crop_size=160, view='top', H=10, W=13, gaussian=False, reverse=False):
         super().__init__()
         self.data_dir = data_dir
         self.H, self.W = H, W
@@ -26,6 +26,7 @@ class TabletopOfflineDataset(Dataset):
         self.get_data_paths()
         self.remove_bg = True
         self.gaussian = gaussian
+        self.reverse = reverse
     
     def get_data_paths(self):
         data_rewards = []
@@ -80,29 +81,30 @@ class TabletopOfflineDataset(Dataset):
                         data_scores.append(score)
                         data_sigma.append(sigma)
 
-                        # Reverse sequence
-                        reward = 0.
-                        terminal = False
-                        image = os.path.join(trajectory_path, steps[i], 'rgb_%s.png'%self.view)
-                        next_image = os.path.join(trajectory_path, steps[i+1], 'rgb_%s.png'%self.view)
-                        seg = os.path.join(trajectory_path, steps[i], 'seg_%s.npy'%self.view)
-                        next_seg = os.path.join(trajectory_path, steps[i+1], 'seg_%s.npy'%self.view)
-                        obj_info = os.path.join(trajectory_path, steps[i], 'obj_info.json')
-                        next_obj_info = os.path.join(trajectory_path, steps[i+1], 'obj_info.json')
-                        score = scores[i]
-                        next_score = scores[i+1]
-                        sigma = sigmas[i+1]
-                        data_rewards.append(reward)
-                        data_terminals.append(terminal)
-                        data_next_images.append(next_image)
-                        data_images.append(image)
-                        data_next_segs.append(next_seg)
-                        data_segs.append(seg)
-                        data_next_obj_infos.append(next_obj_info)
-                        data_obj_infos.append(obj_info)
-                        data_next_scores.append(next_score)
-                        data_scores.append(score)
-                        data_sigma.append(sigma)
+                        if self.reverse:
+                            # Reverse sequence
+                            reward = 0.
+                            terminal = False
+                            image = os.path.join(trajectory_path, steps[i], 'rgb_%s.png'%self.view)
+                            next_image = os.path.join(trajectory_path, steps[i+1], 'rgb_%s.png'%self.view)
+                            seg = os.path.join(trajectory_path, steps[i], 'seg_%s.npy'%self.view)
+                            next_seg = os.path.join(trajectory_path, steps[i+1], 'seg_%s.npy'%self.view)
+                            obj_info = os.path.join(trajectory_path, steps[i], 'obj_info.json')
+                            next_obj_info = os.path.join(trajectory_path, steps[i+1], 'obj_info.json')
+                            score = scores[i]
+                            next_score = scores[i+1]
+                            sigma = sigmas[i+1]
+                            data_rewards.append(reward)
+                            data_terminals.append(terminal)
+                            data_next_images.append(next_image)
+                            data_images.append(image)
+                            data_next_segs.append(next_seg)
+                            data_segs.append(seg)
+                            data_next_obj_infos.append(next_obj_info)
+                            data_obj_infos.append(obj_info)
+                            data_next_scores.append(next_score)
+                            data_scores.append(score)
+                            data_sigma.append(sigma)
         self.data_rewards = data_rewards
         self.data_terminals = data_terminals
         self.data_next_images = data_next_images
