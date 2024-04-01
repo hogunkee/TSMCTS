@@ -204,8 +204,6 @@ class MCTS(object):
     def search(self, table, needDetails=False):
         # print('search.')
         self.root = NodePick(self.renderer.numObjects, table)
-        if table is not None:
-            self.root = NodePick(self.renderer.numObjects, table)
         if self.limitType == 'time':
             timeLimit = time.time() + self.timeLimit / 1000
             while time.time() < timeLimit:
@@ -347,7 +345,6 @@ class MCTS(object):
                     probMap /= np.sum(probMap)
                     node.setActions(actionCandidates, probMap)
                 elif node.type=='place':
-                    nb = self.renderer.numObjects
                     th, tw = self.renderer.tableSize
                     allPossibleActions = np.array(np.meshgrid(
                                     np.arange(1, th-1), np.arange(1, tw-1), np.arange(1,3)
