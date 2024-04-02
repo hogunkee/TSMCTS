@@ -822,7 +822,7 @@ if __name__=='__main__':
 
     # IQL policy
     if args.algorithm=='alphago':
-        valuenet = loadIQLValueNetwork(args.iql_path, args, args.sigmoid)
+        valuenet = loadIQLValueNetwork(args.iql_path, args)
         valuenet = valuenet.to("cuda:0")
         searcher.setValueNet(valuenet)
 
