@@ -230,7 +230,7 @@ class MCTS(object):
                     "action": action, 
                     "expectedPickReward": (bestPlaceChild.Qmean, bestPlaceChild.Qnorm), 
                     "expectedPlaceReward": (bestPickChild.Qmean, bestPickChild.Qnorm), 
-                    "terminal": bestChild.terminal}
+                    "terminal": bestPickChild.terminal}
         else:
             return action
 
@@ -253,33 +253,37 @@ class MCTS(object):
         return nodePick
 
     def sampleFromProb(self, prob, exceptActions=[]):
-        #TODO
-        # shape: r x n x h x w
         if len(prob.shape)==1:
-            pass
+            for action in exceptActions:
+                prob[action-1] = 0.
+        elif len(prob.shape)==2:
+            for action in exceptActions:
+                py, px, r = action
+                prob[py, px] = 0.
+        # shape: r x n x h x w
         elif len(prob.shape)==3:
             for action in exceptActions:
-                o, py, px, r = action
-                prob[o-1, py, px] = 0.
-        elif len(prob.shape)==4:
-            for action in exceptActions:
-                o, py, px, r = action
-                prob[r-1, o-1, py, px] = 0.
+                py, px, r = action
+                prob[r-1, py, px] = 0.
 
         prob /= np.sum(prob)
-        if len(prob.shape)==3:
-            nbs, ys, xs = np.where(prob>0.)
-            idx = np.random.choice(len(nbs), p=prob[nbs, ys, xs])
-            nb, y, x = nbs[idx], ys[idx], xs[idx]
+        if len(prob.shape)==1:
+            idx = np.random.choice(len(prob), p=prob)
+            action = idx + 1
+            p = prob[idx]
+        elif len(prob.shape)==2:
+            ys, xs = np.where(prob>0.)
+            idx = np.random.choice(len(ys), p=prob[ys, xs])
+            y, x = ys[idx], xs[idx]
             rot = np.random.choice([1,2])
-            action = (nb+1, y, x, rot)
-            p = prob[nb, y, x]
-        else:
-            rs, nbs, ys, xs = np.where(prob>0.)
-            idx = np.random.choice(len(rs), p=prob[rs, nbs, ys, xs])
-            rot, nb, y, x = rs[idx], nbs[idx], ys[idx], xs[idx]
-            action = (nb+1, y, x, rot+1)
-            p = prob[rot, nb, y, x]
+            action = (y, x, rot)
+            p = prob[y, x] / 2
+        elif len(prob.shape)==3:
+            rs, ys, xs = np.where(prob>0.)
+            idx = np.random.choice(len(rs), p=prob[rs, ys, xs])
+            rot, y, x = rs[idx], ys[idx], xs[idx]
+            action = (y, x, rot+1)
+            p = prob[rot, y, x]
         return action, p
     
     def expand(self, nodePick):
@@ -301,7 +305,7 @@ class MCTS(object):
         exceptPlace = (int(ey[0]), int(ex[0])) if len(ey)>0 else None
         newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), selected=action, exceptPlace=exceptPlace, parent=node, actionProb=p)
 
-        node.children[tuple(action)] = newNode
+        node.children[action] = newNode
         return newNode
 
     def expandPlace(self, node):
@@ -445,16 +449,16 @@ class MCTS(object):
         return np.random.choice(bestNodes)
 
     def removeBoundaryActions(self, probMap):
-        if len(probMap.shape)==3:
+        if len(probMap.shape)==2:
+            probMap[0, :] = 0
+            probMap[-1, :] = 0
+            probMap[:, 0] = 0
+            probMap[:, -1] = 0
+        elif len(probMap.shape)==3:
             probMap[:, 0, :] = 0
             probMap[:, -1, :] = 0
             probMap[:, :, 0] = 0
             probMap[:, :, -1] = 0
-        elif len(probMap.shape)==4:
-            probMap[:, :, 0, :] = 0
-            probMap[:, :, -1, :] = 0
-            probMap[:, :, :, 0] = 0
-            probMap[:, :, :, -1] = 0
         return probMap
     
     def getPossibleActions(self, node, policy='random'):
@@ -463,7 +467,6 @@ class MCTS(object):
         # print('getPossibleActions.')
         if node.numActionCandidates==0:
             if node.type=='pick':
-                nb = self.renderer.numObjects
                 probMap = np.ones(self.renderer.numObjects)
                 if node.exceptPick is not None:
                     probMap[node.exceptPick-1] = 0
@@ -472,13 +475,13 @@ class MCTS(object):
             elif node.type=='place':
                 if policy=='random':
                     th, tw = self.renderer.tableSize
-                    probMap = np.ones([th, tw, 2])
+                    probMap = np.ones([2, th, tw])
                     
-                    # shape: n x h x w
+                    # shape: r x h x w
                     pys, pxs = np.where(node.table[0]!=0)
                     for py, px in zip(pys, pxs):
                         # avoid placing on the occupied position
-                        probMap[py, px] = 0
+                        probMap[:, py, px] = 0
                     probMap = self.removeBoundaryActions(probMap)
                     probMap /= np.sum(probMap)
             
@@ -538,13 +541,14 @@ class MCTS(object):
                             newProbMap[i] = ap_blur
                         probMap = newProbMap
                     
-                    # shape: n x h x w
+                    # shape: 1 x h x w
+                    probMap = probMap[0]
                     probMap[probMap < self.thresholdProb] = 0.0
                     pys, pxs = np.where(node.table[0]!=0)
                     for py, px in zip(pys, pxs):
-                        probMap[:, py, px] = 0
+                        probMap[py, px] = 0
                     probMap = self.removeBoundaryActions(probMap)
-                    probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+                    probMap /= np.sum(probMap, axis=(0,1), keepdims=True)
             node.setActions(probMap)   
         else:
             probMap = node.actionProb
@@ -623,7 +627,9 @@ class MCTS(object):
         tables = [np.copy(node.table)]
         # while not (self.isTerminal(node)[0] or node.depth >= self.maxDepth):
         c = 0
-        while not (self.isTerminal(node)[0] or c>3):
+        while c<=3: #not (c>3):
+            if node.type=='pick' and self.isTerminal(node)[0]:
+                break
             c+= 1
             if node.numActionCandidates==0:
                 prob = self.getPossibleActions(node, policy)
@@ -638,28 +644,27 @@ class MCTS(object):
 
             else:
                 if policy=='random':
-                    os, pys, pxs = np.where(prob>0)
-                    idx = np.random.choice(len(os))
-                    o, py, px = os[idx], pys[idx], pxs[idx]
-                    rot = np.random.choice([1,2]) # random rotation
-                    action = (o+1, py, px, rot)
+                    rots, pys, pxs = np.where(prob>0)
+                    idx = np.random.choice(len(rots))
+                    rot, py, px = rots[idx], pys[idx], pxs[idx]
+                    action = (py, px, rot+1)
                 elif policy.startswith('policy'):
                     if 'uniform' in policy:
-                        os, pys, pxs = np.where(prob>0)
+                        pys, pxs = np.where(prob>0)
                     else:
-                        os, pys, pxs = np.where(prob==np.max(prob))
-                    idx = np.random.choice(len(os))
-                    o, py, px = os[idx], pys[idx], pxs[idx]
+                        pys, pxs = np.where(prob==np.max(prob))
+                    idx = np.random.choice(len(pys))
+                    py, px = pys[idx], pxs[idx]
                     rot = np.random.choice([1,2]) # random rotation
-                    action = (o+1, py, px, rot)
+                    action = (py, px, rot)
                 elif policy.startswith('iql'):
                     if 'uniform' in policy:
-                        rots, nbs, pys, pxs = np.where(prob>0)
+                        rots, pys, pxs = np.where(prob>0)
                     else:
-                        rots, nbs, pys, pxs = np.where(prob==np.max(prob))
+                        rots, pys, pxs = np.where(prob==np.max(prob))
                     idx = np.random.choice(len(rots))
-                    rot, nb, py, px = rots[idx], nbs[idx], pys[idx], pxs[idx]
-                    action = (nb+1, py, px, rot+1)
+                    rot, py, px = rots[idx], pys[idx], pxs[idx]
+                    action = (py, px, rot+1)
                 
                 newNode = NodePick(self.renderer.numObjects, node.takeAction(action), exceptPick=node.selected, parent=node)
 
@@ -949,7 +954,7 @@ if __name__=='__main__':
             pick = action[0]
             place = action[1:]
             bestPlaceChild = (node for action, node in searcher.root.children.items() if action==pick).__next__()
-            bestPickChild = (node for action, node in bestPlaceChild.children.itmes() if action==tuple(place)).__next__()
+            bestPickChild = (node for action, node in bestPlaceChild.children.items() if action==tuple(place)).__next__()
             print_fn("Children of the root node:")
             for c in sorted(list(searcher.root.children.keys())):
                 print_fn(str(searcher.root.children[c]))
