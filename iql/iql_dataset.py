@@ -153,6 +153,7 @@ class TabletopOfflineDataset(Dataset):
                 'terminal': terminal,
                 'score': self.data_scores[index],
                 'next_score': self.data_next_scores[index],
+                'moved_object': moved_object,
                 }
         return data
 
