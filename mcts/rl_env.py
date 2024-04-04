@@ -1,6 +1,8 @@
 import os
 import sys
 import copy
+import random
+import json
 import numpy as np
 import pybullet as p
 from argparse import ArgumentParser
@@ -30,7 +32,8 @@ class Environment(object):
         self.batchSize = args.batch_size
         self.thresholdSuccess = args.threshold_success
         self.maxLength = args.max_length
-
+        
+        self.use_template = args.use_template
         self.sim = args.sim
         self.datasetDir = args.dataset_dir
         self.real = args.real
@@ -66,7 +69,26 @@ class Environment(object):
                 else: break
         else:
             self.tableEnv.reset()
-            selected_objects = [self.objects[i] for i in np.random.choice(len(self.objects), self.num_objects, replace=False)]
+            if self.use_template:
+                if 'unseen' in [args.scene_split, args.object_split]:
+                    dataset = f'test-{args.object_split}_obj-{args.scene_split}_template'
+                else: 
+                    dataset = 'train'
+                template_folder = os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/templates')
+                template_files = os.listdir(template_folder)
+                template_files = [f for f in template_files if f.lower().endswith('.json')]
+                
+                template_file = random.choice(template_files)
+                # scene = template_file.split('_')[0]
+                # template_id = template_file.split('_')[-1].split('.')[0]
+                with open(os.path.join(template_folder, template_file), 'r') as f:
+                    templates = json.load(f)
+                augmented_template = env.get_augmented_templates(templates, 2)[-1]
+                selected_objects = [v for k,v in augmented_template['objects'].items()]
+                # env.load_template(augmented_template)
+            else:
+                selected_objects = [self.objects[i] for i in np.random.choice(len(self.objects), self.num_objects, replace=False)]
+            
             self.tableEnv.spawn_objects(selected_objects)
             while True:
                 self.tableEnv.arrange_objects(random=True)
@@ -89,15 +111,18 @@ class Environment(object):
         # return currentRgb/255., table
 
     def getObservation(self, table):
+        rgb = self.renderer.getRGB(table)/255.
         rgbWoTargets = []
         objectPatches = []
+        
+        for o in range(self.renderer.numObjects):
+            rgbWoTarget = self.renderer.getRGB(table, remove=o)/255.
+            rgbWoTargets.append(rgbWoTarget)
         for r in range(1,3):
             for o in range(self.renderer.numObjects):
-                rgbWoTarget = self.renderer.getRGB(table, remove=o)
-                objPatch = self.renderer.objectPatches[r][o]
-                rgbWoTargets.append(rgbWoTarget)
+                objPatch = self.renderer.objectPatches[r][o]/255.
                 objectPatches.append(objPatch)
-        return rgbWoTargets, objectPatches
+        return rgb, rgbWoTargets, objectPatches
 
     def step(self, action):
         self.countStep += 1
@@ -105,10 +130,18 @@ class Environment(object):
         if self.real:
             self.previousTable = copy.deepcopy(self.currentTable)
             target_object, target_position, rot_angle = self.renderer.convert_action(action)
-            obs = self.tableEnv.step(target_object, target_position, rot_angle)
-            newRgb = obs['top']['rgb']
-            newSeg = obs['top']['segmentation']
+            tableobs = self.tableEnv.step(target_object, target_position, rot_angle)
+            newRgb = tableobs['top']['rgb']
+            newSeg = tableobs['top']['segmentation']
             newTable = self.renderer.setup(newRgb, newSeg)
+            if newTable is None:
+                reward = -1.0
+                success = False
+                terminal = True
+                empty_rgb = np.zeros([self.num_objects, 360, 480, 3])
+                empty_patch = np.zeros([2*self.num_objects, 128, 128, 3])
+                obs = [newRgb, empty_rgb, empty_patch]
+                return obs, reward, success, terminal
         else:
             self.previousTable = copy.deepcopy(self.currentTable)
             obj, py, px, rot = action
@@ -197,12 +230,15 @@ class Environment(object):
         self.preProcess = preprocess
 
     def setObjects(self):
-        objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
+        objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
+                            'glue', 'knife', 'lotion', 'marker', 'pitcher', 'plate', 'remote', 'scissors', 'shampoo', \
+                            'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
+        # objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
         objects = [(o, 'medium') for o in objects]
         return objects
 
     def setupTableEnvironment(self):
-        selected_objects = [self.objects[i] for i in np.random.choice(len(self.objects), self.num_objects, replace=False)]
+        #selected_objects = [self.objects[i] for i in np.random.choice(len(self.objects), self.num_objects, replace=False)]
         camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
         camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
         
@@ -219,8 +255,8 @@ class Environment(object):
         p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
 
         tableEnv.reset()
-        tableEnv.spawn_objects(selected_objects)
-        tableEnv.arrange_objects(random=True)
+        # tableEnv.spawn_objects(selected_objects)
+        # tableEnv.arrange_objects(random=True)
         return tableEnv
 
 
@@ -257,11 +293,12 @@ if __name__=='__main__':
             print('action:', action)
 
             obs, reward, success, terminal = env.step(action)
-            rgbWoTargets, objPatches = obs
+            rgb, rgbWoTargets, objPatches = obs
             
             # print('rgb:', obs)
-            plt.imshow(obs[0][0]/255.)
+            plt.imshow(obs[0]/255.)
             plt.imshow(obs[1][0]/255.)
+            plt.imshow(obs[2][0]/255.)
             plt.show()
             if terminal:
                 print('terminal:', terminal)

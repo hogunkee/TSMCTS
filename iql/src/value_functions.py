@@ -4,6 +4,31 @@ from .util import mlp, resnet
 from torchvision.models import resnet18
 from src.models.transport_small import TransportSmall
 
+class ResNetP(nn.Module):
+    def __init__(self, hidden_dim=64):
+        super().__init__()
+        resnet = resnet18(pretrained=False)
+        self.cnn_state = nn.Sequential(
+            nn.Conv2d(6, 64, kernel_size=7, stride=2, padding=3),
+            *list(resnet.children())[1:-1]
+            )
+        self.fc = nn.Sequential(
+                                nn.Linear(512, hidden_dim),
+                                nn.ReLU(),
+                                nn.Linear(hidden_dim, 1),
+                                nn.Tanh(),
+                        )
+        
+    def forward(self, state):
+        state = state.permute(0, 3, 1, 2)
+        h = self.cnn_state(state) # B x 6 x H x W
+        h = h.view(-1, 512)
+        q = self.fc(h) # B x 1
+
+        q = q.view(-1)
+        q = torch.softmax(q, dim=-1)
+        return q
+
 class TransportQ(nn.Module):
     def __init__(self, crop_size=64):
         super().__init__()

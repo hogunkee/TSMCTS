@@ -1,20 +1,21 @@
 import os
 import copy
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.optim import Adam
-from utils import soft_update, hard_update
+from sac_utils import soft_update, hard_update
 from model import GaussianPolicy, QNetwork, DeterministicPolicy
 
 import sys
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
-from src.policy import DiscreteResNetPolicy
+from src.policy import DiscreteResNetPolicy, PickPolicy
 from src.value_functions import ResNetTwinQ
 
 
 class SAC(object):
-    def __init__(self, num_inputs, action_space, args):
+    def __init__(self, args):
 
         self.gamma = args.gamma
         self.tau = args.tau
@@ -25,59 +26,140 @@ class SAC(object):
 
         self.device = torch.device("cuda") # if args.cuda else "cpu")
 
-        hard_update(self.critic_target, self.critic)
-
         self.critic = ResNetTwinQ(crop_size=args.crop_size).to(self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)#, weight_decay=1e-5)
         self.critic_target = ResNetTwinQ(crop_size=args.crop_size).to(self.device)
         hard_update(self.critic_target, self.critic)
         
-        self.policy = DiscreteResNetPolicy(crop_size=args.crop_size).to(self.device)
-        self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)#, weight_decay=1e-5)
+        # self.policy_pick = PickPolicy(crop_size=args.crop_size).to(self.device)
+        self.policy_place = DiscreteResNetPolicy(crop_size=args.crop_size).to(self.device)
+        # self.policy_pick_optim = Adam(self.policy_pick.parameters(), lr=args.lr)#, weight_decay=1e-5)
+        self.policy_place_optim = Adam(self.policy_place.parameters(), lr=args.lr)#, weight_decay=1e-5)
 
-    def select_action(self, state, evaluate=False):
-        #TODO
-        state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
-        if evaluate is False:
-            action, _, _ = self.policy.sample(state)
-        else:
-            _, _, action = self.policy.sample(state)
-        return action.detach().cpu().numpy()[0]
+    def load_policy(self, path):
+        state_dict = torch.load(path)
+        state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
+        self.policy_place.load_state_dict(state_dict)
 
+    def load_qnet(self, path):
+        state_dict = torch.load(path)
+        state_dict = {k.replace('qf.', ''): v for k, v in state_dict.items() if k.startswith('qf.')}
+        self.critic.load_state_dict(state_dict)
+        hard_update(self.critic_target, self.critic)
+        
+    def policy_sample(self, obs_batch):
+        actions = []
+        log_pi = []
+
+        pick = []
+        rotation = []
+        state_q = []
+        patch = []
+        for obs in obs_batch:
+            rgb, rgbWoTargets, objectPatches = obs
+            NB = len(rgbWoTargets)
+            rgb = torch.FloatTensor(rgb).to(self.device)
+            rgbWoTargets = torch.FloatTensor(rgbWoTargets).to(self.device)      # 2N x H x W x C
+            objectPatches = torch.FloatTensor(objectPatches).to(self.device)    # 2N x H' x W' x C
+            
+            action_pick = np.random.choice(NB)  # random pick
+            rot = np.random.choice(2)   # random rotation
+            # obs = [rgb, rgbWoTargets, None]
+            # action_pick, pick_probs, log_pick_probs, log_p_pick = self.policy_pick(obs)
+
+            rgbWoTarget = rgbWoTargets[action_pick].clone()
+            objectPatch = objectPatches[action_pick + rot*NB].clone()
+
+            pick.append(action_pick+1)
+            rotation.append(rot+1)
+            state_q.append(rgbWoTarget.unsqueeze(0))
+            patch.append(objectPatch.unsqueeze(0))
+        
+        state_q = torch.cat(state_q, dim=0)
+        patch = torch.cat(patch, dim=0)
+        action_place, place_probs, log_place_probs, log_p_place = self.policy_place([None, state_q, patch])
+
+        pick = np.array(pick)[:, None]
+        rotation = np.array(rotation)[:, None]
+        place = action_place.detach().cpu().numpy()
+        actions = np.concatenate([pick, place, rotation], axis=1)
+            
+        return actions, log_p_place
+    
+    def select_action(self, obs):
+        actions, _ = self.policy_sample([obs])
+        return actions[0]
+    
     def update_parameters(self, memory, batch_size, updates):
         # Sample a batch from memory
-        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
+        obs_batch, action_batch, reward_batch, next_obs_batch, mask_batch = memory.sample(batch_size=batch_size)
+        # obs_batch
+        # B x [rgb, rgbWoTargets, objectPatches]
 
-        state_batch = torch.FloatTensor(state_batch).to(self.device)
-        next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
-        action_batch = torch.FloatTensor(action_batch).to(self.device)
-        reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
-        mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
+        objects = action_batch[:, 0] - 1
+        rotations = action_batch[:, 3] - 1
+
+        B = obs_batch.shape[0]
+        NB = len(obs_batch[0, 1])
+        H, W = obs_batch[0, 0].shape[:2]
+        rgbWoTargets = np.concatenate(obs_batch[:, 1]).reshape(B, NB, H, W, 3)
+        state_q = rgbWoTargets[np.arange(B), objects]
+
+        CH, CW = obs_batch[0, 2][0].shape[:2]
+        objectPatches = np.concatenate(obs_batch[:, 2]).reshape(B, 2, NB, CH, CW, 3)
+        patch = objectPatches[np.arange(B), rotations, objects]
+
+        state_q = torch.FloatTensor(state_q).to(self.device)
+        patch = torch.FloatTensor(patch).to(self.device)
+
+        reward_batch = torch.FloatTensor(reward_batch).to(self.device) #.unsqueeze(1)
+        mask_batch = torch.FloatTensor(mask_batch).to(self.device) #.unsqueeze(1)
 
         with torch.no_grad():
-            next_state_action, next_state_log_pi, _ = self.policy.sample(next_state_batch)
-            qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_state_action)
+            next_action, next_state_log_pi = self.policy_sample(next_obs_batch)
+            
+            next_objects = next_action[:, 0] - 1
+            next_rotations = next_action[:, 3] - 1
+
+            next_rgbWoTargets = np.concatenate(next_obs_batch[:, 1]).reshape(B, NB, H, W, 3)
+            next_state_q = next_rgbWoTargets[np.arange(B), next_objects]
+
+            next_objectPatches = np.concatenate(next_obs_batch[:, 2]).reshape(B, 2, NB, CH, CW, 3)
+            next_patch = next_objectPatches[np.arange(B), next_rotations, next_objects]
+
+            next_state_q = torch.FloatTensor(next_state_q).to(self.device)
+            next_patch = torch.FloatTensor(next_patch).to(self.device)
+
+            qf1_next_values, qf2_next_values = self.critic_target.both([None, next_state_q, next_patch])
+            qf1_next_target = qf1_next_values[torch.arange(B), next_action[:, 1], next_action[:, 2]]
+            qf2_next_target = qf2_next_values[torch.arange(B), next_action[:, 1], next_action[:, 2]]
+
+
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_next_target)
-        qf1, qf2 = self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step
+            
+        qf1_values, qf2_values = self.critic.both([None, state_q, patch])
+        qf1 = qf1_values[torch.arange(B), action_batch[:, 1], action_batch[:, 2]]
+        qf2 = qf2_values[torch.arange(B), action_batch[:, 1], action_batch[:, 2]]
         qf1_loss = F.mse_loss(qf1, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
         qf2_loss = F.mse_loss(qf2, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
         qf_loss = qf1_loss + qf2_loss
-
+        
         self.critic_optim.zero_grad()
         qf_loss.backward()
         self.critic_optim.step()
 
-        pi, log_pi, _ = self.policy.sample(state_batch)
-
-        qf1_pi, qf2_pi = self.critic(state_batch, pi)
+        action_pi, log_pi = self.policy_sample(obs_batch)
+        with torch.no_grad():
+            qf1_pi_values, qf2_pi_values = self.critic.both([None, state_q, patch])
+        qf1_pi = qf1_pi_values[torch.arange(B), action_pi[:, 1], action_pi[:, 2]]
+        qf2_pi = qf2_pi_values[torch.arange(B), action_pi[:, 1], action_pi[:, 2]]
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
-
         policy_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
 
-        self.policy_optim.zero_grad()
+        self.policy_place_optim.zero_grad()
         policy_loss.backward()
-        self.policy_optim.step()
+        self.policy_place_optim.step()
 
         if self.automatic_entropy_tuning:
             alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
