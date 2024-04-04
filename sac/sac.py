@@ -13,6 +13,7 @@ sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
 from src.policy import DiscreteResNetPolicy, PickPolicy
 from src.value_functions import ResNetTwinQ
 
+import time
 
 class SAC(object):
     def __init__(self, args):
@@ -48,6 +49,7 @@ class SAC(object):
         hard_update(self.critic_target, self.critic)
         
     def policy_sample(self, obs_batch):
+        # st = time.time()
         actions = []
         log_pi = []
 
@@ -59,31 +61,31 @@ class SAC(object):
             rgb, rgbWoTargets, objectPatches = obs
             NB = len(rgbWoTargets)
             rgb = torch.FloatTensor(rgb).to(self.device)
-            rgbWoTargets = torch.FloatTensor(rgbWoTargets).to(self.device)      # 2N x H x W x C
-            objectPatches = torch.FloatTensor(objectPatches).to(self.device)    # 2N x H' x W' x C
             
             action_pick = np.random.choice(NB)  # random pick
             rot = np.random.choice(2)   # random rotation
             # obs = [rgb, rgbWoTargets, None]
             # action_pick, pick_probs, log_pick_probs, log_p_pick = self.policy_pick(obs)
 
-            rgbWoTarget = rgbWoTargets[action_pick].clone()
-            objectPatch = objectPatches[action_pick + rot*NB].clone()
+            rgbWoTarget = rgbWoTargets[action_pick].copy()
+            objectPatch = objectPatches[action_pick + rot*NB].copy()
 
             pick.append(action_pick+1)
             rotation.append(rot+1)
-            state_q.append(rgbWoTarget.unsqueeze(0))
-            patch.append(objectPatch.unsqueeze(0))
+            state_q.append(rgbWoTarget[None, :])
+            patch.append(objectPatch[None, :])
         
-        state_q = torch.cat(state_q, dim=0)
-        patch = torch.cat(patch, dim=0)
+        state_q = torch.FloatTensor(np.concatenate(state_q, axis=0)).to(self.device)
+        patch = torch.FloatTensor(np.concatenate(patch, axis=0)).to(self.device)
         action_place, place_probs, log_place_probs, log_p_place = self.policy_place([None, state_q, patch])
 
         pick = np.array(pick)[:, None]
         rotation = np.array(rotation)[:, None]
         place = action_place.detach().cpu().numpy()
         actions = np.concatenate([pick, place, rotation], axis=1)
-            
+        # et = time.time()
+        # print(et-st, 'secs.')
+        # print()
         return actions, log_p_place
     
     def select_action(self, obs):
@@ -133,7 +135,6 @@ class SAC(object):
             qf1_next_values, qf2_next_values = self.critic_target.both([None, next_state_q, next_patch])
             qf1_next_target = qf1_next_values[torch.arange(B), next_action[:, 1], next_action[:, 2]]
             qf2_next_target = qf2_next_values[torch.arange(B), next_action[:, 1], next_action[:, 2]]
-
 
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_next_target)
