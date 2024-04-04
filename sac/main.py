@@ -160,7 +160,7 @@ for i_episode in itertools.count(1):
     
     if not args.wandb_off:
         logs = {'reward/train': episode_reward}
-        wandb.log(logs, i_episode)
+        wandb.log(logs)#, i_episode)
     writer.add_scalar('reward/train', episode_reward, i_episode)
     print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(i_episode, total_numsteps, episode_steps, round(episode_reward, 2)))
 
@@ -183,7 +183,7 @@ for i_episode in itertools.count(1):
 
         if not args.wandb_off:
             logs = {'avg_reward/test': avg_reward}
-            wandb.log(logs, i_episode)
+            wandb.log(logs)#, i_episode)
         writer.add_scalar('avg_reward/test', avg_reward, i_episode)
 
         print("----------------------------------------")
