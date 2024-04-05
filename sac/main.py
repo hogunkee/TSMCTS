@@ -151,6 +151,7 @@ for i_episode in itertools.count(1):
         # (https://github.com/openai/spinningup/blob/master/spinup/algos/sac/sac.py)
         mask = 1 if episode_steps == env.maxLength else float(not done)
 
+        assert len(obs[1])==args.num_objects
         memory.push(obs, action, reward, next_obs, mask) # Append transition to memory
 
         obs = next_obs

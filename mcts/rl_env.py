@@ -84,7 +84,11 @@ class Environment(object):
                 with open(os.path.join(template_folder, template_file), 'r') as f:
                     templates = json.load(f)
                 augmented_template = env.get_augmented_templates(templates, 2)[-1]
-                selected_objects = [v for k,v in augmented_template['objects'].items()]
+                objects = [v for k,v in augmented_template['objects'].items()]
+                if len(objects)<self.num_objects:
+                    selected_objects = [objects[i] for i in np.random.choice(len(objects), self.num_objects, replace=True)]
+                else:
+                    selected_objects = [objects[i] for i in np.random.choice(len(objects), self.num_objects, replace=False)]
                 # env.load_template(augmented_template)
             else:
                 selected_objects = [self.objects[i] for i in np.random.choice(len(self.objects), self.num_objects, replace=False)]
@@ -134,7 +138,7 @@ class Environment(object):
             newRgb = tableobs['top']['rgb']
             newSeg = tableobs['top']['segmentation']
             newTable = self.renderer.setup(newRgb, newSeg)
-            if newTable is None:
+            if newTable is None or self.renderer.numObjects!=self.num_objects:
                 reward = -1.0
                 success = False
                 terminal = True
