@@ -54,7 +54,7 @@ parser.add_argument('--automatic_entropy_tuning', type=bool, default=False, meta
                         help='Automaically adjust α (default: False)')
 parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='random seed (default: 123456)')
-parser.add_argument('--num_steps', type=int, default=100001, metavar='N', # 1000001
+parser.add_argument('--num_steps', type=int, default=1000001, metavar='N', # 1000001
                         help='maximum number of steps (default: 1000000)')
 parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
@@ -64,7 +64,7 @@ parser.add_argument('--start_steps', type=int, default=2000, metavar='N', # 1000
                         help='Steps sampling random actions (default: 10000)')
 parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
                         help='Value target update per no. of updates per step (default: 1)')
-parser.add_argument('--replay_size', type=int, default=100000, metavar='N', # 10000000
+parser.add_argument('--replay_size', type=int, default=10000, metavar='N', # 10000000
                         help='size of replay buffer (default: 10000000)')
 #parser.add_argument('--cuda', action="store_true", help='run on CUDA (default: False)')
 args = parser.parse_args()
@@ -110,11 +110,14 @@ for i_episode in itertools.count(1):
 
     while not done:
         if args.start_steps > total_numsteps:
-            n = np.random.choice(np.arange(1, args.num_objects+1))
-            y = np.random.choice(args.H)
-            x = np.random.choice(args.W)
-            rot = np.random.choice([1, 2])
-            action = (n, y, x, rot)
+            if np.random.random()<0.5:
+                n = np.random.choice(np.arange(1, args.num_objects+1))
+                y = np.random.choice(args.H)
+                x = np.random.choice(args.W)
+                rot = np.random.choice([1, 2])
+                action = (n, y, x, rot)
+            else:
+                action = agent.select_action(obs)
         else:
             # n = np.random.choice(np.arange(1, args.num_objects+1))
             # rot = np.random.choice([1, 2])
