@@ -943,16 +943,6 @@ if __name__=='__main__':
             print_fn(summary)
             print_fn("Action coverage: %f"%np.mean(searcher.coverage))
             
-            # action probability
-            actionProb = searcher.root.actionProb
-            if args.logging and actionProb is not None:
-                actionProb[actionProb>args.threshold_prob] += 0.5
-                if len(actionProb.shape)==4:
-                    plt.imshow(np.mean(actionProb, axis=(0, 1)))
-                else:
-                    plt.imshow(np.mean(actionProb, axis=0))
-                plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
-
             # expected result in mcts #
             pick = action[0]
             place = action[1:]
@@ -965,6 +955,17 @@ if __name__=='__main__':
             for i, c in enumerate(sorted(list(bestPlaceChild.children.keys()))):
                 print_fn(f"{i} {c} {str(bestPlaceChild.children[c])}")
             nextTable = bestPickChild.table
+
+            # action probability
+            actionProb = bestPlaceChild.actionProb
+            if args.logging and actionProb is not None:
+                actionProb[actionProb>args.threshold_prob] += 0.5
+                if len(actionProb.shape)==4:
+                    plt.imshow(np.mean(actionProb, axis=(0, 1)))
+                else:
+                    plt.imshow(np.mean(actionProb, axis=0))
+                plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
+
             print_fn("Best Action: %s"%str(action))
             print_fn("Expected Pick Q-mean: %f / Q-norm: %f"%(resultDict['expectedPickReward'][0], resultDict['expectedPickReward'][1]))
             print_fn("Expected Place Q-mean: %f / Q-norm: %f"%(resultDict['expectedPlaceReward'][0], resultDict['expectedPlaceReward'][1]))
