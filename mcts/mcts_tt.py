@@ -139,9 +139,12 @@ class MCTS(object):
         self.preProcess = None
         self.searchCount = 0
         self.blurring = args.blurring
+
+        self.transpositionTable = {}
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
+        self.transpositionTable = {}
         self.searchCount = 0
         return table
 
@@ -500,8 +503,9 @@ class MCTS(object):
         return terminal, reward, value
 
     def rollout(self, node):
-        if node.G is not None:
-            return node.G
+        tableHash = hash(str(node.table))
+        if tableHash in self.transpositionTable:
+            nodeReward = self.transpositionTable[tableHash]
         else:
             if self.rolloutPolicy=='nostep':
                 reward, value = self.noStepPolicy(node)
@@ -509,11 +513,12 @@ class MCTS(object):
                 reward, value = self.oneStepPolicy(node)
             else:
                 reward, value = self.greedyPolicy(node, self.rolloutPolicy)
-            
+        
             if self.algorithm=='alphago':
                 nodeReward = self.puctLambda * reward + (1-self.puctLambda) * value
             else:
                 nodeReward = reward
+            self.transpositionTable[tableHash] = nodeReward
             self.searchCount += 1
         return nodeReward
 

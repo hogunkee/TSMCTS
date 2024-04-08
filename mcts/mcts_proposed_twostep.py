@@ -419,7 +419,6 @@ class MCTS(object):
         assert node.type=='pick'
         G = self.rollout(node)
         self.backpropagate(node, G)
-        self.searchCount += 1
 
     def getBestChild(self, node, explorationValue):
         # print('getBestChild.')
@@ -590,18 +589,19 @@ class MCTS(object):
     def rollout(self, node):
         if node.G is not None:
             return node.G
-        
-        if self.rolloutPolicy=='nostep':
-            reward, value = self.noStepPolicy(node)
-        elif self.rolloutPolicy=='onestep':
-            reward, value = self.oneStepPolicy(node)
         else:
-            reward, value = self.greedyPolicy(node, self.rolloutPolicy)
-        
-        if self.algorithm=='alphago':
-            nodeReward = self.puctLambda * reward + (1-self.puctLambda) * value
-        else:
-            nodeReward = reward
+            if self.rolloutPolicy=='nostep':
+                reward, value = self.noStepPolicy(node)
+            elif self.rolloutPolicy=='onestep':
+                reward, value = self.oneStepPolicy(node)
+            else:
+                reward, value = self.greedyPolicy(node, self.rolloutPolicy)
+            
+            if self.algorithm=='alphago':
+                nodeReward = self.puctLambda * reward + (1-self.puctLambda) * value
+            else:
+                nodeReward = reward
+            self.searchCount += 1
         return nodeReward
 
     def noStepPolicy(self, node):
@@ -844,6 +844,7 @@ if __name__=='__main__':
 
     success = 0
     success_elpen = []
+    best_scores = []
     log_dir = 'data/%s' %args.algorithm
     if args.logging:
         bar = tqdm(range(args.num_scenes))
@@ -851,6 +852,8 @@ if __name__=='__main__':
         bar = range(args.num_scenes)
 
     for sidx in bar:
+        best_score = 0.0
+        bestRgb = None
         if args.logging: 
             bar.set_description("Episode %d/%d"%(sidx, args.num_scenes))
             if sidx>0:
@@ -996,6 +999,9 @@ if __name__=='__main__':
             terminal, reward, _ = searcher.isTerminal(None, table, checkReward=True, groundTruth=True)
             print_fn("Current Score: %f" %reward)
             print_fn("--------------------------------")
+            if reward > best_score:
+                best_score = reward
+                bestRgb = currentRgb
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
@@ -1016,8 +1022,14 @@ if __name__=='__main__':
                     plt.imshow(currentRgb)
                     plt.savefig('%s-%s/scene-%d/final.png'%(log_dir, log_name, sidx))
                 break
+        best_scores.append(best_score)
+        if args.logging and bestRgb is not None:
+            plt.imshow(bestRgb)
+            plt.savefig('%s-%s/scene-%d/best.png'%(log_dir, log_name, sidx))
+    print_fn("Average scores: %.2f"%np.mean(best_scores))
     print_fn("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
     print_fn("Episode length: %.1f"%(np.mean(success_elpen) if len(success_elpen)>0 else 0))
+    print("Average scores: %.2f"%np.mean(best_scores))
     print("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
     print("Episode length: %.1f"%(np.mean(success_elpen) if len(success_elpen)>0 else 0))
 
