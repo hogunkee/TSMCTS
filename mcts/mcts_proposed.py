@@ -881,10 +881,12 @@ if __name__=='__main__':
             actionProb = searcher.root.actionProb
             if args.logging and actionProb is not None:
                 actionProb[actionProb>args.threshold_prob] += 0.5
-                if len(actionProb.shape)==4:
-                    plt.imshow(np.mean(actionProb, axis=(0, 1)))
-                else:
+                if len(actionProb.shape)==2:
+                    plt.imshow(actionProb)
+                elif len(actionProb.shape)==3:
                     plt.imshow(np.mean(actionProb, axis=0))
+                elif len(actionProb.shape)==4:
+                    plt.imshow(np.mean(actionProb, axis=(0, 1)))
                 plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
 
             # expected result in mcts #
