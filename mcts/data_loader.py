@@ -52,11 +52,12 @@ class PybulletNpyDataset(Dataset):
         self.buff_i = buff_i
 
 class TabletopTemplateDataset(Dataset):
-    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', remove_bg=True, label_type='linspace', view='top'):
+    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', remove_bg=True, label_type='linspace', view='top', scene_index=False):
         super().__init__()
         self.data_dir = data_dir
         self.remove_bg = remove_bg
         self.label_type = label_type
+        self.scene_index = scene_index
         self.view = view
         self.data_paths, self.data_labels = self.get_data_paths()
     
@@ -71,7 +72,16 @@ class TabletopTemplateDataset(Dataset):
         #       seg_top.npy
         data_paths = []
         data_labels = []
+        scene_indices = []
         for scene in sorted(os.listdir(self.data_dir)):
+            if scene.startswith('B'):
+                scene_index = 0
+            elif scene.startswith('C'):
+                scene_index = 1
+            elif scene.startswith('D'):
+                scene_index = 2
+            elif scene.startswith('O'):
+                scene_index = 3
             scene_path = os.path.join(self.data_dir, scene)
             for template in sorted(os.listdir(scene_path)):
                 template_path = os.path.join(scene_path, template)
@@ -91,12 +101,17 @@ class TabletopTemplateDataset(Dataset):
                         data_path = os.path.join(trajectory_path, step)
                         data_paths.append(data_path)
                         data_labels.append(labels[i])
+                        scene_indices.append(scene_index)
 
+        if self.scene_index:
+            self.scene_indices = scene_indices
         return data_paths, data_labels
 
     def __getitem__(self, index):
         data_path = self.data_paths[index]
         data_label = self.data_labels[index]
+        if self.scene_index:
+            scene_index = self.scene_indices[index]
 
         if self.remove_bg:
             rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
@@ -108,7 +123,10 @@ class TabletopTemplateDataset(Dataset):
         rgb = np.transpose(rgb[:, :, :3], [2, 0, 1]) / 255.
         rgb = torch.from_numpy(rgb).type(torch.float)
         label = torch.from_numpy(np.array([data_label])).type(torch.float)
-        return rgb, label
+        if self.scene_index:
+            return rgb, label, scene_index
+        else:
+            return rgb, label
 
     def __len__(self):
         return len(self.data_paths)
