@@ -125,13 +125,13 @@ def train(args, log_name):
         accuracies = []
         for test_dataloader in [us_test_dataloader, su_test_dataloader, uu_test_dataloader]:
             matchings = []
-            for X_val, Y_val in test_dataloader:
+            for X_val, Y_val, S_val in test_dataloader:
                 X_val = preprocess(X_val).to(device)
                 Y_val = Y_val[:, 0].to(device)
                 y_pred = model(X_val)
                 B = y_pred.size(0)
-                y_pred = y_pred[torch.arange(B), S_batch]
-                
+                y_pred = y_pred[torch.arange(B), S_val]
+
                 indices = torch.logical_or(Y_val==0, Y_val==1)
                 matching = (y_pred.round()==Y_val)[indices].float().detach().cpu().numpy()
                 matchings.append(matching)
