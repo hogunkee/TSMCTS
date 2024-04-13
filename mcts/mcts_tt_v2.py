@@ -30,12 +30,11 @@ warnings.filterwarnings("ignore")
 
 countNode = {}
         
-class NodePick(object):
-    def __init__(self, numObjects, table, exceptPick=None, parent=None, actionProb=0.):
-        self.type = 'pick'
+class Node(object):
+    def __init__(self, numObjects, table, parent=None, preAction=None, actionProb=0.):
         self.table = table
-        self.exceptPick = exceptPick
         self.parent = parent
+        self.preAction = preAction
         self.prob = actionProb
 
         self.numObjcts = numObjects
@@ -43,13 +42,6 @@ class NodePick(object):
             self.depth = 0
         else:
             self.depth = self.parent.depth + 1
-
-        self.numVisits = 0
-        self.Qmean = 0.
-        self.Qnorm = 0.
-        self.G = None
-        self.Gmin = None
-        self.Gmax = None
 
         self.children = {}
         self.actionProb = None
@@ -61,64 +53,14 @@ class NodePick(object):
         else:
             countNode[str(table)] += 1
     
-    def takeAction(self, objPick):
+    def takeAction(self, move):
+        obj, py, px, rot = move
         posMap, rotMap = self.table
         newPosMap = copy.deepcopy(posMap)
         newRotMap = copy.deepcopy(rotMap)
-        newPosMap[posMap==objPick] = 0
-        newRotMap[posMap==objPick] = 0
-        newTable = [newPosMap, newRotMap]
-        return newTable
-    
-    def setActions(self, actionProb):
-        self.actionProb = actionProb
-        self.numActionCandidates = (actionProb>0).astype(float).sum().astype(int)
-
-    def isFullyExpanded(self):
-        return len(self.children)!=0 and len(self.children)==self.numActionCandidates
-
-    def __str__(self):
-        s=[]
-        s.append("Q-mean: %.3f"%(self.Qmean))
-        s.append("Q-norm: %.3f"%(self.Qnorm))
-        s.append("Visits: %d"%(self.numVisits))
-        s.append("Terminal: %s"%(self.terminal))
-        s.append("Children: %d"%(len(self.children.keys())))
-        return "%s: %s"%(self.__class__.__name__, ' / '.join(s))
-
-class NodePlace(object):
-    def __init__(self, numObjects, table, selected, exceptPlace=None, parent=None, actionProb=0.):
-        self.type = 'place'
-        self.table = table
-        self.selected = selected
-        self.exceptPlace = exceptPlace
-        self.parent = parent
-        self.prob = actionProb
-
-        self.numObjcts = numObjects
-        if parent is None:
-            self.depth = 0
-        else:
-            self.depth = self.parent.depth + 1
-
-        self.numVisits = 0
-        self.Qmean = 0.
-        self.Qnorm = 0.
-        self.G = None
-        self.Gmin = None
-        self.Gmax = None
-
-        self.children = {}
-        self.actionProb = None
-        self.numActionCandidates = 0
-        self.terminal = False
-        
-    def takeAction(self, placement):
-        py, px, rot = placement 
-        posMap, rotMap = self.table
-        newPosMap = copy.deepcopy(posMap)
-        newRotMap = copy.deepcopy(rotMap)
-        newPosMap[py, px] = self.selected 
+        newPosMap[posMap==obj] = 0
+        newPosMap[py, px] = obj
+        newRotMap[posMap==obj] = 0
         newRotMap[py, px] = rot
         newTable = [newPosMap, newRotMap]
         return newTable
@@ -130,11 +72,21 @@ class NodePlace(object):
     def isFullyExpanded(self):
         return len(self.children)!=0 and len(self.children)==self.numActionCandidates
 
+    def str(self, TT):
+        s = []
+        hashT = hash(str(self.table))
+        numVisits, Qmean, nodeG = TT[hashT]
+        s.append("Q-mean: %.3f"%(Qmean))
+        s.append("Visits: %d"%(numVisits))
+        s.append("Utility: %.3f"%(nodeG))
+        s.append("Terminal: %s"%(self.terminal))
+        s.append("Children: %d"%(len(self.children.keys())))
+        return "%s: %s"%(self.__class__.__name__, ' / '.join(s))
+    
     def __str__(self):
         s=[]
-        s.append("Q-mean: %.3f"%(self.Qmean))
-        s.append("Q-norm: %.3f"%(self.Qnorm))
-        s.append("Visits: %d"%(self.numVisits))
+        # s.append("Reward: %s"%(self.totalReward))
+        s.append("Terminal: %s"%(self.terminal))
         s.append("Children: %d"%(len(self.children.keys())))
         return "%s: %s"%(self.__class__.__name__, ' / '.join(s))
 
@@ -177,7 +129,6 @@ class MCTS(object):
         self.thresholdProb = args.threshold_prob
 
         self.rewardType = args.reward_type
-        self.normalize_reward = args.normalize_reward
         self.gtRewardNet = None
         self.rewardNet = None
         self.valueNet = None
@@ -187,9 +138,12 @@ class MCTS(object):
         self.preProcess = None
         self.searchCount = 0
         self.blurring = args.blurring
+
+        self.TT = {}
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
+        self.TT = {}
         self.searchCount = 0
         return table
 
@@ -211,7 +165,10 @@ class MCTS(object):
     def search(self, table, needDetails=False):
         # print('search.')
         self.coverage = []
-        self.root = NodePick(self.renderer.numObjects, table)
+        self.root = Node(self.renderer.numObjects, table)
+        hashRoot = hash(str(self.root.table))
+        self.TT[hashRoot] = (0, 0., 0.)
+        
         if self.limitType == 'time':
             timeLimit = time.time() + self.timeLimit / 1000
             while time.time() < timeLimit:
@@ -219,97 +176,58 @@ class MCTS(object):
         else:
             while self.searchCount < self.searchLimit:
                 self.executeRound()
-        bestPlaceChild = self.getBestChild(self.root, explorationValue=0.)
-        pickAction=(action for action, node in self.root.children.items() if node is bestPlaceChild).__next__()
-        bestPickChild = self.getBestChild(bestPlaceChild, explorationValue=0.)
-        placeAction=(action for action, node in bestPlaceChild.children.items() if node is bestPickChild).__next__()
-        action = [pickAction, *placeAction]
-        #action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
+        action, bestChild = self.getBestChild(self.root, explorationValue=0.)
+        # action=(action for action, child in self.root.children.items() if child[1] is bestChild[1]).__next__()
         if needDetails:
-            return {
-                    "action": action, 
-                    "expectedPickReward": (bestPlaceChild.Qmean, bestPlaceChild.Qnorm), 
-                    "expectedPlaceReward": (bestPickChild.Qmean, bestPickChild.Qnorm), 
-                    "terminal": bestPickChild.terminal}
+            hashT = hash(str(bestChild.table))
+            numVisits, Qmean, nodeG = self.TT[hashT]
+            return {"action": action, "expectedReward": Qmean, "terminal": bestChild.terminal}
         else:
             return action
 
-    def selectNode(self, nodePick):
+    def selectNode(self, node):
         # print('selectNode.')
-        while not nodePick.terminal: # self.isTerminal(node)[0]:
-            assert nodePick.type=='pick'
-            if len(nodePick.children)==0:
-                return self.expand(nodePick)
-            elif nodePick.isFullyExpanded():
-                nodePlace = self.getBestChild(nodePick, self.explorationConstant)
-                if len(nodePlace.children)==0:
-                    return self.expandPlace(nodePlace)
-                elif nodePlace.isFullyExpanded():
-                    nodePick = self.getBestChild(nodePlace, self.explorationConstant)
-                else:
-                    return self.expandPlace(nodePlace)
+        trajectory = []
+        # trajectory: [(node, action), (node, action), ... ]
+        while not node.terminal: # self.isTerminal(node)[0]:
+            if node.isFullyExpanded(): # or random.uniform(0, 1) < 0.5:
+                action, newNode = self.getBestChild(node, self.explorationConstant)
+                trajectory.append((node, action))
+                node = newNode
             else:
-                return self.expand(nodePick)
-        return nodePick
+                action, newNode = self.expand(node)
+                trajectory.append((node, action))
+                return newNode, trajectory
+        return node, trajectory
 
     def sampleFromProb(self, prob, exceptActions=[]):
-        if len(prob.shape)==1:
-            for action in exceptActions:
-                prob[action-1] = 0.
-        elif len(prob.shape)==2:
-            for action in exceptActions:
-                py, px, r = action
-                prob[py, px] = 0.
         # shape: r x n x h x w
-        elif len(prob.shape)==3:
-            for action in exceptActions:
-                py, px, r = action
-                prob[r-1, py, px] = 0.
-
+        for action in exceptActions:
+            o, py, px, r = action
+            if len(prob.shape)==3:
+                prob[o-1, py, px] = 0.
+            else:
+                prob[r-1, o-1, py, px] = 0.
         prob /= np.sum(prob)
-        if len(prob.shape)==1:
-            idx = np.random.choice(len(prob), p=prob)
-            action = idx + 1
-            p = prob[idx]
-        elif len(prob.shape)==2:
-            ys, xs = np.where(prob>0.)
-            idx = np.random.choice(len(ys), p=prob[ys, xs])
-            y, x = ys[idx], xs[idx]
+        if len(prob.shape)==3:
+            nbs, ys, xs = np.where(prob>0.)
+            idx = np.random.choice(len(nbs), p=prob[nbs, ys, xs])
+            nb, y, x = nbs[idx], ys[idx], xs[idx]
             rot = np.random.choice([1,2])
-            action = (y, x, rot)
-            p = prob[y, x] / 2
-        elif len(prob.shape)==3:
-            rs, ys, xs = np.where(prob>0.)
-            idx = np.random.choice(len(rs), p=prob[rs, ys, xs])
-            rot, y, x = rs[idx], ys[idx], xs[idx]
-            action = (y, x, rot+1)
-            p = prob[rot, y, x]
+            action = (nb+1, y, x, rot)
+            p = prob[nb, y, x]
+        else:
+            rs, nbs, ys, xs = np.where(prob>0.)
+            idx = np.random.choice(len(rs), p=prob[rs, nbs, ys, xs])
+            rot, nb, y, x = rs[idx], nbs[idx], ys[idx], xs[idx]
+            action = (nb+1, y, x, rot+1)
+            p = prob[rot, nb, y, x]
         return action, p
     
-    def expand(self, nodePick):
+    def expand(self, node):
         # print('expand.')
-        newNodePlace = self.expandPick(nodePick)
-        newNodePick = self.expandPlace(newNodePlace)
-        return newNodePick
-
-    def expandPick(self, node):
-        # print('expandPick.')
         assert not node.terminal
-        if node.numActionCandidates==0:
-            prob = self.getPossibleActions(node, self.treePolicy)
-        else:
-            prob = node.actionProb
-        exceptActions = [a for a in node.children.keys()]
-        action, p = self.sampleFromProb(prob, exceptActions)
-        ey, ex = np.where(node.table[0]==action)
-        exceptPlace = (int(ey[0]), int(ex[0])) if len(ey)>0 else None
-        newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), selected=action, exceptPlace=exceptPlace, parent=node, actionProb=p)
-
-        node.children[action] = newNode
-        return newNode
-
-    def expandPlace(self, node):
-        # print('expandPlace.')
+        # isTransposition = False
         if node.numActionCandidates==0:
             prob = self.getPossibleActions(node, self.treePolicy)
         else:
@@ -320,9 +238,11 @@ class MCTS(object):
         exceptActions = [a for a in node.children.keys()]
         action, p = self.sampleFromProb(prob, exceptActions)
 
-        newNode = NodePick(self.renderer.numObjects, node.takeAction(action), exceptPick=node.selected, parent=node, actionProb=p)
-        node.children[tuple(action)] = newNode
-        return newNode
+        newTable = node.takeAction(action)
+        newNode = Node(self.renderer.numObjects, newTable, node, action, p)
+
+        node.children[tuple(action)] = [1, newNode]
+        return action, newNode #, isTransposition
 
     def getRewardValue(self, tables, groundTruth=False):
         # print('getReward.')
@@ -394,167 +314,185 @@ class MCTS(object):
                 rewards = self.rewardNet([s_value, None, None]).cpu().detach().numpy()
         return rewards.reshape(-1), [0.0]
 
-    def backpropagate(self, node, G):
+    def backpropagate(self, node, G, trajectory):
         # print('backpropagate.')
-        while node is not None:
-            # calcuate average node value
-            node.Qmean = (node.Qmean * node.numVisits + G) / (node.numVisits + 1)
-            node.numVisits += 1
-            # update node's upper and lower bound
-            if node.G is None:
-                node.G = G
-                node.Gmin = G
-                node.Gmax = G
-            else:
-                if G < node.Gmin:
-                    node.Gmin = G
-                if G > node.Gmax:
-                    node.Gmax = G
-            node = node.parent
-            G *= self.gamma
+        for _node, _action in trajectory:
+            hashT = hash(str(_node.table))
+            numVisits, Qmean, nodeG = self.TT[hashT]
+            # update TT
+            Qmean = (Qmean * numVisits + G) / (numVisits + 1)
+            numVisits += 1
+            self.TT[hashT] = (numVisits, Qmean, nodeG)
+            # update edge
+            _node.children[_action][0] += 1
+
+        # update TT for the leaf node
+        hashT = hash(str(node.table))
+        if hashT in self.TT:
+            numVisits, Qmean, nodeG = self.TT[hashT]
+            Qmean = (Qmean * numVisits + G) / (numVisits + 1)
+            numVisits += 1
+            self.TT[hashT] = (numVisits, Qmean, nodeG)
+        else:
+            self.TT[hashT] = (1, G, G)
 
     def executeRound(self):
         # print('executeRound.')
-        node = self.selectNode(self.root)
-        assert node.type=='pick'
+        node, traj = self.selectNode(self.root)
         G = self.rollout(node)
-        self.backpropagate(node, G)
+        self.backpropagate(node, G, traj)
 
     def getBestChild(self, node, explorationValue):
         # print('getBestChild.')
         bestValue = float("-inf")
         bestNodes = []
+
+        totalNumVisits = 0
         for child in node.children.values():
-            if self.normalize_reward:
-                Qvalue = (self.gamma * child.Gmax - node.Gmin) / (node.Gmax - node.Gmin + 1e-6)
-                child.Qnorm = Qvalue
-            else:
-                Qvalue = child.Qmean
+            numVisits = child[0]
+            totalNumVisits += numVisits
+            
+        for action, child in node.children.items():
+            childNumVisits = child[0]
+            childNode = child[1]
+            
+            hashT = hash(str(childNode.table))
+            _, Qvalue, _ = self.TT[hashT]
+
             if self.algorithm=='alphago':
                 nodeValue = Qvalue + explorationValue * \
-                    child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
+                    child.prob * np.sqrt(totalNumVisits) / (1 + childNumVisits)
                 # nodeValue = child.totalReward / child.numVisits + explorationValue * \
                 #     child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
             else:
                 nodeValue = Qvalue + np.sqrt(explorationValue) * \
-                        np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
+                        np.sqrt(2 * np.log(totalNumVisits) / childNumVisits)
                 # nodeValue = child.totalReward / child.numVisits + explorationValue * \
                 #         np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
             if nodeValue > bestValue:
                 bestValue = nodeValue
-                bestNodes = [child]
+                bestNodes = [(action, childNode)]
             elif nodeValue == bestValue:
-                bestNodes.append(child)
-        return np.random.choice(bestNodes)
+                bestNodes.append((action, childNode))
+        return bestNodes[np.random.choice(len(bestNodes))]
 
     def removeBoundaryActions(self, probMap):
-        if len(probMap.shape)==2:
-            probMap[0, :] = 0
-            probMap[-1, :] = 0
-            probMap[:, 0] = 0
-            probMap[:, -1] = 0
-        elif len(probMap.shape)==3:
+        if len(probMap.shape)==3:
             probMap[:, 0, :] = 0
             probMap[:, -1, :] = 0
             probMap[:, :, 0] = 0
             probMap[:, :, -1] = 0
+        else:
+            probMap[:, :, 0, :] = 0
+            probMap[:, :, -1, :] = 0
+            probMap[:, :, :, 0] = 0
+            probMap[:, :, :, -1] = 0
         return probMap
     
     def getPossibleActions(self, node, policy='random'):
-        # TODO
         # random / iql / policy / iql-uniform / policy-uniform
         # print('getPossibleActions.')
         if node.numActionCandidates==0:
-            if node.type=='pick':
-                probMap = np.ones(self.renderer.numObjects)
-                if node.exceptPick is not None:
-                    probMap[node.exceptPick-1] = 0
-                probMap /= np.sum(probMap)
-
-            elif node.type=='place':
-                if policy=='random':
-                    th, tw = self.renderer.tableSize
-                    probMap = np.ones([2, th, tw])
-                    
-                    # shape: r x h x w
-                    pys, pxs = np.where(node.table[0]!=0)
-                    for py, px in zip(pys, pxs):
+            if policy=='random':
+                nb = self.renderer.numObjects
+                th, tw = self.renderer.tableSize
+                probMap = np.ones([nb, th, tw])
+                
+                # shape: n x h x w
+                pys, pxs = np.where(node.table[0]!=0)
+                for py, px in zip(pys, pxs):
+                    obj = node.table[0][py, px]
+                    for o in range(self.renderer.numObjects):
+                        if o+1==obj:
+                            continue
                         # avoid placing on the occupied position
-                        probMap[:, py, px] = 0
-                    probMap = self.removeBoundaryActions(probMap)
-                    probMap /= np.sum(probMap)
-            
-                elif policy.startswith('iql'):
-                    states = []
-                    objectPatches = []
-                    for r in range(1,3):
-                        rgbWoTarget = self.renderer.getRGB(node.table)
-                        objPatch = self.renderer.objectPatches[r][node.selected-1]
+                        probMap[o, py, px] = 0
+                probMap = self.removeBoundaryActions(probMap)
+                probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+        
+            elif policy.startswith('iql'):
+                states = []
+                objectPatches = []
+                for r in range(1,3):
+                    for o in range(self.renderer.numObjects):
+                        rgbWoTarget = self.renderer.getRGB(node.table, remove=o)
+                        objPatch = self.renderer.objectPatches[r][o]
                         states.append(rgbWoTarget)
                         objectPatches.append(objPatch)
-                    s = torch.Tensor(np.array(states)/255.).to(torch.float32).cuda()
-                    p = torch.Tensor(np.array(objectPatches)/255.).to(torch.float32).cuda()
-                    obs = [None, s, p]
-                    probMap = self.policyNet.get_prob(obs)
-                    probMap = probMap.cpu().detach().numpy()
+                s = torch.Tensor(np.array(states)/255.).to(torch.float32).cuda()
+                p = torch.Tensor(np.array(objectPatches)/255.).to(torch.float32).cuda()
+                obs = [None, s, p]
+                probMap = self.policyNet.get_prob(obs)
+                probMap = probMap.cpu().detach().numpy()
 
-                    if self.blurring>1:
-                        newProbMap = np.zeros_like(probMap)
-                        for i in range(len(probMap)):
-                            ap = probMap[i]
-                            k = int(self.blurring)
-                            kernel = np.ones((k, k))
-                            ap_blur = cv2.dilate(ap, kernel)
-                            ap_blur /= np.sum(ap_blur)
-                            newProbMap[i] = ap_blur
-                        probMap = newProbMap
-                        
-                    # shape: r x h x w
-                    probMap = probMap.reshape(2, self.renderer.tableSize[0], self.renderer.tableSize[1])
-                    probMap[probMap < self.thresholdProb] = 0.0
-                    pys, pxs = np.where(node.table[0]!=0)
-                    for py, px in zip(pys, pxs):
+                if self.blurring>1:
+                    newProbMap = np.zeros_like(probMap)
+                    for i in range(len(probMap)):
+                        ap = probMap[i]
+                        k = int(self.blurring)
+                        kernel = np.ones((k, k))
+                        ap_blur = cv2.dilate(ap, kernel)
+                        ap_blur /= np.sum(ap_blur)
+                        newProbMap[i] = ap_blur
+                    probMap = newProbMap
+                    
+                # shape: r x n x h x w
+                probMap = probMap.reshape(2, self.renderer.numObjects, self.renderer.tableSize[0], self.renderer.tableSize[1])
+                probMap[probMap < self.thresholdProb] = 0.0
+                pys, pxs = np.where(node.table[0]!=0)
+                for py, px in zip(pys, pxs):
+                    obj = node.table[0][py, px]
+                    for o in range(self.renderer.numObjects):
+                        if o+1==obj:
+                            continue
+                            # # avoid placing the same object with the same rotation
+                            # rot = node.table[1][py, px]
+                            # probMap[rot, o, py, px] = 0
                         # avoid placing on the occupied position
-                        probMap[:, py, px] = 0
-                    probMap = self.removeBoundaryActions(probMap)
-                    probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
-                    
-                elif policy.startswith('policy'):
-                    states = []
-                    objectPatches = []
-                    rgbWoTarget = self.renderer.getRGB(node.table)
+                        probMap[:, o, py, px] = 0
+                probMap = self.removeBoundaryActions(probMap)
+                probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
+                
+            elif policy.startswith('policy'):
+                states = []
+                objectPatches = []
+                for o in range(self.renderer.numObjects):
+                    rgbWoTarget = self.renderer.getRGB(node.table, remove=o)
                     states.append(rgbWoTarget)
-                    s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
-                    if self.preProcess is not None:
-                        s = self.preProcess(s)
-                    probMap  = self.policyNet(s).cpu().detach().numpy()
+                s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
+                if self.preProcess is not None:
+                    s = self.preProcess(s)
+                probMap  = self.policyNet(s).cpu().detach().numpy()
 
-                    if self.blurring>1:
-                        newProbMap = np.zeros_like(probMap)
-                        for i in range(len(probMap)):
-                            ap = probMap[i]
-                            k = int(self.blurring)
-                            kernel = np.ones((k, k))
-                            ap_blur = cv2.dilate(ap, kernel)
-                            ap_blur /= np.sum(ap_blur)
-                            newProbMap[i] = ap_blur
-                        probMap = newProbMap
-                    
-                    # shape: 1 x h x w
-                    probMap = probMap[0]
-                    probMap[probMap < self.thresholdProb] = 0.0
-                    pys, pxs = np.where(node.table[0]!=0)
-                    for py, px in zip(pys, pxs):
-                        probMap[py, px] = 0
-                    probMap = self.removeBoundaryActions(probMap)
-                    probMap /= np.sum(probMap, axis=(0,1), keepdims=True)
+                if self.blurring>1:
+                    newProbMap = np.zeros_like(probMap)
+                    for i in range(len(probMap)):
+                        ap = probMap[i]
+                        k = int(self.blurring)
+                        kernel = np.ones((k, k))
+                        ap_blur = cv2.dilate(ap, kernel)
+                        ap_blur /= np.sum(ap_blur)
+                        newProbMap[i] = ap_blur
+                    probMap = newProbMap
+                
+                # shape: n x h x w
+                probMap[probMap < self.thresholdProb] = 0.0
+                pys, pxs = np.where(node.table[0]!=0)
+                for py, px in zip(pys, pxs):
+                    obj = node.table[0][py, px]
+                    for o in range(self.renderer.numObjects):
+                        if o+1==obj:
+                            continue
+                        # avoid placing on the occupied position
+                        probMap[o, py, px] = 0
+                probMap = self.removeBoundaryActions(probMap)
+                probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
             node.setActions(probMap)   
         else:
             probMap = node.actionProb
         
-        if node.type=='place':
-            coverageRatio = (probMap>0).sum() / probMap.reshape(-1).shape[0]
-            self.coverage.append(coverageRatio)
+        coverageRatio = (probMap>0).sum() / probMap.reshape(-1).shape[0]
+        self.coverage.append(coverageRatio)
         return node.actionProb
 
     def isTerminal(self, node, table=None, checkReward=False, groundTruth=False):
@@ -565,7 +503,6 @@ class MCTS(object):
         if table is None:
             table = node.table
         # check collision and reward
-        assert node is None or node.type=='pick'
         collision = self.renderer.checkCollision(table)
         if collision:
             reward = 0.0
@@ -587,8 +524,10 @@ class MCTS(object):
         return terminal, reward, value
 
     def rollout(self, node):
-        if node.G is not None:
-            return node.G
+        hashT = hash(str(node.table))
+        if hashT in self.TT:
+            numVisits, Qmean, nodeG = self.TT[hashT]
+            return nodeG
         else:
             if self.rolloutPolicy=='nostep':
                 reward, value = self.noStepPolicy(node)
@@ -602,6 +541,8 @@ class MCTS(object):
             else:
                 nodeReward = reward
             self.searchCount += 1
+
+            # self.TT[hashT] = (1, nodeReward, nodeReward)
         return nodeReward
 
     def noStepPolicy(self, node):
@@ -617,6 +558,37 @@ class MCTS(object):
         # print(et - st, 'seconds.')
         return reward, value
 
+    def oneStepPolicy(self, node):
+        # print('oneStepPolicy.')
+        # st = time.time()
+        nb = self.renderer.numObjects
+        th, tw = self.renderer.tableSize
+        allPossibleActions = np.array(np.meshgrid(
+                        np.arange(1, nb+1), np.arange(th), np.arange(tw), np.arange(1,3)
+                        )).T.reshape(-1, 4)
+        states = [self.renderer.getRGB(node.table)]
+        for action in allPossibleActions:
+            newTable = node.takeAction(action)
+            newNode = Node(self.renderer.numObjects, newTable)
+            states.append(self.renderer.getRGB(newNode.table))
+
+        s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
+        if self.preProcess is not None:
+            s = self.preProcess(s)
+        rewards = []
+        numBatches = len(states)//self.batchSize
+        if len(states)%self.batchSize > 0:
+            numBatches += 1
+        for b in range(numBatches):
+            batchS = s[b*self.batchSize:(b+1)*self.batchSize]
+            batchRewards = self.rewardNet(batchS).cpu().detach().numpy()
+            rewards.append(batchRewards)
+        rewards = np.concatenate(rewards)
+        maxReward = np.max(rewards)
+        # et = time.time()
+        # print(et - st, 'seconds.')
+        return maxReward
+
     def greedyPolicy(self, node, policy):
         # random / iql / policy / iql-uniform / policy-uniform
         # print('greedyPolicy.')
@@ -627,53 +599,43 @@ class MCTS(object):
         tables = [np.copy(node.table)]
         # while not (self.isTerminal(node)[0] or node.depth >= self.maxDepth):
         c = 0
-        while c<=3: #not (c>3):
-            if node.type=='pick' and self.isTerminal(node)[0]:
-                break
+        while not (self.isTerminal(node)[0] or c>1):
             c+= 1
             if node.numActionCandidates==0:
                 prob = self.getPossibleActions(node, policy)
             else:
                 prob = node.actionProb
             
-            if node.type=='pick':
-                action, p = self.sampleFromProb(prob, [])
-                ey, ex = np.where(node.table[0]==action)
-                exceptPlace = (int(ey[0]), int(ex[0])) if len(ey)>0 else None
-                newNode = NodePlace(self.renderer.numObjects, node.takeAction(action), selected=action, exceptPlace=exceptPlace, parent=node)
-
-            else:
-                if policy=='random':
-                    rots, pys, pxs = np.where(prob>0)
-                    idx = np.random.choice(len(rots))
-                    rot, py, px = rots[idx], pys[idx], pxs[idx]
-                    action = (py, px, rot+1)
-                elif policy.startswith('policy'):
-                    if 'uniform' in policy:
-                        pys, pxs = np.where(prob>0)
-                    else:
-                        pys, pxs = np.where(prob==np.max(prob))
-                    idx = np.random.choice(len(pys))
-                    py, px = pys[idx], pxs[idx]
-                    rot = np.random.choice([1,2]) # random rotation
-                    action = (py, px, rot)
-                elif policy.startswith('iql'):
-                    if 'uniform' in policy:
-                        rots, pys, pxs = np.where(prob>0)
-                    else:
-                        rots, pys, pxs = np.where(prob==np.max(prob))
-                    idx = np.random.choice(len(rots))
-                    rot, py, px = rots[idx], pys[idx], pxs[idx]
-                    action = (py, px, rot+1)
-                
-                newNode = NodePick(self.renderer.numObjects, node.takeAction(action), exceptPick=node.selected, parent=node)
-
+            if policy=='random':
+                os, pys, pxs = np.where(prob>0)
+                idx = np.random.choice(len(os))
+                o, py, px = os[idx], pys[idx], pxs[idx]
+                rot =  np.random.choice([1,2]) # random rotation
+                action = (o+1, py, px, rot)
+            elif policy.startswith('policy'):
+                if 'uniform' in policy:
+                    os, pys, pxs = np.where(prob>0)
+                else:
+                    os, pys, pxs = np.where(prob==np.max(prob))
+                idx = np.random.choice(len(os))
+                o, py, px = os[idx], pys[idx], pxs[idx]
+                rot =  np.random.choice([1,2]) # random rotation
+                action = (o+1, py, px, rot)
+            elif policy.startswith('iql'):
+                if 'uniform' in policy:
+                    rots, nbs, pys, pxs = np.where(prob>0)
+                else:
+                    rots, nbs, pys, pxs = np.where(prob==np.max(prob))
+                idx = np.random.choice(len(rots))
+                rot, nb, py, px = rots[idx], nbs[idx], pys[idx], pxs[idx]
+                action = (nb+1, py, px, rot+1)
+            
+            newNode = Node(self.renderer.numObjects, node.takeAction(action), node, action)
             node = newNode
             # Collision check
-            if node.type=='pick':
-                collision = self.renderer.checkCollision(node.table)
-                if not collision:
-                    tables.append(np.copy(node.table))
+            collision = self.renderer.checkCollision(node.table)
+            if not collision:
+                tables.append(np.copy(node.table))
             
         if args.algorithm=='alphago':
             rewards, values = self.getRewardValue(tables)
@@ -744,7 +706,6 @@ if __name__=='__main__':
     parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
     parser.add_argument('--gamma', type=float, default=1)
     # Reward model
-    parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
@@ -930,34 +891,22 @@ if __name__=='__main__':
         
             print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
-                print_fn(f"{i} {c} {str(searcher.root.children[c])}")
+                print_fn(f"{i} {c} {searcher.root.children[c][1].str(searcher.TT)}")
+                # print_fn(f"{i} {c} {str(searcher.root.children[c][1])}")
             action = resultDict['action']
             et = time.time()
             print_fn(f'{et-st} seconds to search.')
 
-            summary = summaryGraph(searcher.root)
-            if args.visualize_graph:
-                graph = getGraph(searcher.root)
-                fig = visualizeGraph(graph, title=args.algorithm.upper())
-                fig.show()
-            print_fn(summary)
+            # summary = summaryGraph(searcher.root)
+            # if args.visualize_graph:
+            #     graph = getGraph(searcher.root)
+            #     fig = visualizeGraph(graph, title=args.algorithm.upper())
+            #     fig.show()
+            # print_fn(summary)
             print_fn("Action coverage: %f"%np.mean(searcher.coverage))
             
-            # expected result in mcts #
-            pick = action[0]
-            place = action[1:]
-            bestPlaceChild = (node for action, node in searcher.root.children.items() if action==pick).__next__()
-            bestPickChild = (node for action, node in bestPlaceChild.children.items() if action==tuple(place)).__next__()
-            print_fn("Children of the root node:")
-            for c in sorted(list(searcher.root.children.keys())):
-                print_fn(str(searcher.root.children[c]))
-            print_fn("Children of the best child place node:")
-            for i, c in enumerate(sorted(list(bestPlaceChild.children.keys()))):
-                print_fn(f"{i} {c} {str(bestPlaceChild.children[c])}")
-            nextTable = bestPickChild.table
-
             # action probability
-            actionProb = bestPlaceChild.actionProb
+            actionProb = searcher.root.actionProb
             if args.logging and actionProb is not None:
                 actionProb[actionProb>args.threshold_prob] += 0.5
                 if len(actionProb.shape)==2:
@@ -968,12 +917,13 @@ if __name__=='__main__':
                     plt.imshow(np.mean(actionProb, axis=(0, 1)))
                 plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
 
+            # expected result in mcts #
+            nextTable = searcher.root.takeAction(action)
             print_fn("Best Action: %s"%str(action))
-            print_fn("Expected Pick Q-mean: %f / Q-norm: %f"%(resultDict['expectedPickReward'][0], resultDict['expectedPickReward'][1]))
-            print_fn("Expected Place Q-mean: %f / Q-norm: %f"%(resultDict['expectedPlaceReward'][0], resultDict['expectedPlaceReward'][1]))
+            print_fn("Expected Q: %f"%(resultDict['expectedReward']))
             print_fn("Terminal: %s"%resultDict['terminal'])
             print_fn("Best Child: \n %s"%nextTable[0])
-
+            
             nextCollision = renderer.checkCollision(nextTable)
             print_fn("Collision: %s"%nextCollision)
             print_fn("Save fig: scene-%d/expect_%d.png"%(sidx, step))
@@ -1010,7 +960,7 @@ if __name__=='__main__':
             counts = [v for k,v in countNode.items() if v>1]
             print_fn('total nodes: %d' %len(countNode.keys()))
             print_fn('num duplicate nodes: %d'%len(counts))
-            print_fn('total duplicates: %f'%np.sum(counts))
+            print_fn('total duplicates: %d'%np.sum(counts))
             print_fn()
             if terminal:
                 print_fn("Arrived at the final state:")

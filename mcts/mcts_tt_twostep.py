@@ -746,7 +746,7 @@ if __name__=='__main__':
     parser.add_argument('--binary-reward', action="store_true")
     parser.add_argument('--blurring', type=int, default=3)
     parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
-    parser.add_argument('--gamma', type=float, default=0.9)
+    parser.add_argument('--gamma', type=float, default=1)
     # Reward model
     parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
