@@ -66,6 +66,7 @@ parser.add_argument('--target_update_interval', type=int, default=1, metavar='N'
                         help='Value target update per no. of updates per step (default: 1)')
 parser.add_argument('--replay_size', type=int, default=10000, metavar='N', # 10000000
                         help='size of replay buffer (default: 10000000)')
+parser.add_argument('--save_freq', type=int, default=1000)
 #parser.add_argument('--cuda', action="store_true", help='run on CUDA (default: False)')
 args = parser.parse_args()
 
@@ -167,6 +168,9 @@ for i_episode in itertools.count(1):
         wandb.log(logs)#, i_episode)
     writer.add_scalar('reward/train', episode_reward, i_episode)
     print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(i_episode, total_numsteps, episode_steps, round(episode_reward, 2)))
+
+    if i_episode % args.save_freq==0:
+        agent.save_checkpoint(log_name, str(i_episode))
 
     if i_episode % 100 == 0 and args.eval is True:
         avg_reward = 0.
