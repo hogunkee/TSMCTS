@@ -188,29 +188,29 @@ class SAC(object):
         if ckpt_path is None:
             ckpt_path = "checkpoints/sac_{}_{}.pth".format(log_name, suffix)
         print('Saving models to {}'.format(ckpt_path))
-        torch.save({'policy_state_dict': self.policy.state_dict(),
+        torch.save({'policy_state_dict': self.policy_place.state_dict(),
                     'critic_state_dict': self.critic.state_dict(),
                     'critic_target_state_dict': self.critic_target.state_dict(),
                     'critic_optimizer_state_dict': self.critic_optim.state_dict(),
-                    'policy_optimizer_state_dict': self.policy_optim.state_dict()}, ckpt_path)
+                    'policy_optimizer_state_dict': self.policy_place_optim.state_dict()}, ckpt_path)
 
     # Load model parameters
     def load_checkpoint(self, ckpt_path, evaluate=False):
         print('Loading models from {}'.format(ckpt_path))
         if ckpt_path is not None:
             checkpoint = torch.load(ckpt_path)
-            self.policy.load_state_dict(checkpoint['policy_state_dict'])
+            self.policy_place.load_state_dict(checkpoint['policy_state_dict'])
             self.critic.load_state_dict(checkpoint['critic_state_dict'])
             self.critic_target.load_state_dict(checkpoint['critic_target_state_dict'])
             self.critic_optim.load_state_dict(checkpoint['critic_optimizer_state_dict'])
-            self.policy_optim.load_state_dict(checkpoint['policy_optimizer_state_dict'])
+            self.policy_place_optim.load_state_dict(checkpoint['policy_optimizer_state_dict'])
 
             if evaluate:
-                self.policy.eval()
+                self.policy_place.eval()
                 self.critic.eval()
                 self.critic_target.eval()
             else:
-                self.policy.train()
+                self.policy_place.train()
                 self.critic.train()
                 self.critic_target.train()
 
