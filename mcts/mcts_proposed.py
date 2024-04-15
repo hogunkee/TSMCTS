@@ -651,6 +651,7 @@ if __name__=='__main__':
     # Inference
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--use-template', action="store_true")
+    parser.add_argument('--template', type=str, default='')
     parser.add_argument('--scene-split', type=str, default='seen')
     parser.add_argument('--object-split', type=str, default='seen')
     parser.add_argument('--num-objects', type=int, default=5)
@@ -724,15 +725,16 @@ if __name__=='__main__':
            dataset = 'train'
         template_folder = os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/templates')
         template_files = os.listdir(template_folder)
-        template_files = [f for f in template_files if f.lower().endswith('.json')]
+        template_files = [f for f in template_files if f.lower().endswith('.json') and f.lower().startswith(args.template.lower())]
         
         template_file = random.choice(template_files)
+        print_fn('Selected template: %s' %template_file)
         # scene = template_file.split('_')[0]
         # template_id = template_file.split('_')[-1].split('.')[0]
         with open(os.path.join(template_folder, template_file), 'r') as f:
             templates = json.load(f)
         augmented_template = env.get_augmented_templates(templates, 2)[-1]
-        selected_objects = [v for k,v in augmented_template['objects'].items()]
+        objects = [v for k,v in augmented_template['objects'].items()]
         # env.load_template(augmented_template)
     else:
         objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
@@ -740,6 +742,9 @@ if __name__=='__main__':
                     'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
         # objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
         objects = [(o, 'medium') for o in objects]
+    if len(objects) < args.num_objects:
+        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
+    else:
         selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
     env.spawn_objects(selected_objects)
     env.arrange_objects(random=True)
@@ -814,10 +819,13 @@ if __name__=='__main__':
             obs = env.reset()
         if args.use_template:
             template_file = random.choice(template_files)
+            print_fn('Selected template: %s' %template_file)
             with open(os.path.join(template_folder, template_file), 'r') as f:
                 templates = json.load(f)
             augmented_template = env.get_augmented_templates(templates, 2)[-1]
-            selected_objects = [v for k,v in augmented_template['objects'].items()]
+            objects = [v for k,v in augmented_template['objects'].items()]
+        if len(objects) < args.num_objects:
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
         else:
             selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
         env.spawn_objects(selected_objects)
@@ -859,7 +867,7 @@ if __name__=='__main__':
         print_fn("--------------------------------")
         for step in range(10):
             st = time.time()
-            countNode = {}
+            countNode.clear()
             resultDict = searcher.search(table=table, needDetails=True)
         
             print_fn("Num Children: %d"%len(searcher.root.children))
