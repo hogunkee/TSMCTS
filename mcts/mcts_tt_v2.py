@@ -29,6 +29,12 @@ import warnings
 warnings.filterwarnings("ignore")
 
 countNode = {}
+
+
+def hash(table):
+    result = ' '.join(table[0].reshape(-1).astype('str').tolist())
+    result += ' '.join(table[1].reshape(-1).astype('str').tolist())
+    return result
         
 class Node(object):
     def __init__(self, numObjects, table, parent=None, preAction=None, actionProb=0.):
@@ -74,7 +80,7 @@ class Node(object):
 
     def str(self, TT):
         s = []
-        hashT = hash(str(self.table))
+        hashT = hash(self.table)
         numVisits, Qmean, nodeG = TT[hashT]
         s.append("Q-mean: %.3f"%(Qmean))
         s.append("Visits: %d"%(numVisits))
@@ -166,7 +172,7 @@ class MCTS(object):
         # print('search.')
         self.coverage = []
         self.root = Node(self.renderer.numObjects, table)
-        hashRoot = hash(str(self.root.table))
+        hashRoot = hash(self.root.table)
         self.TT[hashRoot] = (0, 0., 0.)
         
         if self.limitType == 'time':
@@ -179,7 +185,7 @@ class MCTS(object):
         action, bestChild = self.getBestChild(self.root, explorationValue=0.)
         # action=(action for action, child in self.root.children.items() if child[1] is bestChild[1]).__next__()
         if needDetails:
-            hashT = hash(str(bestChild.table))
+            hashT = hash(bestChild.table)
             numVisits, Qmean, nodeG = self.TT[hashT]
             return {"action": action, "expectedReward": Qmean, "terminal": bestChild.terminal}
         else:
@@ -317,7 +323,7 @@ class MCTS(object):
     def backpropagate(self, node, G, trajectory):
         # print('backpropagate.')
         for _node, _action in trajectory:
-            hashT = hash(str(_node.table))
+            hashT = hash(_node.table)
             numVisits, Qmean, nodeG = self.TT[hashT]
             # update TT
             Qmean = (Qmean * numVisits + G) / (numVisits + 1)
@@ -327,7 +333,7 @@ class MCTS(object):
             _node.children[_action][0] += 1
 
         # update TT for the leaf node
-        hashT = hash(str(node.table))
+        hashT = hash(node.table)
         if hashT in self.TT:
             numVisits, Qmean, nodeG = self.TT[hashT]
             Qmean = (Qmean * numVisits + G) / (numVisits + 1)
@@ -356,7 +362,7 @@ class MCTS(object):
             childNumVisits = child[0]
             childNode = child[1]
             
-            hashT = hash(str(childNode.table))
+            hashT = hash(childNode.table)
             _, Qvalue, _ = self.TT[hashT]
 
             if self.algorithm=='alphago':
@@ -524,7 +530,7 @@ class MCTS(object):
         return terminal, reward, value
 
     def rollout(self, node):
-        hashT = hash(str(node.table))
+        hashT = hash(node.table)
         if hashT in self.TT:
             numVisits, Qmean, nodeG = self.TT[hashT]
             return nodeG
