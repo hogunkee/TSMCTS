@@ -30,10 +30,10 @@ warnings.filterwarnings("ignore")
 
 countNode = {}
 
-
-def hash(table):
+def hash(table, depth):
     result = ' '.join(table[0].reshape(-1).astype('str').tolist())
     result += ' '.join(table[1].reshape(-1).astype('str').tolist())
+    result += str(depth)
     return result
         
 class Node(object):
@@ -170,7 +170,7 @@ class MCTS(object):
         # print('search.')
         self.coverage = []
         self.root = Node(self.renderer.numObjects, table)
-        hashRoot = hash(self.root.table)
+        hashRoot = hash(self.root.table, 0)
         self.TTValues[hashRoot] = (0, 0., 0.)
         self.TTNodes[hashRoot] = [self.root]
         if self.limitType == 'time':
@@ -320,7 +320,7 @@ class MCTS(object):
             node.G = G
 
         while node is not None:
-            hashT = hash(node.table)
+            hashT = hash(node.table, node.depth)
             # update TT
             numVisits, Qmean, nodeG = self.TTValues[hashT]
             Qmean = (Qmean * numVisits + G) / (numVisits + 1)
@@ -510,7 +510,7 @@ class MCTS(object):
         return terminal, reward, value
 
     def rollout(self, node):
-        hashT = hash(node.table)
+        hashT = hash(node.table, node.depth)
         if hashT in self.TTValues:
             _, _, nodeG = self.TTValues[hashT]
             if node not in self.TTNodes[hashT]:
