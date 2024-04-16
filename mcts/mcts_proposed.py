@@ -146,11 +146,13 @@ class MCTS(object):
         self.batchSize = args.batch_size #32
         self.preProcess = None
         self.searchCount = 0
+        self.inferenceCount = 0
         self.blurring = args.blurring
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
         self.searchCount = 0
+        self.inferenceCount = 0
         return table
 
     def setValueNet(self, valueNet):
@@ -332,6 +334,7 @@ class MCTS(object):
         node = self.selectNode(self.root)
         G = self.rollout(node)
         self.backpropagate(node, G)
+        self.searchCount += 1
 
     def getBestChild(self, node, explorationValue):
         # print('getBestChild.')
@@ -522,7 +525,7 @@ class MCTS(object):
                 nodeReward = self.puctLambda * reward + (1-self.puctLambda) * value
             else:
                 nodeReward = reward
-            self.searchCount += 1
+            self.inferenceCount += 1
         return nodeReward
 
     def noStepPolicy(self, node):
@@ -946,9 +949,10 @@ if __name__=='__main__':
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
+            print_fn('num inference: %d'searcher.inferenceCount)
             print_fn('total nodes: %d' %len(countNode.keys()))
             print_fn('num duplicate nodes: %d'%len(counts))
-            print_fn('total duplicates: %f'%np.sum(counts))
+            print_fn('total duplicates: %d'%np.sum(counts))
             print_fn()
             if terminal:
                 print_fn("Arrived at the final state:")

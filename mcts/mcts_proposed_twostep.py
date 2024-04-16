@@ -30,6 +30,13 @@ warnings.filterwarnings("ignore")
 
 countNode = {}
         
+def hash(table, depth=None):
+    result = ' '.join(table[0].reshape(-1).astype('str').tolist())
+    result += ' '.join(table[1].reshape(-1).astype('str').tolist())
+    if depth is not None:
+        result += str(depth)
+    return result
+
 class NodePick(object):
     def __init__(self, numObjects, table, exceptPick=None, parent=None, actionProb=0.):
         self.type = 'pick'
@@ -56,10 +63,11 @@ class NodePick(object):
         self.numActionCandidates = 0
         self.terminal = False
         
-        if str(table) not in countNode:
-            countNode[str(table)] = 1
+        hashT = hash(table)
+        if hashT not in countNode:
+            countNode[hashT] = 1
         else:
-            countNode[str(table)] += 1
+            countNode[hashT] += 1
     
     def takeAction(self, objPick):
         posMap, rotMap = self.table
@@ -186,11 +194,13 @@ class MCTS(object):
         self.batchSize = args.batch_size #32
         self.preProcess = None
         self.searchCount = 0
+        self.inferenceCount = 0
         self.blurring = args.blurring
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
         self.searchCount = 0
+        self.inferenceCount = 0
         return table
 
     def setValueNet(self, valueNet):
@@ -419,6 +429,7 @@ class MCTS(object):
         assert node.type=='pick'
         G = self.rollout(node)
         self.backpropagate(node, G)
+        self.searchCount += 1
 
     def getBestChild(self, node, explorationValue):
         # print('getBestChild.')
@@ -601,7 +612,7 @@ class MCTS(object):
                 nodeReward = self.puctLambda * reward + (1-self.puctLambda) * value
             else:
                 nodeReward = reward
-            self.searchCount += 1
+            self.inferenceCount += 1
         return nodeReward
 
     def noStepPolicy(self, node):
@@ -1016,9 +1027,10 @@ if __name__=='__main__':
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
+            print_fn('num inference: %d'searcher.inferenceCount)
             print_fn('total nodes: %d' %len(countNode.keys()))
             print_fn('num duplicate nodes: %d'%len(counts))
-            print_fn('total duplicates: %f'%np.sum(counts))
+            print_fn('total duplicates: %d'%np.sum(counts))
             print_fn()
             if terminal:
                 print_fn("Arrived at the final state:")
