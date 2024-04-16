@@ -46,7 +46,14 @@ def evaluateBatch(data, policy, gNet, preprocess, H, W, cropSize):
     images_after_pick = data['image_after_pick'].to(torch.float32).to(DEFAULT_DEVICE)
     patches = data['next_patch'].to(torch.float32).to(DEFAULT_DEVICE)
     obs = [None, images_after_pick, patches]
-    probs = policy(obs)[1].cpu().detach().numpy()
+    policy_out = policy(obs)
+    if isinstance(policy_out, torch.distributions.Distribution):
+        continuousPolicy = True
+        actions = policy_out.sample().cpu().detach().numpy()
+        # actions = policy_out.mean.cpu().detach().numpy()
+    else:
+        continuousPolicy = False
+        probs = policy_out[1].cpu().detach().numpy()
     gt_actions = data['action'].cpu().detach().numpy()
 
     imageSize = np.array([360, 480])
@@ -61,7 +68,10 @@ def evaluateBatch(data, policy, gNet, preprocess, H, W, cropSize):
     for b in range(len(images)):
         image = images[b]
         patch = patches[b]
-        action_prob = probs[b]
+        if continuousPolicy:
+            action = actions[b]
+        else:
+            action_prob = probs[b]
         gt_action = gt_actions[b]
 
         mask = np.zeros([cropSize, cropSize])
@@ -69,8 +79,11 @@ def evaluateBatch(data, policy, gNet, preprocess, H, W, cropSize):
         next_image = next_images[b]
 
         image_after_action = np.copy(image)
-        index = np.argmax(action_prob)
-        py, px = index // W, index % W
+        if continuousPolicy:
+            py, px = np.round(action)
+        else:
+            index = np.argmax(action_prob)
+            py, px = index // W, index % W
         ty, tx = np.array([py, px]) * ratio + offset
         yMin = int(ty - cropSize / 2)
         yMax = int(ty + cropSize / 2)
@@ -166,7 +179,9 @@ def main(args, log_name):
                 images_after_pick = batch['image_after_pick'].to(torch.float32).to(DEFAULT_DEVICE)
                 patches = batch['next_patch'].to(torch.float32).to(DEFAULT_DEVICE)
                 # action distribution
-                if args.action_distribution:
+                if args.continuous_policy:
+                    action_labels = batch['action'].to(torch.long).to(DEFAULT_DEVICE)
+                elif args.action_distribution:
                     action_labels = batch['action_dist'].to(torch.float32).to(DEFAULT_DEVICE)
                 else:
                     actions = batch['action']

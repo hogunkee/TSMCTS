@@ -181,11 +181,21 @@ class DeterministicResNetPolicy(nn.Module):
         return action_probs
     
 class GaussianPolicy(nn.Module):
-    def __init__():
+    def __init__(self, crop_size=64):
         super().__init__()
+        self.q = ResNetQ(hidden_dim=32)
+        self.fc = nn.Linear(12*15, 2)
+        self.log_std = nn.Parameter(torch.zeros(2, dtype=torch.float32))
 
     def forward(self, obs):
-        return
+        _, state_q, patch = obs
+        q = self.q(state_q, patch)
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        mean = self.fc(q_flat)
+        std = torch.exp(self.log_std.clamp(LOG_STD_MIN, LOG_STD_MAX))
+        scale_tril = torch.diag(std)
+        return MultivariateNormal(mean, scale_tril=scale_tril)
 
 # class GaussianPolicy(nn.Module):
 #     def __init__(self, obs_dim, act_dim, hidden_dim=256, n_hidden=2):

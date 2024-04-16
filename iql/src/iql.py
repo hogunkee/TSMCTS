@@ -32,13 +32,15 @@ class ImplicitQLearning(nn.Module):
         self.discount = discount
         self.alpha = alpha
 
-    def update(self, observations, action_dist, next_observations, rewards, terminals, scores=None):
-        B = action_dist.shape[0]
+    def update(self, observations, actions, next_observations, rewards, terminals, scores=None):
+        B = actions.shape[0]
         # B = actions.shape[0]
         with torch.no_grad():
             target_q_values = self.q_target(observations)
-            target_q_a_values = (target_q_values * action_dist).sum(dim=(1,2))
-            # target_q_a_values = target_q_values[torch.arange(B), actions[:, 0], actions[:, 1]]
+            if len(actions.shape)==2:
+                target_q_a_values = target_q_values[torch.arange(B), actions[:, 0], actions[:, 1]]
+            else:
+                target_q_a_values = (target_q_values * actions).sum(dim=(1,2))
             target_q_a_values = target_q_a_values.view(-1, 1)
             next_v = self.vf(next_observations)
 
@@ -63,10 +65,12 @@ class ImplicitQLearning(nn.Module):
         # Update Q function
         targets = rewards.view(-1, 1) + (1. - terminals.float().view(-1, 1)) * self.discount * next_v.detach()
         q1_values, q2_values = self.qf.both(observations)
-        q1_a_values = (q1_values * action_dist).sum(dim=(1,2))
-        q2_a_values = (q2_values * action_dist).sum(dim=(1,2))
-        # q1_a_values = q1_values[torch.arange(B), actions[:, 0], actions[:, 1]]
-        # q2_a_values = q2_values[torch.arange(B), actions[:, 0], actions[:, 1]]
+        if len(actions.shape)==2:
+            q1_a_values = q1_values[torch.arange(B), actions[:, 0], actions[:, 1]]
+            q2_a_values = q2_values[torch.arange(B), actions[:, 0], actions[:, 1]]
+        else:
+            q1_a_values = (q1_values * actions).sum(dim=(1,2))
+            q2_a_values = (q2_values * actions).sum(dim=(1,2))
         q1_a_values = q1_a_values.view(-1, 1)
         q2_a_values = q2_a_values.view(-1, 1)
         #qs = qs.gather(1, actions.unsqueeze(1).expand(-1, qs.size(1)))
@@ -80,8 +84,12 @@ class ImplicitQLearning(nn.Module):
 
         # Update policy
         exp_adv = torch.exp(self.beta * adv.detach()).clamp(max=EXP_ADV_MAX)
-        _, _, log_action_probs = self.policy(observations)
-        bc_losses = -(log_action_probs * action_dist).sum(dim=(1,2))
+        policy_out = self.policy(observations)
+        if isinstance(policy_out, torch.distributions.Distribution):
+            bc_losses = -policy_out.log_prob(actions)
+        else:
+            _, _, log_action_probs = policy_out
+            bc_losses = -(log_action_probs * actions).sum(dim=(1,2))
         # bc_losses = -log_action_probs[torch.arange(B), actions[:, 0], actions[:, 1]]
         policy_loss = torch.mean(exp_adv * bc_losses)
         # if isinstance(policy_out, torch.distributions.Distribution):
