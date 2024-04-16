@@ -960,7 +960,7 @@ if __name__=='__main__':
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
-            print_fn('num inference: %d'searcher.inferenceCount)
+            print_fn('num inference: %d'%searcher.inferenceCount)
             print_fn('total nodes: %d' %len(countNode.keys()))
             print_fn('num duplicate nodes: %d'%len(counts))
             print_fn('total duplicates: %d'%np.sum(counts))
