@@ -30,10 +30,11 @@ warnings.filterwarnings("ignore")
 
 countNode = {}
 
-def hash(table, depth):
+def hash(table, depth=None):
     result = ' '.join(table[0].reshape(-1).astype('str').tolist())
     result += ' '.join(table[1].reshape(-1).astype('str').tolist())
-    result += str(depth)
+    if depth is not None:
+        result += str(depth)
     return result
         
 class Node(object):
@@ -59,10 +60,11 @@ class Node(object):
         self.numActionCandidates = 0
         self.terminal = False
         
-        if str(table) not in countNode:
-            countNode[str(table)] = 1
+        hashT = hash(table)
+        if hashT not in countNode:
+            countNode[hashT] = 1
         else:
-            countNode[str(table)] += 1
+            countNode[hashT] += 1
     
     def takeAction(self, move):
         obj, py, px, rot = move

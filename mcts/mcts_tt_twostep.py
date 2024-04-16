@@ -30,6 +30,13 @@ warnings.filterwarnings("ignore")
 
 countNode = {}
         
+def hash(table, depth=None):
+    result = ' '.join(table[0].reshape(-1).astype('str').tolist())
+    result += ' '.join(table[1].reshape(-1).astype('str').tolist())
+    if depth is not None:
+        result += str(depth)
+    return result
+
 class NodePick(object):
     def __init__(self, numObjects, table, exceptPick=None, parent=None, actionProb=0.):
         self.type = 'pick'
@@ -56,10 +63,11 @@ class NodePick(object):
         self.numActionCandidates = 0
         self.terminal = False
         
-        if str(table) not in countNode:
-            countNode[str(table)] = 1
+        hashT = hash(table)
+        if hashT not in countNode:
+            countNode[hashT] = 1
         else:
-            countNode[str(table)] += 1
+            countNode[hashT] += 1
     
     def takeAction(self, objPick):
         posMap, rotMap = self.table
@@ -929,7 +937,7 @@ if __name__=='__main__':
         print_fn("--------------------------------")
         for step in range(10):
             st = time.time()
-            countNode = {}
+            countNode.clear()
             resultDict = searcher.search(table=table, needDetails=True)
         
             print_fn("Num Children: %d"%len(searcher.root.children))
