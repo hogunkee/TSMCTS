@@ -95,6 +95,7 @@ class SAC(object):
         pick = np.array(pick)[:, None].astype(int)
         rotation = np.array(rotation)[:, None].astype(int)
         place = action_place.detach().cpu().numpy().round().astype(int)
+        assert (place[:, 0]<12).all() and (place[:, 1]<15).all()
         actions = np.concatenate([pick, place, rotation], axis=1)
         # et = time.time()
         # print(et-st, 'secs.')
