@@ -181,12 +181,12 @@ class MCTS(object):
         else:
             while self.searchCount < self.searchLimit:
                 self.executeRound()
-        mostChild = self.getMostVisitedChild(self.root)
+        # mostChild = self.getMostVisitedChild(self.root)
         bestChild = self.getBestChild(self.root, explorationValue=0.)
-        if mostChild!=bestChild:
-            print('most visited child:', mostChild.numVisits, mostChild.Qmean)
-            print('best child:', bestChild.numVisits, bestChild.Qmean)
-            print()
+        # if mostChild!=bestChild:
+        #     print('most visited child:', mostChild.numVisits, mostChild.Qmean)
+        #     print('best child:', bestChild.numVisits, bestChild.Qmean)
+        #     print()
         action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
         if needDetails:
             return {"action": action, "expectedReward": (bestChild.Qmean, bestChild.Qnorm), "terminal": bestChild.terminal}
