@@ -184,8 +184,8 @@ class MCTS(object):
         mostChild = self.getMostVisitedChild(self.root)
         bestChild = self.getBestChild(self.root, explorationValue=0.)
         if mostChild!=bestChild:
-            print('most visited child:', mostChild.numVisits)
-            print('best child:', bestChild.numVisits)
+            print('most visited child:', mostChild.numVisits, mostChild.Qmean)
+            print('best child:', bestChild.numVisits, bestChild.Qmean)
             print()
         action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
         if needDetails:
@@ -343,13 +343,26 @@ class MCTS(object):
     def getMostVisitedChild(self, node):
         # print('getMostVisitedChild.')
         mostVisits = 0
-        bestNodes = []
+        mostNodes = []
         for child in node.children.values():
             if child.numVisits > mostVisits:
                 mostVisits = child.numVisits
-                bestNodes = [child]
+                mostNodes = [child]
             elif child.numVisits == mostVisits:
-                bestNodes.append(child)
+                mostNodes.append(child)
+
+        if len(mostNodes)>1:
+            bestValue = float("-inf")
+            bestNodes = []
+            for n in mostNodes:
+                if n.Qmean > bestValue:
+                    bestValue = n.Qmean
+                    bestNodes = [n]
+                elif n.Qmean == bestValue:
+                    bestNodes.append(n)
+        else:
+            bestNodes = mostNodes
+
         return np.random.choice(bestNodes)
     
     def getBestChild(self, node, explorationValue):
