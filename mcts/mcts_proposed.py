@@ -181,7 +181,12 @@ class MCTS(object):
         else:
             while self.searchCount < self.searchLimit:
                 self.executeRound()
+        mostChild = self.getMostVisitedChild(self.root)
         bestChild = self.getBestChild(self.root, explorationValue=0.)
+        if mostChild!=bestChild:
+            print('most visited child:', mostChild.numVisits)
+            print('best child:', bestChild.numVisits)
+            print()
         action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
         if needDetails:
             return {"action": action, "expectedReward": (bestChild.Qmean, bestChild.Qnorm), "terminal": bestChild.terminal}
@@ -191,9 +196,7 @@ class MCTS(object):
     def selectNode(self, node):
         # print('selectNode.')
         while not node.terminal: # self.isTerminal(node)[0]:
-            if len(node.children)==0:
-                return self.expand(node)
-            elif node.isFullyExpanded(): # or random.uniform(0, 1) < 0.5:
+            if node.isFullyExpanded(): # or random.uniform(0, 1) < 0.5:
                 node = self.getBestChild(node, self.explorationConstant)
             else:
                 return self.expand(node)
@@ -201,6 +204,7 @@ class MCTS(object):
 
     def sampleFromProb(self, prob, exceptActions=[]):
         # shape: r x n x h x w
+        prob = prob.copy()
         for action in exceptActions:
             o, py, px, r = action
             if len(prob.shape)==3:
@@ -336,6 +340,18 @@ class MCTS(object):
         self.backpropagate(node, G)
         self.searchCount += 1
 
+    def getMostVisitedChild(self, node):
+        # print('getMostVisitedChild.')
+        mostVisits = 0
+        bestNodes = []
+        for child in node.children.values():
+            if child.numVisits > mostVisits:
+                mostVisits = child.numVisits
+                bestNodes = [child]
+            elif child.numVisits == mostVisits:
+                bestNodes.append(child)
+        return np.random.choice(bestNodes)
+    
     def getBestChild(self, node, explorationValue):
         # print('getBestChild.')
         bestValue = float("-inf")
@@ -880,6 +896,7 @@ if __name__=='__main__':
             st = time.time()
             countNode.clear()
             resultDict = searcher.search(table=table, needDetails=True)
+            numInference = searcher.inferenceCount
         
             print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
@@ -949,7 +966,7 @@ if __name__=='__main__':
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
-            print_fn('num inference: %d'%searcher.inferenceCount)
+            print_fn('num inference: %d'%numInference)
             print_fn('total nodes: %d' %len(countNode.keys()))
             print_fn('num duplicate nodes: %d'%len(counts))
             print_fn('total duplicates: %d'%np.sum(counts))

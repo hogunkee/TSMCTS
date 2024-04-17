@@ -248,13 +248,9 @@ class MCTS(object):
         # print('selectNode.')
         while not nodePick.terminal: # self.isTerminal(node)[0]:
             assert nodePick.type=='pick'
-            if len(nodePick.children)==0:
-                return self.expand(nodePick)
-            elif nodePick.isFullyExpanded():
+            if nodePick.isFullyExpanded():
                 nodePlace = self.getBestChild(nodePick, self.explorationConstant)
-                if len(nodePlace.children)==0:
-                    return self.expandPlace(nodePlace)
-                elif nodePlace.isFullyExpanded():
+                if nodePlace.isFullyExpanded():
                     nodePick = self.getBestChild(nodePlace, self.explorationConstant)
                 else:
                     return self.expandPlace(nodePlace)
@@ -263,6 +259,7 @@ class MCTS(object):
         return nodePick
 
     def sampleFromProb(self, prob, exceptActions=[]):
+        prob = prob.copy()
         if len(prob.shape)==1:
             for action in exceptActions:
                 prob[action-1] = 0.
@@ -946,6 +943,7 @@ if __name__=='__main__':
             st = time.time()
             countNode.clear()
             resultDict = searcher.search(table=table, needDetails=True)
+            numInference = searcher.inferenceCount
         
             print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
@@ -1027,7 +1025,7 @@ if __name__=='__main__':
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
-            print_fn('num inference: %d'%searcher.inferenceCount)
+            print_fn('num inference: %d'%numInference)
             print_fn('total nodes: %d' %len(countNode.keys()))
             print_fn('num duplicate nodes: %d'%len(counts))
             print_fn('total duplicates: %d'%np.sum(counts))

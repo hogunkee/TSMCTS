@@ -207,6 +207,7 @@ class MCTS(object):
 
     def sampleFromProb(self, prob, exceptActions=[]):
         # shape: r x n x h x w
+        prob = prob.copy()
         for action in exceptActions:
             o, py, px, r = action
             if len(prob.shape)==3:
@@ -891,6 +892,7 @@ if __name__=='__main__':
             st = time.time()
             countNode.clear()
             resultDict = searcher.search(table=table, needDetails=True)
+            numInference = searcher.inferenceCount
         
             print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
@@ -960,7 +962,7 @@ if __name__=='__main__':
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
-            print_fn('num inference: %d'%searcher.inferenceCount)
+            print_fn('num inference: %d'%numInference)
             print_fn('total nodes: %d' %len(countNode.keys()))
             print_fn('num duplicate nodes: %d'%len(counts))
             print_fn('total duplicates: %d'%np.sum(counts))
