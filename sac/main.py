@@ -67,6 +67,7 @@ parser.add_argument('--target_update_interval', type=int, default=1, metavar='N'
 parser.add_argument('--replay_size', type=int, default=10000, metavar='N', # 10000000
                         help='size of replay buffer (default: 10000000)')
 parser.add_argument('--save_freq', type=int, default=1000)
+parser.add_argument('--continuous-policy', action="store_true")
 #parser.add_argument('--cuda', action="store_true", help='run on CUDA (default: False)')
 args = parser.parse_args()
 

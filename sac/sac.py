@@ -5,12 +5,12 @@ import torch
 import torch.nn.functional as F
 from torch.optim import Adam
 from sac_utils import soft_update, hard_update
-from model import GaussianPolicy, QNetwork, DeterministicPolicy
+# from model import GaussianPolicy, QNetwork, DeterministicPolicy
 
 import sys
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
-from src.policy import DiscreteResNetPolicy, PickPolicy
+from src.policy import DiscreteResNetPolicy, GaussianPolicy #PickPolicy
 from src.value_functions import ResNetTwinQ
 
 import time
@@ -33,7 +33,11 @@ class SAC(object):
         hard_update(self.critic_target, self.critic)
         
         # self.policy_pick = PickPolicy(crop_size=args.crop_size).to(self.device)
-        self.policy_place = DiscreteResNetPolicy(crop_size=args.crop_size).to(self.device)
+        self.continuous_policy = args.continuous_policy
+        if self.continuous_policy:
+            self.policy_place = GaussianPolicy().to(self.device)
+        else:
+            self.policy_place = DiscreteResNetPolicy(crop_size=args.crop_size).to(self.device)
         # self.policy_pick_optim = Adam(self.policy_pick.parameters(), lr=args.lr)#, weight_decay=1e-5)
         self.policy_place_optim = Adam(self.policy_place.parameters(), lr=args.lr)#, weight_decay=1e-5)
 
@@ -77,11 +81,20 @@ class SAC(object):
         
         state_q = torch.FloatTensor(np.concatenate(state_q, axis=0)).to(self.device)
         patch = torch.FloatTensor(np.concatenate(patch, axis=0)).to(self.device)
-        action_place, place_probs, log_place_probs, log_p_place = self.policy_place([None, state_q, patch])
+        policy_out = self.policy_place([None, state_q, patch])
+        if self.continuous_policy:
+            action_place = policy_out.sample()
+            action_place = (action_place + 0.5) / torch.Tensor([12, 15]).cuda()
+            action_place = torch.clamp(action_place, min=0, max=1-1e-8)
+            action_place = action_place * torch.Tensor([12, 15]).cuda() - 0.5
+            # action_place = torch.clamp(action_place / torch.Tensor([12, 15]).cuda(), min=0, max=1) * torch.Tensor([12, 15]).cuda()
+            log_p_place = policy_out.log_prob(action_place)
+        else:
+            action_place, place_probs, log_place_probs, log_p_place = policy_out
 
-        pick = np.array(pick)[:, None]
-        rotation = np.array(rotation)[:, None]
-        place = action_place.detach().cpu().numpy()
+        pick = np.array(pick)[:, None].astype(int)
+        rotation = np.array(rotation)[:, None].astype(int)
+        place = action_place.detach().cpu().numpy().round().astype(int)
         actions = np.concatenate([pick, place, rotation], axis=1)
         # et = time.time()
         # print(et-st, 'secs.')
