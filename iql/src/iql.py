@@ -88,7 +88,7 @@ class ImplicitQLearning(nn.Module):
         if isinstance(policy_out, torch.distributions.Distribution):
             bc_losses = -policy_out.log_prob(actions)
         else:
-            _, _, log_action_probs = policy_out
+            _, _, log_action_probs, _ = policy_out
             bc_losses = -(log_action_probs * actions).sum(dim=(1,2))
         # bc_losses = -log_action_probs[torch.arange(B), actions[:, 0], actions[:, 1]]
         policy_loss = torch.mean(exp_adv * bc_losses)

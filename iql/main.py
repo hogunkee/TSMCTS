@@ -13,6 +13,7 @@ from torchvision import transforms
 
 from src.iql import ImplicitQLearning
 from src.policy import DiscreteResNetPolicy, DeterministicResNetPolicy, DiscreteTransportPolicy, DeterministicTransportPolicy, GaussianPolicy
+from src.policy import PolicyOpt0, PolicyOpt1, PolicyOpt2, PolicyOpt3, PolicyOpt4
 from src.value_functions import TransportQ, ResNetTwinQ, ValueFunction, RewardFunction
 from src.util import return_range, set_seed, Log, sample_batch, torchify, evaluate_policy
 from src.util import DEFAULT_DEVICE
@@ -132,14 +133,24 @@ def main(args, log_name):
     # dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     set_seed(args.seed)
     
-    if args.continuous_policy:
+    if args.policy_version!=-1:
+        if args.policy_version==0:
+            policy = PolicyOpt0()
+        elif args.policy_version==1:
+            policy = PolicyOpt1()
+        elif args.policy_version==2:
+            policy = PolicyOpt2()
+        elif args.policy_version==3:
+            policy = PolicyOpt3()
+        elif args.policy_version==4:
+            policy = PolicyOpt4()
+    elif args.continuous_policy:
         policy = GaussianPolicy()
     elif args.deterministic_policy:
         if args.policy_net=='transport':
             policy = DeterministicTransportPolicy(crop_size=args.crop_size)
         elif args.policy_net=='resnet':
             policy = DeterministicResNetPolicy(crop_size=args.crop_size)
-            
     else:
         if args.policy_net=='transport':
             policy = DiscreteTransportPolicy(crop_size=args.crop_size)
@@ -263,6 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('--wandb-off', action='store_true')
     parser.add_argument('--gaussian', action='store_true')
     parser.add_argument('--reverse', action='store_true')
+    parser.add_argument('--policy-version', type=int, default=-1)
     args = parser.parse_args()
 
     now = datetime.datetime.now()

@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
 from torch.distributions.categorical import Categorical
+from torchvision.models import resnet18
+
 from .models.transport_small import TransportSmall
 from .value_functions import ResNetQ, ResNetP
 
@@ -168,7 +170,7 @@ class DeterministicResNetPolicy(nn.Module):
         z = action_probs == 0.0
         z = z.float() * 1e-8
         log_action_probs = torch.log(action_probs + z)
-        return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+        return actions, action_probs, log_action_probs#, dist.log_prob(actions_flatten)
     
     def get_prob(self, obs):
         _, state_q, patch = obs
@@ -197,6 +199,248 @@ class GaussianPolicy(nn.Module):
         scale_tril = torch.diag(std)
         return MultivariateNormal(mean, scale_tril=scale_tril)
 
+
+# Option 0: same as original version
+class PolicyOpt0(nn.Module):
+    def __init__(self, hidden_dim=32):
+        super().__init__()
+        resnet = resnet18(pretrained=False)
+        
+        self.cnn_state = nn.Sequential(
+            *list(resnet.children())[:-2]
+            +[nn.Conv2d(512, hidden_dim, kernel_size=1, stride=1, padding=0)]
+            )
+        self.cnn_patch = resnet18(pretrained=False)
+        self.cnn_patch.fc = nn.Sequential(
+                                nn.Linear(512, hidden_dim),
+                                nn.Tanh()
+                            )
+        # fully convolution layer
+        self.fconv = nn.Sequential(
+                        nn.Conv2d(2*hidden_dim, 4*hidden_dim, kernel_size=1, stride=1, padding='same'),
+                        nn.ReLU(),
+                        nn.Conv2d(4*hidden_dim, 1, kernel_size=1, stride=1, padding='same')
+                        )
+
+    def forward(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        patch = patch.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        f_patch = self.cnn_patch(patch) # B x 32
+        f_patch = f_patch.unsqueeze(-1).unsqueeze(-1)
+        f_patch = f_patch.expand(-1, -1, h_state.size(2), h_state.size(3))
+        h_cat = torch.cat([h_state, f_patch], dim=1)  # B x 64 x H x W
+        q = self.fconv(h_cat).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+
+        dist = Categorical(action_probs_flatten)
+        actions_flatten = dist.sample()
+        a0 = actions_flatten // W
+        a1 = actions_flatten % W
+        actions = torch.stack([a0, a1], dim=-1)
+        actions = actions.to(state.device)
+        action_probs = action_probs.clamp(min=1e-8, max=1.0)
+        log_action_probs = torch.log(action_probs) # + z)
+        return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+
+# Option 1: without info of object patches
+class PolicyOpt1(nn.Module):
+    def __init__(self, hidden_dim=32):
+        super().__init__()
+        resnet = resnet18(pretrained=False)
+        
+        self.cnn_state = nn.Sequential(
+            *list(resnet.children())[:-2]
+            +[nn.Conv2d(512, hidden_dim, kernel_size=1, stride=1, padding=0)]
+            )
+        
+        # fully convolution layer
+        self.fconv = nn.Sequential(
+                        nn.Conv2d(hidden_dim, 4*hidden_dim, kernel_size=1, stride=1, padding='same'),
+                        nn.ReLU(),
+                        nn.Conv2d(4*hidden_dim, 1, kernel_size=1, stride=1, padding='same')
+                        )
+        
+    def forward(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        q = self.fconv(h_state).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+
+        dist = Categorical(action_probs_flatten)
+        actions_flatten = dist.sample()
+        a0 = actions_flatten // W
+        a1 = actions_flatten % W
+        actions = torch.stack([a0, a1], dim=-1)
+        actions = actions.to(state.device)
+        action_probs = action_probs.clamp(min=1e-8, max=1.0)
+        log_action_probs = torch.log(action_probs) # + z)
+        return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+
+# Option 2: H,W of object patches
+class PolicyOpt2(nn.Module):
+    def __init__(self, hidden_dim=32):
+        super().__init__()
+        resnet = resnet18(pretrained=False)
+        
+        self.cnn_state = nn.Sequential(
+            *list(resnet.children())[:-2]
+            +[nn.Conv2d(512, hidden_dim, kernel_size=1, stride=1, padding=0)]
+            )
+        # fully convolution layer
+        self.fconv = nn.Sequential(
+                        nn.Conv2d(hidden_dim + 2, 4*hidden_dim, kernel_size=1, stride=1, padding='same'),
+                        nn.ReLU(),
+                        nn.Conv2d(4*hidden_dim, 1, kernel_size=1, stride=1, padding='same')
+                        )
+        
+    def get_bbox_size(self, patches):
+        bbox_size = torch.zeros(patches.size(0), 2).to(patches.device)
+        for i, patch in enumerate(patches):
+            py, px = torch.where(torch.sum(patch, dim=0)!=0)
+            h = py.max() - py.min()
+            w = px.max() - px.min()
+            bbox_size[i] = torch.tensor([h, w])/128
+        return bbox_size
+
+    def forward(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        patch = patch.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        f_patch = self.get_bbox_size(patch) # B x 2
+        f_patch = f_patch.unsqueeze(-1).unsqueeze(-1)
+        f_patch = f_patch.expand(-1, -1, h_state.size(2), h_state.size(3))
+        h_cat = torch.cat([h_state, f_patch], dim=1)  # B x 34 x H x W
+        q = self.fconv(h_cat).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+
+        dist = Categorical(action_probs_flatten)
+        actions_flatten = dist.sample()
+        a0 = actions_flatten // W
+        a1 = actions_flatten % W
+        actions = torch.stack([a0, a1], dim=-1)
+        actions = actions.to(state.device)
+        action_probs = action_probs.clamp(min=1e-8, max=1.0)
+        log_action_probs = torch.log(action_probs) # + z)
+        return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+
+# Option 3: Coordinate Convolution
+class PolicyOpt3(nn.Module):
+    def __init__(self, hidden_dim=32):
+        super().__init__()
+        resnet = resnet18(pretrained=False)
+        
+        self.cnn_state = nn.Sequential(
+            *[CoordConv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)]
+            +list(resnet.children())[1:-2]
+            +[nn.Conv2d(512, hidden_dim, kernel_size=1, stride=1, padding=0)]
+            )
+        self.cnn_patch = resnet18(pretrained=False)
+        self.cnn_patch.fc = nn.Sequential(
+                                nn.Linear(512, hidden_dim),
+                                nn.Tanh()
+                            )
+        # fully convolution layer
+        self.fconv = nn.Sequential(
+                        nn.Conv2d(2*hidden_dim, 4*hidden_dim, kernel_size=1, stride=1, padding='same'),
+                        nn.ReLU(),
+                        nn.Conv2d(4*hidden_dim, 1, kernel_size=1, stride=1, padding='same')
+                        )
+
+    def forward(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        patch = patch.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        f_patch = self.cnn_patch(patch) # B x 32
+        f_patch = f_patch.unsqueeze(-1).unsqueeze(-1)
+        f_patch = f_patch.expand(-1, -1, h_state.size(2), h_state.size(3))
+        h_cat = torch.cat([h_state, f_patch], dim=1)  # B x 64 x H x W
+        q = self.fconv(h_cat).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+
+        dist = Categorical(action_probs_flatten)
+        actions_flatten = dist.sample()
+        a0 = actions_flatten // W
+        a1 = actions_flatten % W
+        actions = torch.stack([a0, a1], dim=-1)
+        actions = actions.to(state.device)
+        action_probs = action_probs.clamp(min=1e-8, max=1.0)
+        log_action_probs = torch.log(action_probs) # + z)
+        return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+
+# Option 4: H,W of object patches + Coordinate Convolution
+class PolicyOpt4(nn.Module):
+    def __init__(self, hidden_dim=32):
+        super().__init__()
+        resnet = resnet18(pretrained=False)
+        
+        self.cnn_state = nn.Sequential(
+            *[CoordConv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)]
+            +list(resnet.children())[1:-2]
+            +[nn.Conv2d(512, hidden_dim, kernel_size=1, stride=1, padding=0)]
+            )
+        # fully convolution layer
+        self.fconv = nn.Sequential(
+                        nn.Conv2d(hidden_dim + 2, 4*hidden_dim, kernel_size=1, stride=1, padding='same'),
+                        nn.ReLU(),
+                        nn.Conv2d(4*hidden_dim, 1, kernel_size=1, stride=1, padding='same')
+                        )
+        
+    def get_bbox_size(self, patches):
+        bbox_size = torch.zeros(patches.size(0), 2).to(patches.device)
+        for i, patch in enumerate(patches):
+            py, px = torch.where(torch.sum(patch, dim=0)!=0)
+            h = py.max() - py.min()
+            w = px.max() - px.min()
+            bbox_size[i] = torch.tensor([h, w])/128
+        return bbox_size
+
+    def forward(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        patch = patch.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        f_patch = self.get_bbox_size(patch) # B x 2
+        f_patch = f_patch.unsqueeze(-1).unsqueeze(-1)
+        f_patch = f_patch.expand(-1, -1, h_state.size(2), h_state.size(3))
+        h_cat = torch.cat([h_state, f_patch], dim=1)  # B x 34 x H x W
+        q = self.fconv(h_cat).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+
+        dist = Categorical(action_probs_flatten)
+        actions_flatten = dist.sample()
+        a0 = actions_flatten // W
+        a1 = actions_flatten % W
+        actions = torch.stack([a0, a1], dim=-1)
+        actions = actions.to(state.device)
+        action_probs = action_probs.clamp(min=1e-8, max=1.0)
+        log_action_probs = torch.log(action_probs) # + z)
+        return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+    
 # class GaussianPolicy(nn.Module):
 #     def __init__(self, obs_dim, act_dim, hidden_dim=256, n_hidden=2):
 #         super().__init__()
@@ -232,3 +476,91 @@ class GaussianPolicy(nn.Module):
 #     def act(self, obs, deterministic=False, enable_grad=False):
 #         with torch.set_grad_enabled(enable_grad):
 #             return self(obs)
+
+class CoordConv2d(nn.Conv2d):
+    """
+    2D Coordinate Convolution
+
+    Source: An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution
+    https://arxiv.org/abs/1807.03247
+    (e.g. adds 2 channels per input feature map corresponding to (x, y) location on map)
+    """
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        stride=1,
+        padding=0,
+        dilation=1,
+        groups=1,
+        bias=True,
+        padding_mode="zeros",
+        coord_encoding="position",
+    ):
+        """
+        Args:
+            in_channels: number of channels of the input tensor [C, H, W]
+            out_channels: number of output channels of the layer
+            kernel_size: convolution kernel size
+            stride: conv stride
+            padding: conv padding
+            dilation: conv dilation
+            groups: conv groups
+            bias: conv bias
+            padding_mode: conv padding mode
+            coord_encoding: type of coordinate encoding. currently only 'position' is implemented
+        """
+
+        assert coord_encoding in ["position"]
+        self.coord_encoding = coord_encoding
+        if coord_encoding == "position":
+            in_channels += 2  # two extra channel for positional encoding
+            self._position_enc = None  # position encoding
+        else:
+            raise Exception(
+                "CoordConv2d: coord encoding {} not implemented".format(
+                    self.coord_encoding
+                )
+            )
+        nn.Conv2d.__init__(
+            self,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+            bias=bias,
+            padding_mode=padding_mode,
+        )
+
+    def output_shape(self, input_shape):
+        """
+        Function to compute output shape from inputs to this module.
+
+        Args:
+            input_shape (iterable of int): shape of input. Does not include batch dimension.
+                Some modules may not need this argument, if their output does not depend
+                on the size of the input, or if they assume fixed size input.
+
+        Returns:
+            out_shape ([int]): list of integers corresponding to output shape
+        """
+
+        # adds 2 to channel dimension
+        return [input_shape[0] + 2] + input_shape[1:]
+
+    def forward(self, input):
+        b, c, h, w = input.shape
+        if self.coord_encoding == "position":
+            if self._position_enc is None:
+                pos_y, pos_x = torch.meshgrid(torch.arange(h), torch.arange(w))
+                pos_y = pos_y.float().to(input.device) / float(h)
+                pos_x = pos_x.float().to(input.device) / float(w)
+                self._position_enc = torch.stack((pos_y, pos_x)).unsqueeze(0)
+            pos_enc = self._position_enc.expand(b, -1, -1, -1)
+            input = torch.cat((input, pos_enc), dim=1)
+        return super(CoordConv2d, self).forward(input)
