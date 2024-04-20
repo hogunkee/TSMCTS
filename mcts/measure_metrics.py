@@ -26,8 +26,11 @@ def filter_log(log):
         #if log[-1]>args.threshold:
         #    success = True
         log.pop(-1)
-    if log[-1]>args.threshold:
+    best_score = np.max(log)
+    if np.max(log)>args.threshold:
         success = True
+        end = log.index(best_score)+1
+        log = log[:end]
     log.append(success)
     return log
 
