@@ -1,6 +1,11 @@
 import os
 import numpy as np
 from dateutil import parser
+from argparse import ArgumentParser
+
+argparser = ArgumentParser()
+argparser.add_argument('--threshold', type=float, default=0.9)
+args = argparser.parse_args()
 
 def filter_log_time(log):
     success = False
@@ -18,9 +23,11 @@ def filter_log(log):
     if len(log)<2:
         return None
     if log[-1]==log[-2]:
-        if log[-1]>0.9:
-            success = True
+        #if log[-1]>args.threshold:
+        #    success = True
         log.pop(-1)
+    if log[-1]>args.threshold:
+        success = True
     log.append(success)
     return log
 
