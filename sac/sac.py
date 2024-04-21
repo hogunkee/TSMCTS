@@ -11,6 +11,7 @@ import sys
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
 from src.policy import DiscreteResNetPolicy, GaussianPolicy #PickPolicy
+from src.policy import PolicyOpt0, PolicyOpt1, PolicyOpt2, PolicyOpt3, PolicyOpt4
 from src.value_functions import ResNetTwinQ
 
 import time
@@ -33,8 +34,21 @@ class SAC(object):
         hard_update(self.critic_target, self.critic)
         
         # self.policy_pick = PickPolicy(crop_size=args.crop_size).to(self.device)
+        self.policy_version = args.policy_version
         self.continuous_policy = args.continuous_policy
-        if self.continuous_policy:
+        
+        if self.policy_version!=-1:
+            if args.policy_version==0:
+                self.policy_place = PolicyOpt0().to(self.device)
+            elif args.policy_version==1:
+                self.policy_place = PolicyOpt1().to(self.device)
+            elif args.policy_version==2:
+                self.policy_place = PolicyOpt2().to(self.device)
+            elif args.policy_version==3:
+                self.policy_place = PolicyOpt3().to(self.device)
+            elif args.policy_version==4:
+                self.policy_place = PolicyOpt4().to(self.device)
+        elif self.continuous_policy:
             self.policy_place = GaussianPolicy().to(self.device)
         else:
             self.policy_place = DiscreteResNetPolicy(crop_size=args.crop_size).to(self.device)

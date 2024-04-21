@@ -38,6 +38,7 @@ parser.add_argument('--wandb-off', action='store_true')
 parser.add_argument('--use-policy', action='store_true')
 parser.add_argument('--use-qnet', action='store_true')
 parser.add_argument('--iql-path', type=str, default='../iql/logs/0308_0121/iql_e1.pth')
+parser.add_argument('--policy-version', type=int, default=-1)
 # SAC args #
 parser.add_argument('--eval', type=bool, default=True,
                         help='Evaluates a policy a policy every 10 episode (default: True)')
