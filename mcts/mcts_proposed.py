@@ -710,7 +710,6 @@ if __name__=='__main__':
     parser.add_argument('--rollout-policy', type=str, default='nostep') # 'nostep' / 'policy' / 'iql-policy'
     parser.add_argument('--tree-policy', type=str, default='random') # 'random' / 'policy' / 'iql-policy'
     parser.add_argument('--puct-lambda', type=float, default=0.5)
-    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
     parser.add_argument('--threshold-prob', type=float, default=1e-5)
     parser.add_argument('--batch-size', type=int, default=32)
@@ -730,6 +729,9 @@ if __name__=='__main__':
     parser.add_argument('--policynet-path', type=str, default='../policy_learning/logs/0224_1815/pnet_e1.pth')
     parser.add_argument('--iql-path', type=str, default='../iql/logs/0308_0121/iql_e1.pth')
     parser.add_argument('--sigmoid', action='store_true')
+    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
+    parser.add_argument('--policy-version', type=int, default=-1)
+    parser.add_argument('--continuous-policy', action='store_true')
     args = parser.parse_args()
 
     # Logger

@@ -188,12 +188,32 @@ def loadPolicyNetwork(model_path, args):
 
 def loadIQLPolicyNetwork(model_path, args):
     sys.path.append(os.path.join(FILE_PATH, '..', 'iql'))
-    if args.policy_net=='transport':
-        from src.policy import DiscreteTransportPolicy
-        policy = DiscreteTransportPolicy(crop_size=args.crop_size)
-    elif args.policy_net=='resnet':
-        from src.policy import DiscreteResNetPolicy
-        policy = DiscreteResNetPolicy(crop_size=args.crop_size)
+    if args.policy_version!=-1:
+        if args.policy_version==0:
+            from src.policy import PolicyOpt0
+            policy = PolicyOpt0()
+        elif args.policy_version==1:
+            from src.policy import PolicyOpt1
+            policy = PolicyOpt1()
+        elif args.policy_version==2:
+            from src.policy import PolicyOpt2
+            policy = PolicyOpt2()
+        elif args.policy_version==3:
+            from src.policy import PolicyOpt3
+            policy = PolicyOpt3()
+        elif args.policy_version==4:
+            from src.policy import PolicyOpt4
+            policy = PolicyOpt4()
+    elif args.continuous_policy:
+        from src.policy import GaussianPolicy
+        policy = GaussianPolicy()
+    else:
+        if args.policy_net=='transport':
+            from src.policy import DiscreteTransportPolicy
+            policy = DiscreteTransportPolicy(crop_size=args.crop_size)
+        elif args.policy_net=='resnet':
+            from src.policy import DiscreteResNetPolicy
+            policy = DiscreteResNetPolicy(crop_size=args.crop_size)
     state_dict = torch.load(model_path)
     state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
     policy.load_state_dict(state_dict)
