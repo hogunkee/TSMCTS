@@ -308,8 +308,11 @@ class PolicyOpt2(nn.Module):
         bbox_size = torch.zeros(patches.size(0), 2).to(patches.device)
         for i, patch in enumerate(patches):
             py, px = torch.where(torch.sum(patch, dim=0)!=0)
-            h = py.max() - py.min()
-            w = px.max() - px.min()
+            try:
+                h = py.max() - py.min()
+                w = px.max() - px.min()
+            except:
+                h, w = 0, 0
             bbox_size[i] = torch.tensor([h, w])/128
         return bbox_size
 
@@ -410,8 +413,11 @@ class PolicyOpt4(nn.Module):
         bbox_size = torch.zeros(patches.size(0), 2).to(patches.device)
         for i, patch in enumerate(patches):
             py, px = torch.where(torch.sum(patch, dim=0)!=0)
-            h = py.max() - py.min()
-            w = px.max() - px.min()
+            try:
+                h = py.max() - py.min()
+                w = px.max() - px.min()
+            except:
+                h, w = 0, 0
             bbox_size[i] = torch.tensor([h, w])/128
         return bbox_size
 
