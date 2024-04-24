@@ -247,6 +247,23 @@ class PolicyOpt0(nn.Module):
         action_probs = action_probs.clamp(min=1e-8, max=1.0)
         log_action_probs = torch.log(action_probs) # + z)
         return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+    
+    def get_prob(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        patch = patch.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        f_patch = self.cnn_patch(patch) # B x 32
+        f_patch = f_patch.unsqueeze(-1).unsqueeze(-1)
+        f_patch = f_patch.expand(-1, -1, h_state.size(2), h_state.size(3))
+        h_cat = torch.cat([h_state, f_patch], dim=1)  # B x 64 x H x W
+        q = self.fconv(h_cat).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+        return action_probs
 
 # Option 1: without info of object patches
 class PolicyOpt1(nn.Module):
@@ -286,6 +303,18 @@ class PolicyOpt1(nn.Module):
         action_probs = action_probs.clamp(min=1e-8, max=1.0)
         log_action_probs = torch.log(action_probs) # + z)
         return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+    
+    def get_prob(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        q = self.fconv(h_state).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+        return action_probs
 
 # Option 2: H,W of object patches
 class PolicyOpt2(nn.Module):
@@ -341,6 +370,23 @@ class PolicyOpt2(nn.Module):
         action_probs = action_probs.clamp(min=1e-8, max=1.0)
         log_action_probs = torch.log(action_probs) # + z)
         return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+    
+    def get_prob(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        patch = patch.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        f_patch = self.get_bbox_size(patch) # B x 2
+        f_patch = f_patch.unsqueeze(-1).unsqueeze(-1)
+        f_patch = f_patch.expand(-1, -1, h_state.size(2), h_state.size(3))
+        h_cat = torch.cat([h_state, f_patch], dim=1)  # B x 34 x H x W
+        q = self.fconv(h_cat).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+        return action_probs
 
 # Option 3: Coordinate Convolution
 class PolicyOpt3(nn.Module):
@@ -390,6 +436,23 @@ class PolicyOpt3(nn.Module):
         action_probs = action_probs.clamp(min=1e-8, max=1.0)
         log_action_probs = torch.log(action_probs) # + z)
         return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+    
+    def get_prob(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        patch = patch.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        f_patch = self.cnn_patch(patch) # B x 32
+        f_patch = f_patch.unsqueeze(-1).unsqueeze(-1)
+        f_patch = f_patch.expand(-1, -1, h_state.size(2), h_state.size(3))
+        h_cat = torch.cat([h_state, f_patch], dim=1)  # B x 64 x H x W
+        q = self.fconv(h_cat).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+        return action_probs
 
 # Option 4: H,W of object patches + Coordinate Convolution
 class PolicyOpt4(nn.Module):
@@ -446,6 +509,23 @@ class PolicyOpt4(nn.Module):
         action_probs = action_probs.clamp(min=1e-8, max=1.0)
         log_action_probs = torch.log(action_probs) # + z)
         return actions, action_probs, log_action_probs, dist.log_prob(actions_flatten)
+    
+    def get_prob(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        patch = patch.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        f_patch = self.get_bbox_size(patch) # B x 2
+        f_patch = f_patch.unsqueeze(-1).unsqueeze(-1)
+        f_patch = f_patch.expand(-1, -1, h_state.size(2), h_state.size(3))
+        h_cat = torch.cat([h_state, f_patch], dim=1)  # B x 34 x H x W
+        q = self.fconv(h_cat).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        q_flat = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(q_flat, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+        return action_probs
     
 # class GaussianPolicy(nn.Module):
 #     def __init__(self, obs_dim, act_dim, hidden_dim=256, n_hidden=2):
