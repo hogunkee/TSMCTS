@@ -215,8 +215,11 @@ def loadIQLPolicyNetwork(model_path, args):
             from src.policy import DiscreteResNetPolicy
             policy = DiscreteResNetPolicy(crop_size=args.crop_size)
     state_dict = torch.load(model_path)
-    state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
-    policy.load_state_dict(state_dict)
+    if type(state_dict)==dict:
+        policy.load_state_dict(state_dict['policy_state_dict'])
+    else:
+        state_dict = {k.replace('policy.', ''): v for k, v in state_dict.items() if k.startswith('policy.')}
+        policy.load_state_dict(state_dict)
     return policy
 
 def loadIQLRewardNetwork(model_path, args, sigmoid=False):
