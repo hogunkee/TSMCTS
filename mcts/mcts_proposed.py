@@ -451,10 +451,9 @@ class MCTS(object):
                         ap_blur /= np.sum(ap_blur)
                         newProbMap[i] = ap_blur
                     probMap = newProbMap
-                    
+                
                 # shape: r x n x h x w
                 probMap = probMap.reshape(2, self.renderer.numObjects, self.renderer.tableSize[0], self.renderer.tableSize[1])
-                probMap[probMap < self.thresholdProb] = 0.0
                 pys, pxs = np.where(node.table[0]!=0)
                 for py, px in zip(pys, pxs):
                     obj = node.table[0][py, px]
@@ -468,6 +467,10 @@ class MCTS(object):
                         probMap[:, o, py, px] = 0
                 probMap = self.removeBoundaryActions(probMap)
                 probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
+
+                probMap[probMap < self.thresholdProb] = 0.0
+                probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
+                assert not np.isnan(probMap).any()
                 
             elif policy.startswith('policy'):
                 states = []
@@ -478,7 +481,7 @@ class MCTS(object):
                 s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
                 if self.preProcess is not None:
                     s = self.preProcess(s)
-                probMap  = self.policyNet(s).cpu().detach().numpy()
+                probMap = self.policyNet(s).cpu().detach().numpy()
 
                 if self.blurring>1:
                     newProbMap = np.zeros_like(probMap)
@@ -492,7 +495,6 @@ class MCTS(object):
                     probMap = newProbMap
                 
                 # shape: n x h x w
-                probMap[probMap < self.thresholdProb] = 0.0
                 pys, pxs = np.where(node.table[0]!=0)
                 for py, px in zip(pys, pxs):
                     obj = node.table[0][py, px]
@@ -502,6 +504,9 @@ class MCTS(object):
                         # avoid placing on the occupied position
                         probMap[o, py, px] = 0
                 probMap = self.removeBoundaryActions(probMap)
+                probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+
+                probMap[probMap < self.thresholdProb] = 0.0
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
             node.setActions(probMap)   
         else:
