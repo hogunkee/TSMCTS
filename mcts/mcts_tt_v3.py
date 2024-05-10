@@ -24,6 +24,8 @@ FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
 from custom_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
+sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
+from collect_template_list import scene_list
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -430,7 +432,6 @@ class MCTS(object):
                     
                 # shape: r x n x h x w
                 probMap = probMap.reshape(2, self.renderer.numObjects, self.renderer.tableSize[0], self.renderer.tableSize[1])
-                probMap[probMap < self.thresholdProb] = 0.0
                 pys, pxs = np.where(node.table[0]!=0)
                 for py, px in zip(pys, pxs):
                     obj = node.table[0][py, px]
@@ -444,6 +445,10 @@ class MCTS(object):
                         probMap[:, o, py, px] = 0
                 probMap = self.removeBoundaryActions(probMap)
                 probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
+
+                probMap[probMap < self.thresholdProb] = 0.0
+                probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
+                assert not np.isnan(probMap).any()
                 
             elif policy.startswith('policy'):
                 states = []
@@ -454,7 +459,7 @@ class MCTS(object):
                 s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
                 if self.preProcess is not None:
                     s = self.preProcess(s)
-                probMap  = self.policyNet(s).cpu().detach().numpy()
+                probMap = self.policyNet(s).cpu().detach().numpy()
 
                 if self.blurring>1:
                     newProbMap = np.zeros_like(probMap)
@@ -468,7 +473,6 @@ class MCTS(object):
                     probMap = newProbMap
                 
                 # shape: n x h x w
-                probMap[probMap < self.thresholdProb] = 0.0
                 pys, pxs = np.where(node.table[0]!=0)
                 for py, px in zip(pys, pxs):
                     obj = node.table[0][py, px]
@@ -478,6 +482,9 @@ class MCTS(object):
                         # avoid placing on the occupied position
                         probMap[o, py, px] = 0
                 probMap = self.removeBoundaryActions(probMap)
+                probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+
+                probMap[probMap < self.thresholdProb] = 0.0
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
             node.setActions(probMap)   
         else:
@@ -655,7 +662,7 @@ def setupEnvironment(args):
             'ycb_object_path' : os.path.join(data_dir, 'YCB_dataset'),
             'housecat_object_path' : os.path.join(data_dir, 'housecat6d/obj_models_small_size_final'),
         },
-        'split' : 'inference' #'train'
+        'split' : args.object_split #'inference' #'train'
     }
     
     gui_on = not args.gui_off
@@ -675,9 +682,10 @@ if __name__=='__main__':
     # Inference
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--use-template', action="store_true")
-    parser.add_argument('--template', type=str, default='')
-    parser.add_argument('--scene-split', type=str, default='seen')
-    parser.add_argument('--object-split', type=str, default='seen')
+    parser.add_argument('--scenes', type=str, default='') # e.g., 'B2,B5,C4,C6,C12,D5,D8,D11,O3,O7'
+    parser.add_argument('--inorder', action="store_true")
+    parser.add_argument('--scene-split', type=str, default='all') # 'all' / 'seen' / 'unseen'
+    parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--H', type=int, default=12)
@@ -694,7 +702,6 @@ if __name__=='__main__':
     parser.add_argument('--rollout-policy', type=str, default='nostep') # 'nostep' / 'policy' / 'iql-policy'
     parser.add_argument('--tree-policy', type=str, default='random') # 'random' / 'policy' / 'iql-policy'
     parser.add_argument('--puct-lambda', type=float, default=0.5)
-    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
     parser.add_argument('--threshold-prob', type=float, default=1e-5)
     parser.add_argument('--batch-size', type=int, default=32)
@@ -713,6 +720,9 @@ if __name__=='__main__':
     parser.add_argument('--policynet-path', type=str, default='../policy_learning/logs/0224_1815/pnet_e1.pth')
     parser.add_argument('--iql-path', type=str, default='../iql/logs/0308_0121/iql_e1.pth')
     parser.add_argument('--sigmoid', action='store_true')
+    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
+    parser.add_argument('--policy-version', type=int, default=-1)
+    parser.add_argument('--continuous-policy', action='store_true')
     args = parser.parse_args()
 
     # Logger
@@ -742,33 +752,49 @@ if __name__=='__main__':
     with suppress_stdout():
         env = setupEnvironment(args)
     if args.use_template:
-        if 'unseen' in [args.scene_split, args.object_split]:
-           dataset = f'test-{args.object_split}_obj-{args.scene_split}_template'
-        else: 
-           dataset = 'train'
-        template_folder = os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/templates')
-        template_files = os.listdir(template_folder)
-        template_files = [f for f in template_files if f.lower().endswith('.json') and f.lower().startswith(args.template.lower())]
-        
-        template_file = random.choice(template_files)
-        print_fn('Selected template: %s' %template_file)
-        # scene = template_file.split('_')[0]
-        # template_id = template_file.split('_')[-1].split('.')[0]
-        with open(os.path.join(template_folder, template_file), 'r') as f:
-            templates = json.load(f)
-        augmented_template = env.get_augmented_templates(templates, 2)[-1]
-        objects = [v for k,v in augmented_template['objects'].items()]
-        # env.load_template(augmented_template)
+        scenes = sorted(list(scene_list.keys()))
+        if args.scenes=='':
+            if args.scene_split=='unseen':
+                scenes = [s for s in scenes if s in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
+            elif args.scene_split=='seen':
+                scenes = [s for s in scenes if s not in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
+        else:
+            scenes = args.scenes.split(',')
+        if args.inorder:
+            selected_scene = scenes[0]
+            metrics = {}
+            for s in scenes:
+                metrics[s] = {}
+        else:
+            selected_scene = random.choice(scenes)
+        print_fn('Selected scene: %s' %selected_scene)
+
+        objects = scene_list[selected_scene]
+        #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
+        sizes = []
+        for i in range(len(objects)):
+            if 'small' in objects[i]:
+                sizes.append('small')
+                objects[i] = objects[i].replace('small_', '')
+            elif 'large' in objects[i]:
+                sizes.append('large')
+                objects[i] = objects[i].replace('large_', '')
+            else:
+                sizes.append('medium')
+        objects = [[objects[i], sizes[i]] for i in range(len(objects))]
     else:
         objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
                     'glue', 'knife', 'lotion', 'marker', 'pitcher', 'plate', 'remote', 'scissors', 'shampoo', \
                     'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
         # objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
         objects = [(o, 'medium') for o in objects]
-    if len(objects) < args.num_objects:
-        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
-    else:
-        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+    if args.num_objects==0: # use the template
+        selected_objects = objects
+    else: # random sampling
+        if len(objects) < args.num_objects:
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
+        else:
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
     env.spawn_objects(selected_objects)
     env.arrange_objects(random=True)
 
@@ -841,16 +867,39 @@ if __name__=='__main__':
         with suppress_stdout():
             obs = env.reset()
         if args.use_template:
-            template_file = random.choice(template_files)
-            print_fn('Selected template: %s' %template_file)
-            with open(os.path.join(template_folder, template_file), 'r') as f:
-                templates = json.load(f)
-            augmented_template = env.get_augmented_templates(templates, 2)[-1]
-            objects = [v for k,v in augmented_template['objects'].items()]
-        if len(objects) < args.num_objects:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
+            if args.inorder:
+                selected_scene = scenes[sidx%len(scenes)]
+            else:
+                selected_scene = random.choice(scenes)
+            print_fn('Selected scene: %s' %selected_scene)
+
+            objects = scene_list[selected_scene]
+            #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
+            sizes = []
+            for i in range(len(objects)):
+                if 'small' in objects[i]:
+                    sizes.append('small')
+                    objects[i] = objects[i].replace('small_', '')
+                elif 'large' in objects[i]:
+                    sizes.append('large')
+                    objects[i] = objects[i].replace('large_', '')
+                else:
+                    sizes.append('medium')
+            objects = [[objects[i], sizes[i]] for i in range(len(objects))]
+            if False:
+                template_file = random.choice(template_files)
+                print_fn('Selected template: %s' %template_file)
+                with open(os.path.join(template_folder, template_file), 'r') as f:
+                    templates = json.load(f)
+                augmented_template = env.get_augmented_templates(templates, 2)[-1]
+                objects = [v for k,v in augmented_template['objects'].items()]
+        if args.num_objects==0:
+            selected_objects = objects
         else:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+            if len(objects) < args.num_objects:
+                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
+            else:
+                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
         env.spawn_objects(selected_objects)
         while True:
             is_occluded = False
