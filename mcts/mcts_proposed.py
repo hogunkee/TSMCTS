@@ -25,7 +25,7 @@ sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5
 from custom_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
-from template_utils import scene_list
+from collect_template_list import scene_list
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -698,7 +698,8 @@ if __name__=='__main__':
     # Inference
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--use-template', action="store_true")
-    parser.add_argument('--template', type=str, default='')
+    parser.add_argument('--scenes', type=str, default='') # e.g., 'B2,B5,C4,C6,C12,D5,D8,D11,O3,O7'
+    parser.add_argument('--inorder', action="store_true")
     parser.add_argument('--scene-split', type=str, default='all') # 'all' / 'seen' / 'unseen'
     parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
@@ -769,15 +770,34 @@ if __name__=='__main__':
         env = setupEnvironment(args)
     if args.use_template:
         scenes = sorted(list(scene_list.keys()))
-        if args.scene_split=='unseen':
-            scenes = [s for s in scenes if s in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-        elif args.scene_split=='seen':
-            scenes = [s for s in scenes if s not in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-        selected_scene = random.choice(scenes)
+        if args.scenes=='':
+            if args.scene_split=='unseen':
+                scenes = [s for s in scenes if s in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
+            elif args.scene_split=='seen':
+                scenes = [s for s in scenes if s not in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
+        else:
+            scenes = args.scenes.split(',')
+        if args.inorder:
+            selected_scene = scenes[0]
+            metrics = {}
+            for s in scenes:
+                metrics[s] = {}
+        else:
+            selected_scene = random.choice(scenes)
         print_fn('Selected scene: %s' %selected_scene)
 
         objects = scene_list[selected_scene]
-        sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
+        #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
+        sizes = []
+        for i in range(len(objects)):
+            if 'small' in objects[i]:
+                sizes.append('small')
+                objects[i] = objects[i].replace('small_', '')
+            elif 'large' in objects[i]:
+                sizes.append('large')
+                objects[i] = objects[i].replace('large_', '')
+            else:
+                sizes.append('medium')
         objects = [[objects[i], sizes[i]] for i in range(len(objects))]
         
         ###
@@ -806,10 +826,13 @@ if __name__=='__main__':
                     'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
         # objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
         objects = [(o, 'medium') for o in objects]
-    if len(objects) < args.num_objects:
-        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
-    else:
-        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+    if args.num_objects==0: # use the template
+        selected_objects = objects
+    else: # random sampling
+        if len(objects) < args.num_objects:
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
+        else:
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
     env.spawn_objects(selected_objects)
     env.arrange_objects(random=True)
 
@@ -882,11 +905,24 @@ if __name__=='__main__':
         with suppress_stdout():
             obs = env.reset()
         if args.use_template:
-            selected_scene = random.choice(scenes)
+            if args.inorder:
+                selected_scene = scenes[sidx%len(scenes)]
+            else:
+                selected_scene = random.choice(scenes)
             print_fn('Selected scene: %s' %selected_scene)
 
             objects = scene_list[selected_scene]
-            sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
+            #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
+            sizes = []
+            for i in range(len(objects)):
+                if 'small' in objects[i]:
+                    sizes.append('small')
+                    objects[i] = objects[i].replace('small_', '')
+                elif 'large' in objects[i]:
+                    sizes.append('large')
+                    objects[i] = objects[i].replace('large_', '')
+                else:
+                    sizes.append('medium')
             objects = [[objects[i], sizes[i]] for i in range(len(objects))]
             if False:
                 template_file = random.choice(template_files)
@@ -895,10 +931,13 @@ if __name__=='__main__':
                     templates = json.load(f)
                 augmented_template = env.get_augmented_templates(templates, 2)[-1]
                 objects = [v for k,v in augmented_template['objects'].items()]
-        if len(objects) < args.num_objects:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
+        if args.num_objects==0:
+            selected_objects = objects
         else:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+            if len(objects) < args.num_objects:
+                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
+            else:
+                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
         env.spawn_objects(selected_objects)
         while True:
             is_occluded = False
