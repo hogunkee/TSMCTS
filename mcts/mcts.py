@@ -27,6 +27,7 @@ from utilities import Camera, Camera_front_top
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
 from collect_template_list import scene_list
 
+import wandb
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -710,6 +711,7 @@ if __name__=='__main__':
     parser.add_argument('--gui-off', action="store_true")
     parser.add_argument('--visualize-graph', action="store_true")
     parser.add_argument('--logging', action="store_true")
+    parser.add_argument('--wandb-off', action='store_true')
     # MCTS
     parser.add_argument('--algorithm', type=str, default='mcts') # 'mcts' / 'alphago'
     parser.add_argument('--time-limit', type=int, default=None)
@@ -749,6 +751,16 @@ if __name__=='__main__':
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
     
+    logname = 'MCTS-'
+    logname += args.tree_policy
+    if args.use_template:
+        logname += '-' + args.scenes
+    if not args.wandb_off:
+        wandb.init(project="MCTS")
+        wandb.config.update(parser.parse_args())
+        wandb.run.name = logname
+        wandb.run.save()
+
     def print_fn(s=''):
         if args.logging: logger.info(s)
         else: print(s)
@@ -869,7 +881,7 @@ if __name__=='__main__':
         searcher.setPolicyNet(pnet)
 
     success = 0
-    success_elpen = []
+    success_eplen = []
     best_scores = []
     log_dir = 'data/%s' %args.algorithm
     if args.logging:
@@ -884,7 +896,7 @@ if __name__=='__main__':
             bar.set_description("Episode %d/%d"%(sidx, args.num_scenes))
             if sidx>0:
                 bar.set_postfix(success_rate="%.1f%% (%d/%d)"%(100*success/sidx, success, sidx),
-                                eplen="%.1f"%(np.mean(success_elpen) if len(success_elpen)>0 else 0))
+                                eplen="%.1f"%(np.mean(success_eplen) if len(success_eplen)>0 else 0))
             else:
                 bar.set_postfix(success_rate="0.0% (0/0)", eplen="0.0")
             
@@ -1059,7 +1071,7 @@ if __name__=='__main__':
                 print_fn("Score: %f"%reward)
                 if reward > args.threshold_success:
                     success += 1
-                    success_elpen.append(step+1)
+                    success_eplen.append(step+1)
                 print_fn(table[0])
                 print_fn("--------------------------------")
                 print_fn("--------------------------------")
@@ -1071,10 +1083,18 @@ if __name__=='__main__':
         if args.logging and bestRgb is not None:
             plt.imshow(bestRgb)
             plt.savefig('%s-%s/scene-%d/best.png'%(log_dir, log_name, sidx))
+        if not args.wandb_off:
+            wandb.log({'Success': float(best_score>args.threshold_success),
+                       'Eplen': step+1,
+                       'Score:': best_score})
     print_fn("Average scores: %.2f"%np.mean(best_scores))
     print_fn("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
-    print_fn("Episode length: %.1f"%(np.mean(success_elpen) if len(success_elpen)>0 else 0))
+    print_fn("Episode length: %.1f"%(np.mean(success_eplen) if len(success_eplen)>0 else 0))
     print("Average scores: %.2f"%np.mean(best_scores))
     print("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
-    print("Episode length: %.1f"%(np.mean(success_elpen) if len(success_elpen)>0 else 0))
+    print("Episode length: %.1f"%(np.mean(success_eplen) if len(success_eplen)>0 else 0))
+    if not args.wandb_off:
+        wandb.log({'Success Rate': success/args.num_scenes,
+                   'Mean Eplen': np.mean(success_eplen) if len(success_eplen)>0 else 0,
+                   'Mean Score:': np.mean(best_scores)})
 
