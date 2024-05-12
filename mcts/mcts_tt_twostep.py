@@ -1052,8 +1052,8 @@ if __name__=='__main__':
 
             nextTable = searcher.root.takeAction(action)
             print_fn("Best Action: %s"%str(action))
-            print_fn("Expected Pick Q: %f"%resultDict['expectedPickReward']))
-            print_fn("Expected Place Q: %f"%resultDict['expectedPlaceReward']))
+            print_fn("Expected Pick Q: %f"%resultDict['expectedPickReward'])
+            print_fn("Expected Place Q: %f"%resultDict['expectedPlaceReward'])
             print_fn("Terminal: %s"%resultDict['terminal'])
             print_fn("Best Child: \n %s"%nextTable[0])
 
