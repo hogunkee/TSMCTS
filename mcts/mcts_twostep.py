@@ -471,7 +471,6 @@ class MCTS(object):
         return probMap
     
     def getPossibleActions(self, node, policy='random'):
-        # TODO
         # random / iql / policy / iql-uniform / policy-uniform
         # print('getPossibleActions.')
         if node.numActionCandidates==0:
@@ -563,6 +562,7 @@ class MCTS(object):
 
                     probMap[probMap < self.thresholdProb] = 0.0
                     probMap /= np.sum(probMap, axis=(0,1), keepdims=True)
+                    assert not np.isnan(probMap).any()
             node.setActions(probMap)   
         else:
             probMap = node.actionProb
@@ -1021,7 +1021,6 @@ if __name__=='__main__':
             print_fn("Children of the best child place node:")
             for i, c in enumerate(sorted(list(bestPlaceChild.children.keys()))):
                 print_fn(f"{i} {c} {str(bestPlaceChild.children[c])}")
-            nextTable = bestPickChild.table
 
             # action probability
             actionProb = bestPlaceChild.actionProb
@@ -1035,6 +1034,7 @@ if __name__=='__main__':
                     plt.imshow(np.mean(actionProb, axis=(0, 1)))
                 plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
 
+            nextTable = searcher.root.takeAction(action)
             print_fn("Best Action: %s"%str(action))
             print_fn("Expected Pick Q-mean: %f / Q-norm: %f"%(resultDict['expectedPickReward'][0], resultDict['expectedPickReward'][1]))
             print_fn("Expected Place Q-mean: %f / Q-norm: %f"%(resultDict['expectedPlaceReward'][0], resultDict['expectedPlaceReward'][1]))

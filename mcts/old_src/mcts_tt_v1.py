@@ -24,20 +24,11 @@ FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
 from custom_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
-sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
-from collect_template_list import scene_list
 
 import warnings
 warnings.filterwarnings("ignore")
 
 countNode = {}
-
-def hash(table, depth=None):
-    result = ' '.join(table[0].reshape(-1).astype('str').tolist())
-    result += ' '.join(table[1].reshape(-1).astype('str').tolist())
-    if depth is not None:
-        result += str(depth)
-    return result
         
 class Node(object):
     def __init__(self, numObjects, table, parent=None, preAction=None, actionProb=0.):
@@ -54,7 +45,10 @@ class Node(object):
 
         self.numVisits = 0
         self.Qmean = 0.
+        self.Qnorm = 0.
         self.G = None
+        self.Gmin = None
+        self.Gmax = None
         #self.totalReward = 0.
 
         self.children = {}
@@ -62,11 +56,10 @@ class Node(object):
         self.numActionCandidates = 0
         self.terminal = False
         
-        hashT = hash(table)
-        if hashT not in countNode:
-            countNode[hashT] = 1
+        if str(table) not in countNode:
+            countNode[str(table)] = 1
         else:
-            countNode[hashT] += 1
+            countNode[str(table)] += 1
     
     def takeAction(self, move):
         obj, py, px, rot = move
@@ -91,6 +84,7 @@ class Node(object):
         s=[]
         # s.append("Reward: %s"%(self.totalReward))
         s.append("Q-mean: %.3f"%(self.Qmean))
+        s.append("Q-norm: %.3f"%(self.Qnorm))
         s.append("Visits: %d"%(self.numVisits))
         s.append("Terminal: %s"%(self.terminal))
         s.append("Children: %d"%(len(self.children.keys())))
@@ -135,6 +129,7 @@ class MCTS(object):
         self.thresholdProb = args.threshold_prob
 
         self.rewardType = args.reward_type
+        self.normalize_reward = args.normalize_reward
         self.gtRewardNet = None
         self.rewardNet = None
         self.valueNet = None
@@ -143,18 +138,14 @@ class MCTS(object):
         self.batchSize = args.batch_size #32
         self.preProcess = None
         self.searchCount = 0
-        self.inferenceCount = 0
         self.blurring = args.blurring
 
-        self.TTValues = {}
-        self.TTNodes = {}
+        self.transpositionTable = {}
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
-        self.TTValues.clear()
-        self.TTNodes.clear()
+        self.transpositionTable = {}
         self.searchCount = 0
-        self.inferenceCount = 0
         return table
 
     def setValueNet(self, valueNet):
@@ -176,9 +167,6 @@ class MCTS(object):
         # print('search.')
         self.coverage = []
         self.root = Node(self.renderer.numObjects, table)
-        hashRoot = hash(self.root.table, 0)
-        self.TTValues[hashRoot] = (0, 0., 0.)
-        self.TTNodes[hashRoot] = [self.root]
         if self.limitType == 'time':
             timeLimit = time.time() + self.timeLimit / 1000
             while time.time() < timeLimit:
@@ -186,30 +174,26 @@ class MCTS(object):
         else:
             while self.searchCount < self.searchLimit:
                 self.executeRound()
-        action, bestChild = self.getBestChild(self.root, explorationValue=0.)
-        #action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
+        bestChild = self.getBestChild(self.root, explorationValue=0.)
+        action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
         if needDetails:
-            return {"action": action, "expectedReward": bestChild.Qmean, "terminal": bestChild.terminal}
+            return {"action": action, "expectedReward": (bestChild.Qmean, bestChild.Qnorm), "terminal": bestChild.terminal}
         else:
             return action
 
     def selectNode(self, node):
         # print('selectNode.')
-        #trajectory = []
         while not node.terminal: # self.isTerminal(node)[0]:
-            if node.isFullyExpanded(): # or random.uniform(0, 1) < 0.5:
-                action, newNode = self.getBestChild(node, self.explorationConstant)
-                #trajectory.append((node, action))
-                node = newNode
+            if len(node.children)==0:
+                return self.expand(node)
+            elif node.isFullyExpanded(): # or random.uniform(0, 1) < 0.5:
+                node = self.getBestChild(node, self.explorationConstant)
             else:
-                action, newNode = self.expand(node)
-                #trajectory.append((node, action))
-                return newNode#, trajectory
-        return node#, trajectory
+                return self.expand(node)
+        return node
 
     def sampleFromProb(self, prob, exceptActions=[]):
         # shape: r x n x h x w
-        prob = prob.copy()
         for action in exceptActions:
             o, py, px, r = action
             if len(prob.shape)==3:
@@ -245,10 +229,9 @@ class MCTS(object):
         exceptActions = [a for a in node.children.keys()]
         action, p = self.sampleFromProb(prob, exceptActions)
 
-        newTable = node.takeAction(action)
-        newNode = Node(self.renderer.numObjects, newTable, node, action, p)
+        newNode = Node(self.renderer.numObjects, node.takeAction(action), node, action, p)
         node.children[tuple(action)] = newNode
-        return action, newNode
+        return newNode
 
     def getRewardValue(self, tables, groundTruth=False):
         # print('getReward.')
@@ -322,37 +305,39 @@ class MCTS(object):
 
     def backpropagate(self, node, G):
         # print('backpropagate.')
-        # update node's utility
-        if node.G is None:
-            node.G = G
-
         while node is not None:
-            hashT = hash(node.table, node.depth)
-            # update TT
-            numVisits, Qmean, nodeG = self.TTValues[hashT]
-            Qmean = (Qmean * numVisits + G) / (numVisits + 1)
-            numVisits += 1
-            self.TTValues[hashT] = (numVisits, Qmean, nodeG)
-            # update Q-values of transposition nodes
-            TTnodes = self.TTNodes[hashT]
-            for n in TTnodes:
-                n.Qmean = Qmean
+            # calcuate average node value
+            node.Qmean = (node.Qmean * node.numVisits + G) / (node.numVisits + 1)
             node.numVisits += 1
+            # update node's upper and lower bound
+            if node.G is None:
+                node.G = G
+                node.Gmin = G
+                node.Gmax = G
+            else:
+                if G < node.Gmin:
+                    node.Gmin = G
+                if G > node.Gmax:
+                    node.Gmax = G
             node = node.parent
+            G *= self.gamma
 
     def executeRound(self):
         # print('executeRound.')
         node = self.selectNode(self.root)
         G = self.rollout(node)
         self.backpropagate(node, G)
-        self.searchCount += 1
 
     def getBestChild(self, node, explorationValue):
         # print('getBestChild.')
         bestValue = float("-inf")
         bestNodes = []
-        for action, child in node.children.items():
-            Qvalue = child.Qmean
+        for child in node.children.values():
+            if self.normalize_reward:
+                Qvalue = (self.gamma * child.Gmax - node.Gmin) / (node.Gmax - node.Gmin + 1e-6)
+                child.Qnorm = Qvalue
+            else:
+                Qvalue = child.Qmean
             if self.algorithm=='alphago':
                 nodeValue = Qvalue + explorationValue * \
                     child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
@@ -365,10 +350,10 @@ class MCTS(object):
                 #         np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
             if nodeValue > bestValue:
                 bestValue = nodeValue
-                bestNodes = [(action, child)]
+                bestNodes = [child]
             elif nodeValue == bestValue:
-                bestNodes.append((action, child))
-        return bestNodes[np.random.choice(len(bestNodes))]
+                bestNodes.append(child)
+        return np.random.choice(bestNodes)
 
     def removeBoundaryActions(self, probMap):
         if len(probMap.shape)==3:
@@ -432,6 +417,7 @@ class MCTS(object):
                     
                 # shape: r x n x h x w
                 probMap = probMap.reshape(2, self.renderer.numObjects, self.renderer.tableSize[0], self.renderer.tableSize[1])
+                probMap[probMap < self.thresholdProb] = 0.0
                 pys, pxs = np.where(node.table[0]!=0)
                 for py, px in zip(pys, pxs):
                     obj = node.table[0][py, px]
@@ -445,10 +431,6 @@ class MCTS(object):
                         probMap[:, o, py, px] = 0
                 probMap = self.removeBoundaryActions(probMap)
                 probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
-
-                probMap[probMap < self.thresholdProb] = 0.0
-                probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
-                assert not np.isnan(probMap).any()
                 
             elif policy.startswith('policy'):
                 states = []
@@ -459,7 +441,7 @@ class MCTS(object):
                 s = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
                 if self.preProcess is not None:
                     s = self.preProcess(s)
-                probMap = self.policyNet(s).cpu().detach().numpy()
+                probMap  = self.policyNet(s).cpu().detach().numpy()
 
                 if self.blurring>1:
                     newProbMap = np.zeros_like(probMap)
@@ -473,6 +455,7 @@ class MCTS(object):
                     probMap = newProbMap
                 
                 # shape: n x h x w
+                probMap[probMap < self.thresholdProb] = 0.0
                 pys, pxs = np.where(node.table[0]!=0)
                 for py, px in zip(pys, pxs):
                     obj = node.table[0][py, px]
@@ -482,9 +465,6 @@ class MCTS(object):
                         # avoid placing on the occupied position
                         probMap[o, py, px] = 0
                 probMap = self.removeBoundaryActions(probMap)
-                probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
-
-                probMap[probMap < self.thresholdProb] = 0.0
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
             node.setActions(probMap)   
         else:
@@ -523,12 +503,9 @@ class MCTS(object):
         return terminal, reward, value
 
     def rollout(self, node):
-        hashT = hash(node.table, node.depth)
-        if hashT in self.TTValues:
-            _, _, nodeG = self.TTValues[hashT]
-            if node not in self.TTNodes[hashT]:
-                self.TTNodes[hashT].append(node)
-            return nodeG
+        tableHash = hash(str(node.table))
+        if tableHash in self.transpositionTable:
+            nodeReward = self.transpositionTable[tableHash]
         else:
             if self.rolloutPolicy=='nostep':
                 reward, value = self.noStepPolicy(node)
@@ -536,17 +513,14 @@ class MCTS(object):
                 reward, value = self.oneStepPolicy(node)
             else:
                 reward, value = self.greedyPolicy(node, self.rolloutPolicy)
-            
+        
             if self.algorithm=='alphago':
                 nodeReward = self.puctLambda * reward + (1-self.puctLambda) * value
             else:
                 nodeReward = reward
-            self.inferenceCount += 1
-
-            # update TT for the leaf node
-            self.TTValues[hashT] = (0, nodeReward, nodeReward)
-            self.TTNodes[hashT] = [node]
-            return nodeReward
+            self.transpositionTable[tableHash] = nodeReward
+            self.searchCount += 1
+        return nodeReward
 
     def noStepPolicy(self, node):
         # print('noStepPolicy.')
@@ -662,7 +636,7 @@ def setupEnvironment(args):
             'ycb_object_path' : os.path.join(data_dir, 'YCB_dataset'),
             'housecat_object_path' : os.path.join(data_dir, 'housecat6d/obj_models_small_size_final'),
         },
-        'split' : args.object_split #'inference' #'train'
+        'split' : 'inference' #'train'
     }
     
     gui_on = not args.gui_off
@@ -682,10 +656,8 @@ if __name__=='__main__':
     # Inference
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--use-template', action="store_true")
-    parser.add_argument('--scenes', type=str, default='') # e.g., 'B2,B5,C4,C6,C12,D5,D8,D11,O3,O7'
-    parser.add_argument('--inorder', action="store_true")
-    parser.add_argument('--scene-split', type=str, default='all') # 'all' / 'seen' / 'unseen'
-    parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
+    parser.add_argument('--scene-split', type=str, default='seen')
+    parser.add_argument('--object-split', type=str, default='seen')
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--H', type=int, default=12)
@@ -702,6 +674,7 @@ if __name__=='__main__':
     parser.add_argument('--rollout-policy', type=str, default='nostep') # 'nostep' / 'policy' / 'iql-policy'
     parser.add_argument('--tree-policy', type=str, default='random') # 'random' / 'policy' / 'iql-policy'
     parser.add_argument('--puct-lambda', type=float, default=0.5)
+    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
     parser.add_argument('--threshold-prob', type=float, default=1e-5)
     parser.add_argument('--batch-size', type=int, default=32)
@@ -710,6 +683,7 @@ if __name__=='__main__':
     parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
     parser.add_argument('--gamma', type=float, default=1)
     # Reward model
+    parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
@@ -720,9 +694,6 @@ if __name__=='__main__':
     parser.add_argument('--policynet-path', type=str, default='../policy_learning/logs/0224_1815/pnet_e1.pth')
     parser.add_argument('--iql-path', type=str, default='../iql/logs/0308_0121/iql_e1.pth')
     parser.add_argument('--sigmoid', action='store_true')
-    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
-    parser.add_argument('--policy-version', type=int, default=-1)
-    parser.add_argument('--continuous-policy', action='store_true')
     args = parser.parse_args()
 
     # Logger
@@ -752,49 +723,29 @@ if __name__=='__main__':
     with suppress_stdout():
         env = setupEnvironment(args)
     if args.use_template:
-        scenes = sorted(list(scene_list.keys()))
-        if args.scenes=='':
-            if args.scene_split=='unseen':
-                scenes = [s for s in scenes if s in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-            elif args.scene_split=='seen':
-                scenes = [s for s in scenes if s not in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-        else:
-            scenes = args.scenes.split(',')
-        if args.inorder:
-            selected_scene = scenes[0]
-            metrics = {}
-            for s in scenes:
-                metrics[s] = {}
-        else:
-            selected_scene = random.choice(scenes)
-        print_fn('Selected scene: %s' %selected_scene)
-
-        objects = scene_list[selected_scene]
-        #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
-        sizes = []
-        for i in range(len(objects)):
-            if 'small' in objects[i]:
-                sizes.append('small')
-                objects[i] = objects[i].replace('small_', '')
-            elif 'large' in objects[i]:
-                sizes.append('large')
-                objects[i] = objects[i].replace('large_', '')
-            else:
-                sizes.append('medium')
-        objects = [[objects[i], sizes[i]] for i in range(len(objects))]
+        if 'unseen' in [args.scene_split, args.object_split]:
+           dataset = f'test-{args.object_split}_obj-{args.scene_split}_template'
+        else: 
+           dataset = 'train'
+        template_folder = os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/templates')
+        template_files = os.listdir(template_folder)
+        template_files = [f for f in template_files if f.lower().endswith('.json')]
+        
+        template_file = random.choice(template_files)
+        # scene = template_file.split('_')[0]
+        # template_id = template_file.split('_')[-1].split('.')[0]
+        with open(os.path.join(template_folder, template_file), 'r') as f:
+            templates = json.load(f)
+        augmented_template = env.get_augmented_templates(templates, 2)[-1]
+        selected_objects = [v for k,v in augmented_template['objects'].items()]
+        # env.load_template(augmented_template)
     else:
         objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
                     'glue', 'knife', 'lotion', 'marker', 'pitcher', 'plate', 'remote', 'scissors', 'shampoo', \
                     'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
         # objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
         objects = [(o, 'medium') for o in objects]
-    if args.num_objects==0: # use the template
-        selected_objects = objects
-    else: # random sampling
-        if len(objects) < args.num_objects:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
-        else:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
     env.spawn_objects(selected_objects)
     env.arrange_objects(random=True)
 
@@ -867,39 +818,13 @@ if __name__=='__main__':
         with suppress_stdout():
             obs = env.reset()
         if args.use_template:
-            if args.inorder:
-                selected_scene = scenes[sidx%len(scenes)]
-            else:
-                selected_scene = random.choice(scenes)
-            print_fn('Selected scene: %s' %selected_scene)
-
-            objects = scene_list[selected_scene]
-            #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
-            sizes = []
-            for i in range(len(objects)):
-                if 'small' in objects[i]:
-                    sizes.append('small')
-                    objects[i] = objects[i].replace('small_', '')
-                elif 'large' in objects[i]:
-                    sizes.append('large')
-                    objects[i] = objects[i].replace('large_', '')
-                else:
-                    sizes.append('medium')
-            objects = [[objects[i], sizes[i]] for i in range(len(objects))]
-            if False:
-                template_file = random.choice(template_files)
-                print_fn('Selected template: %s' %template_file)
-                with open(os.path.join(template_folder, template_file), 'r') as f:
-                    templates = json.load(f)
-                augmented_template = env.get_augmented_templates(templates, 2)[-1]
-                objects = [v for k,v in augmented_template['objects'].items()]
-        if args.num_objects==0:
-            selected_objects = objects
+            template_file = random.choice(template_files)
+            with open(os.path.join(template_folder, template_file), 'r') as f:
+                templates = json.load(f)
+            augmented_template = env.get_augmented_templates(templates, 2)[-1]
+            selected_objects = [v for k,v in augmented_template['objects'].items()]
         else:
-            if len(objects) < args.num_objects:
-                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
-            else:
-                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
         env.spawn_objects(selected_objects)
         while True:
             is_occluded = False
@@ -939,9 +864,8 @@ if __name__=='__main__':
         print_fn("--------------------------------")
         for step in range(10):
             st = time.time()
-            countNode.clear()
+            countNode = {}
             resultDict = searcher.search(table=table, needDetails=True)
-            numInference = searcher.inferenceCount
         
             print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
@@ -973,7 +897,7 @@ if __name__=='__main__':
             # expected result in mcts #
             nextTable = searcher.root.takeAction(action)
             print_fn("Best Action: %s"%str(action))
-            print_fn("Expected Q: %f"%(resultDict['expectedReward']))
+            print_fn("Expected Q-mean: %f / Q-norm: %f"%(resultDict['expectedReward'][0], resultDict['expectedReward'][1]))
             print_fn("Terminal: %s"%resultDict['terminal'])
             print_fn("Best Child: \n %s"%nextTable[0])
             
@@ -1011,10 +935,9 @@ if __name__=='__main__':
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
-            print_fn('num inference: %d'%numInference)
             print_fn('total nodes: %d' %len(countNode.keys()))
             print_fn('num duplicate nodes: %d'%len(counts))
-            print_fn('total duplicates: %d'%np.sum(counts))
+            print_fn('total duplicates: %f'%np.sum(counts))
             print_fn()
             if terminal:
                 print_fn("Arrived at the final state:")

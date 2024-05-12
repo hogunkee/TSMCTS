@@ -24,6 +24,8 @@ FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
 from custom_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
+sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
+from collect_template_list import scene_list
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -53,10 +55,7 @@ class NodePick(object):
 
         self.numVisits = 0
         self.Qmean = 0.
-        self.Qnorm = 0.
         self.G = None
-        self.Gmin = None
-        self.Gmax = None
 
         self.children = {}
         self.actionProb = None
@@ -88,7 +87,6 @@ class NodePick(object):
     def __str__(self):
         s=[]
         s.append("Q-mean: %.3f"%(self.Qmean))
-        s.append("Q-norm: %.3f"%(self.Qnorm))
         s.append("Visits: %d"%(self.numVisits))
         s.append("Terminal: %s"%(self.terminal))
         s.append("Children: %d"%(len(self.children.keys())))
@@ -111,7 +109,6 @@ class NodePlace(object):
 
         self.numVisits = 0
         self.Qmean = 0.
-        self.Qnorm = 0.
         self.G = None
         self.Gmin = None
         self.Gmax = None
@@ -141,7 +138,6 @@ class NodePlace(object):
     def __str__(self):
         s=[]
         s.append("Q-mean: %.3f"%(self.Qmean))
-        s.append("Q-norm: %.3f"%(self.Qnorm))
         s.append("Visits: %d"%(self.numVisits))
         s.append("Children: %d"%(len(self.children.keys())))
         return "%s: %s"%(self.__class__.__name__, ' / '.join(s))
@@ -185,7 +181,6 @@ class MCTS(object):
         self.thresholdProb = args.threshold_prob
 
         self.rewardType = args.reward_type
-        self.normalize_reward = args.normalize_reward
         self.gtRewardNet = None
         self.rewardNet = None
         self.valueNet = None
@@ -197,11 +192,13 @@ class MCTS(object):
         self.inferenceCount = 0
         self.blurring = args.blurring
 
-        self.transpositionTable = {}
+        self.TTValues = {}
+        self.TTNodes = {}
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
-        self.transpositionTable = {}
+        self.TTValues.clear()
+        self.TTNodes.clear()
         self.searchCount = 0
         self.inferenceCount = 0
         return table
@@ -225,6 +222,9 @@ class MCTS(object):
         # print('search.')
         self.coverage = []
         self.root = NodePick(self.renderer.numObjects, table)
+        hashRoot = hash(self.root.table, 0)
+        self.TTValues[hashRoot] = (0, 0., 0.)
+        self.TTNodes[hashRoot] = [self.root]
         if self.limitType == 'time':
             timeLimit = time.time() + self.timeLimit / 1000
             while time.time() < timeLimit:
@@ -232,29 +232,28 @@ class MCTS(object):
         else:
             while self.searchCount < self.searchLimit:
                 self.executeRound()
-        bestPlaceChild = self.getBestChild(self.root, explorationValue=0.)
-        pickAction=(action for action, node in self.root.children.items() if node is bestPlaceChild).__next__()
-        bestPickChild = self.getBestChild(bestPlaceChild, explorationValue=0.)
-        placeAction=(action for action, node in bestPlaceChild.children.items() if node is bestPickChild).__next__()
+        pickAction, bestPlaceChild = self.getBestChild(self.root, explorationValue=0.)
+        placeAction, bestPickChild = self.getBestChild(bestPlaceChild, explorationValue=0.)
         action = [pickAction, *placeAction]
         #action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
         if needDetails:
             return {
                     "action": action, 
-                    "expectedPickReward": (bestPlaceChild.Qmean, bestPlaceChild.Qnorm), 
-                    "expectedPlaceReward": (bestPickChild.Qmean, bestPickChild.Qnorm), 
+                    "expectedPickReward": bestPlaceChild.Qmean, 
+                    "expectedPlaceReward": bestPickChild.Qmean, 
                     "terminal": bestPickChild.terminal}
         else:
             return action
 
     def selectNode(self, nodePick):
         # print('selectNode.')
+        #trajectory = []
         while not nodePick.terminal: # self.isTerminal(node)[0]:
             assert nodePick.type=='pick'
             if nodePick.isFullyExpanded():
-                nodePlace = self.getBestChild(nodePick, self.explorationConstant)
+                _, nodePlace = self.getBestChild(nodePick, self.explorationConstant)
                 if nodePlace.isFullyExpanded():
-                    nodePick = self.getBestChild(nodePlace, self.explorationConstant)
+                    _, nodePick = self.getBestChild(nodePlace, self.explorationConstant)
                 else:
                     return self.expandPlace(nodePlace)
             else:
@@ -262,6 +261,7 @@ class MCTS(object):
         return nodePick
 
     def sampleFromProb(self, prob, exceptActions=[]):
+        prob = prob.copy()
         if len(prob.shape)==1:
             for action in exceptActions:
                 prob[action-1] = 0.
@@ -405,22 +405,23 @@ class MCTS(object):
 
     def backpropagate(self, node, G):
         # print('backpropagate.')
+        # update node's utility
+        if node.G is None:
+            node.G = G
+
         while node is not None:
-            # calcuate average node value
-            node.Qmean = (node.Qmean * node.numVisits + G) / (node.numVisits + 1)
+            hashT = hash(node.table, node.depth)
+            # update TT
+            numVisits, Qmean, nodeG = self.TTValues[hashT]
+            Qmean = (Qmean * numVisits + G) / (numVisits + 1)
+            numVisits += 1
+            self.TTValues[hashT] = (numVisits, Qmean, nodeG)
+            # update Q-values of transposition nodes
+            TTnodes = self.TTNodes[hashT]
+            for n in TTnodes:
+                n.Qmean = Qmean
             node.numVisits += 1
-            # update node's upper and lower bound
-            if node.G is None:
-                node.G = G
-                node.Gmin = G
-                node.Gmax = G
-            else:
-                if G < node.Gmin:
-                    node.Gmin = G
-                if G > node.Gmax:
-                    node.Gmax = G
             node = node.parent
-            G *= self.gamma
 
     def executeRound(self):
         # print('executeRound.')
@@ -434,12 +435,8 @@ class MCTS(object):
         # print('getBestChild.')
         bestValue = float("-inf")
         bestNodes = []
-        for child in node.children.values():
-            if self.normalize_reward:
-                Qvalue = (self.gamma * child.Gmax - node.Gmin) / (node.Gmax - node.Gmin + 1e-6)
-                child.Qnorm = Qvalue
-            else:
-                Qvalue = child.Qmean
+        for action, child in node.children.items():
+            Qvalue = child.Qmean
             if self.algorithm=='alphago':
                 nodeValue = Qvalue + explorationValue * \
                     child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
@@ -452,10 +449,10 @@ class MCTS(object):
                 #         np.sqrt(2 * np.log(node.numVisits) / child.numVisits)
             if nodeValue > bestValue:
                 bestValue = nodeValue
-                bestNodes = [child]
+                bestNodes = [(action, child)]
             elif nodeValue == bestValue:
-                bestNodes.append(child)
-        return np.random.choice(bestNodes)
+                bestNodes.append((action, child))
+        return bestNodes[np.random.choice(len(bestNodes))]
 
     def removeBoundaryActions(self, probMap):
         if len(probMap.shape)==2:
@@ -471,7 +468,6 @@ class MCTS(object):
         return probMap
     
     def getPossibleActions(self, node, policy='random'):
-        # TODO
         # random / iql / policy / iql-uniform / policy-uniform
         # print('getPossibleActions.')
         if node.numActionCandidates==0:
@@ -521,13 +517,16 @@ class MCTS(object):
                         
                     # shape: r x h x w
                     probMap = probMap.reshape(2, self.renderer.tableSize[0], self.renderer.tableSize[1])
-                    probMap[probMap < self.thresholdProb] = 0.0
                     pys, pxs = np.where(node.table[0]!=0)
                     for py, px in zip(pys, pxs):
                         # avoid placing on the occupied position
                         probMap[:, py, px] = 0
                     probMap = self.removeBoundaryActions(probMap)
                     probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+
+                    probMap[probMap < self.thresholdProb] = 0.0
+                    probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+                    assert not np.isnan(probMap).any()
                     
                 elif policy.startswith('policy'):
                     states = []
@@ -552,12 +551,15 @@ class MCTS(object):
                     
                     # shape: 1 x h x w
                     probMap = probMap[0]
-                    probMap[probMap < self.thresholdProb] = 0.0
                     pys, pxs = np.where(node.table[0]!=0)
                     for py, px in zip(pys, pxs):
                         probMap[py, px] = 0
                     probMap = self.removeBoundaryActions(probMap)
                     probMap /= np.sum(probMap, axis=(0,1), keepdims=True)
+
+                    probMap[probMap < self.thresholdProb] = 0.0
+                    probMap /= np.sum(probMap, axis=(0,1), keepdims=True)
+                    assert not np.isnan(probMap).any()
             node.setActions(probMap)   
         else:
             probMap = node.actionProb
@@ -597,9 +599,12 @@ class MCTS(object):
         return terminal, reward, value
 
     def rollout(self, node):
-        tableHash = hash(str(node.table))
-        if tableHash in self.transpositionTable:
-            nodeReward = self.transpositionTable[tableHash]
+        hashT = hash(node.table, node.depth)
+        if hashT in self.TTValues:
+            _, _, nodeG = self.TTValues[hashT]
+            if node not in self.TTNodes[hashT]:
+                self.TTNodes[hashT].append(node)
+            return nodeG
         else:
             if self.rolloutPolicy=='nostep':
                 reward, value = self.noStepPolicy(node)
@@ -613,7 +618,11 @@ class MCTS(object):
             else:
                 nodeReward = reward
             self.inferenceCount += 1
-        return nodeReward
+
+            # update TT for the leaf node
+            self.TTValues[hashT] = (0, nodeReward, nodeReward)
+            self.TTNodes[hashT] = [node]
+            return nodeReward
 
     def noStepPolicy(self, node):
         # print('noStepPolicy.')
@@ -708,7 +717,7 @@ def setupEnvironment(args):
             'ycb_object_path' : os.path.join(data_dir, 'YCB_dataset'),
             'housecat_object_path' : os.path.join(data_dir, 'housecat6d/obj_models_small_size_final'),
         },
-        'split' : 'inference' #'train'
+        'split' : args.object_split #'inference' #'train'
     }
     
     gui_on = not args.gui_off
@@ -728,8 +737,10 @@ if __name__=='__main__':
     # Inference
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--use-template', action="store_true")
-    parser.add_argument('--scene-split', type=str, default='seen')
-    parser.add_argument('--object-split', type=str, default='seen')
+    parser.add_argument('--scenes', type=str, default='') # e.g., 'B2,B5,C4,C6,C12,D5,D8,D11,O3,O7'
+    parser.add_argument('--inorder', action="store_true")
+    parser.add_argument('--scene-split', type=str, default='all') # 'all' / 'seen' / 'unseen'
+    parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--H', type=int, default=12)
@@ -746,7 +757,6 @@ if __name__=='__main__':
     parser.add_argument('--rollout-policy', type=str, default='nostep') # 'nostep' / 'policy' / 'iql-policy'
     parser.add_argument('--tree-policy', type=str, default='random') # 'random' / 'policy' / 'iql-policy'
     parser.add_argument('--puct-lambda', type=float, default=0.5)
-    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
     parser.add_argument('--threshold-prob', type=float, default=1e-5)
     parser.add_argument('--batch-size', type=int, default=32)
@@ -755,7 +765,6 @@ if __name__=='__main__':
     parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
     parser.add_argument('--gamma', type=float, default=1)
     # Reward model
-    parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
     parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
@@ -766,6 +775,9 @@ if __name__=='__main__':
     parser.add_argument('--policynet-path', type=str, default='../policy_learning/logs/0224_1815/pnet_e1.pth')
     parser.add_argument('--iql-path', type=str, default='../iql/logs/0308_0121/iql_e1.pth')
     parser.add_argument('--sigmoid', action='store_true')
+    parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
+    parser.add_argument('--policy-version', type=int, default=-1)
+    parser.add_argument('--continuous-policy', action='store_true')
     args = parser.parse_args()
 
     # Logger
@@ -795,29 +807,50 @@ if __name__=='__main__':
     with suppress_stdout():
         env = setupEnvironment(args)
     if args.use_template:
-        if 'unseen' in [args.scene_split, args.object_split]:
-           dataset = f'test-{args.object_split}_obj-{args.scene_split}_template'
-        else: 
-           dataset = 'train'
-        template_folder = os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/templates')
-        template_files = os.listdir(template_folder)
-        template_files = [f for f in template_files if f.lower().endswith('.json')]
-        
-        template_file = random.choice(template_files)
-        # scene = template_file.split('_')[0]
-        # template_id = template_file.split('_')[-1].split('.')[0]
-        with open(os.path.join(template_folder, template_file), 'r') as f:
-            templates = json.load(f)
-        augmented_template = env.get_augmented_templates(templates, 2)[-1]
-        selected_objects = [v for k,v in augmented_template['objects'].items()]
-        # env.load_template(augmented_template)
+        scenes = sorted(list(scene_list.keys()))
+        if args.scenes=='':
+            if args.scene_split=='unseen':
+                scenes = [s for s in scenes if s in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
+            elif args.scene_split=='seen':
+                scenes = [s for s in scenes if s not in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
+        else:
+            scenes = args.scenes.split(',')
+        if args.inorder:
+            selected_scene = scenes[0]
+            metrics = {}
+            for s in scenes:
+                metrics[s] = {}
+        else:
+            selected_scene = random.choice(scenes)
+        print_fn('Selected scene: %s' %selected_scene)
+
+        objects = scene_list[selected_scene]
+        #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
+        sizes = []
+        for i in range(len(objects)):
+            if 'small' in objects[i]:
+                sizes.append('small')
+                objects[i] = objects[i].replace('small_', '')
+            elif 'large' in objects[i]:
+                sizes.append('large')
+                objects[i] = objects[i].replace('large_', '')
+            else:
+                sizes.append('medium')
+        objects = [[objects[i], sizes[i]] for i in range(len(objects))]
+
     else:
         objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
                     'glue', 'knife', 'lotion', 'marker', 'pitcher', 'plate', 'remote', 'scissors', 'shampoo', \
                     'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
         # objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
         objects = [(o, 'medium') for o in objects]
-        selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+    if args.num_objects==0: # use the template
+        selected_objects = objects
+    else: # random sampling
+        if len(objects) < args.num_objects:
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
+        else:
+            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
     env.spawn_objects(selected_objects)
     env.arrange_objects(random=True)
 
@@ -890,13 +923,39 @@ if __name__=='__main__':
         with suppress_stdout():
             obs = env.reset()
         if args.use_template:
-            template_file = random.choice(template_files)
-            with open(os.path.join(template_folder, template_file), 'r') as f:
-                templates = json.load(f)
-            augmented_template = env.get_augmented_templates(templates, 2)[-1]
-            selected_objects = [v for k,v in augmented_template['objects'].items()]
+            if args.inorder:
+                selected_scene = scenes[sidx%len(scenes)]
+            else:
+                selected_scene = random.choice(scenes)
+            print_fn('Selected scene: %s' %selected_scene)
+
+            objects = scene_list[selected_scene]
+            #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
+            sizes = []
+            for i in range(len(objects)):
+                if 'small' in objects[i]:
+                    sizes.append('small')
+                    objects[i] = objects[i].replace('small_', '')
+                elif 'large' in objects[i]:
+                    sizes.append('large')
+                    objects[i] = objects[i].replace('large_', '')
+                else:
+                    sizes.append('medium')
+            objects = [[objects[i], sizes[i]] for i in range(len(objects))]
+            if False:
+                template_file = random.choice(template_files)
+                print_fn('Selected template: %s' %template_file)
+                with open(os.path.join(template_folder, template_file), 'r') as f:
+                    templates = json.load(f)
+                augmented_template = env.get_augmented_templates(templates, 2)[-1]
+                objects = [v for k,v in augmented_template['objects'].items()]
+        if args.num_objects==0:
+            selected_objects = objects
         else:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
+            if len(objects) < args.num_objects:
+                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
+            else:
+                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
         env.spawn_objects(selected_objects)
         while True:
             is_occluded = False
@@ -938,6 +997,7 @@ if __name__=='__main__':
             st = time.time()
             countNode.clear()
             resultDict = searcher.search(table=table, needDetails=True)
+            numInference = searcher.inferenceCount
         
             print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
@@ -965,7 +1025,6 @@ if __name__=='__main__':
             print_fn("Children of the best child place node:")
             for i, c in enumerate(sorted(list(bestPlaceChild.children.keys()))):
                 print_fn(f"{i} {c} {str(bestPlaceChild.children[c])}")
-            nextTable = bestPickChild.table
 
             # action probability
             actionProb = bestPlaceChild.actionProb
@@ -979,9 +1038,10 @@ if __name__=='__main__':
                     plt.imshow(np.mean(actionProb, axis=(0, 1)))
                 plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
 
+            nextTable = searcher.root.takeAction(action)
             print_fn("Best Action: %s"%str(action))
-            print_fn("Expected Pick Q-mean: %f / Q-norm: %f"%(resultDict['expectedPickReward'][0], resultDict['expectedPickReward'][1]))
-            print_fn("Expected Place Q-mean: %f / Q-norm: %f"%(resultDict['expectedPlaceReward'][0], resultDict['expectedPlaceReward'][1]))
+            print_fn("Expected Pick Q: %f"%resultDict['expectedPickReward']))
+            print_fn("Expected Place Q: %f"%resultDict['expectedPlaceReward']))
             print_fn("Terminal: %s"%resultDict['terminal'])
             print_fn("Best Child: \n %s"%nextTable[0])
 
@@ -1019,7 +1079,7 @@ if __name__=='__main__':
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
-            print_fn('num inference: %d'%searcher.inferenceCount)
+            print_fn('num inference: %d'%numInference)
             print_fn('total nodes: %d' %len(countNode.keys()))
             print_fn('num duplicate nodes: %d'%len(counts))
             print_fn('total duplicates: %d'%np.sum(counts))
