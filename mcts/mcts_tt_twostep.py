@@ -411,16 +411,23 @@ class MCTS(object):
             node.G = G
 
         while node is not None:
-            hashT = hash(node.table, node.depth)
-            # update TT
-            numVisits, Qmean, nodeG = self.TTValues[hashT]
-            Qmean = (Qmean * numVisits + G) / (numVisits + 1)
-            numVisits += 1
-            self.TTValues[hashT] = (numVisits, Qmean, nodeG)
-            # update Q-values of transposition nodes
-            TTnodes = self.TTNodes[hashT]
-            for n in TTnodes:
-                n.Qmean = Qmean
+            #if hashT in self.TTValues:
+            if node.type=='pick':
+                hashT = hash(node.table, node.depth)
+                # update TT
+                # only for pick nodes
+                numVisits, Qmean, nodeG = self.TTValues[hashT]
+                Qmean = (Qmean * numVisits + G) / (numVisits + 1)
+                numVisits += 1
+                self.TTValues[hashT] = (numVisits, Qmean, nodeG)
+                # update Q-values of transposition nodes
+                TTnodes = self.TTNodes[hashT]
+                for n in TTnodes:
+                    n.Qmean = Qmean
+            else:
+                # calcuate average node value
+                # only for place nodes
+                node.Qmean = (node.Qmean * node.numVisits + G) / (node.numVisits + 1)
             node.numVisits += 1
             node = node.parent
 
