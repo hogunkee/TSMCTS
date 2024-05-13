@@ -33,11 +33,13 @@ warnings.filterwarnings("ignore")
 
 countNode = {}
         
-def hash(table, depth=None):
+def hash(table, depth=None, selected=None):
     result = ' '.join(table[0].reshape(-1).astype(int).astype('str').tolist())
     result += ' '.join(table[1].reshape(-1).astype(int).astype('str').tolist())
     if depth is not None:
         result += '-d'+str(int(depth))
+    if selected is not None:
+        result += '-s'+str(int(selected))
     return result
 
 class NodePick(object):
@@ -414,8 +416,10 @@ class MCTS(object):
             #if hashT in self.TTValues:
             if node.type=='pick':
                 hashT = hash(node.table, node.depth)
+            else:
+                hashT = hash(node.table, node.depth, node.selected)
+            if hashT in self.TTValues:
                 # update TT
-                # only for pick nodes
                 numVisits, Qmean, nodeG = self.TTValues[hashT]
                 Qmean = (Qmean * numVisits + G) / (numVisits + 1)
                 numVisits += 1
@@ -425,9 +429,9 @@ class MCTS(object):
                 for n in TTnodes:
                     n.Qmean = Qmean
             else:
-                # calcuate average node value
-                # only for place nodes
-                node.Qmean = (node.Qmean * node.numVisits + G) / (node.numVisits + 1)
+                self.TTValues[hashT] = (1, G, G)
+                self.TTNodes[hashT] = [node]
+                node.Qmean = G
             node.numVisits += 1
             node = node.parent
 
