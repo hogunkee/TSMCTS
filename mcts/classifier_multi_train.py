@@ -46,44 +46,67 @@ def train(args, log_name):
     su_test_dataloader = DataLoader(su_test_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
     uu_test_dataloader = DataLoader(uu_test_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
 
-    # model #
-    print("Create a ResNet model.")
-    if args.model=='resnet-18':
-        resnet = resnet18
-    elif args.model=='resnet-34':
-        resnet = resnet34
-    elif args.model=='resnet-50':
-        resnet = resnet50
     if args.finetune:
-        model = resnet(pretrained=True)
-        for param in model.parameters():
-            param.requires_grad = False
         model_name = 'finetune'
     else:
-        model = resnet(pretrained=False)
         # {view}_{remove_bg}_{label_type}_{loss}
         model_name = 'multi'
         model_name += '_nobg_' if args.remove_bg else '_bg_'
         model_name += args.label_type + '_'
         model_name += args.loss
-    # replace the last fc layer #
-    fc_in_features = model.fc.in_features
-    model.fc = nn.Sequential(
-        nn.Linear(fc_in_features, 4),
-        #nn.Sigmoid()
-    )
+
+    # model #
+    print("Create a ResNet model.")
+	class CustomResNet18(nn.Module):
+		def __init__(self, num_classes=4, args):
+			super(CustomResNet18, self).__init__()
+			# Load the pre-trained ResNet-18 model
+			if args.model=='resnet-18':
+				resnet = resnet18
+			elif args.model=='resnet-34':
+				resnet = resnet34
+			elif args.model=='resnet-50':
+				resnet = resnet50
+
+            if args.finetune:
+                self.resnet = resnet(pretrained=True)
+                for param in self.resnet.parameters():
+                    param.requires_grad = False
+            else:
+                self.resnet = resnet(pretrained=False)
+
+			# Remove the last fully connected layer
+			num_ftrs = self.resnet.fc.in_features
+			self.resnet.fc = nn.Identity()  # Removing the original fully connected layer
+
+			self.fc_class = nn.Linear(num_ftrs, num_classes)
+			self.fc_score = nn.Linear(num_ftrs, 1)
+			self.softmax = nn.Softmax(dim=1)
+			self.sigmoid = nn.Sigmoid()
+
+		def forward(self, x):
+			x = self.resnet(x)
+			# Get class distribution
+			logit = self.fc_class(x)
+			class_distribution = self.softmax(logit)
+			# Get the 1-dim score
+			score = self.fc_score(x)
+			score = self.sigmoid(score)
+			return score, logit, class_distribution
 
     if torch.cuda.is_available():
         device = "cuda:0"
     else:
         device = "cpu"
+    model = CustomResNet18(4, args)
     model.to(device)
 
     # loss function and optimizer #
     if args.loss=='mse':
-        loss_fn = nn.MSELoss()
+        loss_score = nn.MSELoss()
     elif args.loss=='bce':
-        loss_fn = nn.BCELoss()  # binary cross entropy
+        loss_score = nn.BCELoss()  # binary cross entropy
+    loss_class = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lrate)
  
     # Hold the best model
@@ -99,10 +122,10 @@ def train(args, log_name):
                 X_batch = preprocess(X_batch).to(device)
                 Y_batch = Y_batch[:, 0].to(device)
                 # forward pass
-                y_pred = model(X_batch)
+                y_pred, logit_pred, dist_pred = model(X_batch)
                 B = y_pred.size(0)
-                y_pred = y_pred[torch.arange(B), S_batch]
-                loss = loss_fn(y_pred, Y_batch)
+                #y_pred = y_pred[torch.arange(B), S_batch]
+                loss = loss_score(y_pred, Y_batch) + loss_class(logit_pred, S_batch)
                 # backward pass
                 optimizer.zero_grad()
                 loss.backward()
@@ -110,48 +133,66 @@ def train(args, log_name):
                 optimizer.step()
                 # print progress
                 indices = torch.logical_or(Y_batch==0, Y_batch==1)
-                acc = (y_pred.round() == Y_batch)[indices].float().mean()
+                tidyup_acc = (y_pred.round() == Y_batch)[indices].float().mean()
+                _, predicted = torch.max(dist_pred, 1)
+                class_acc = (predicted == labels).float().mean()
+
                 bar.set_postfix(
                     loss=float(loss),
-                    acc=float(acc)
+                    tidyup_acc=float(tidyup_acc),
+                    class_acc=float(class_acc)
                 )
                 if not args.wandb_off:
-                    step_log = {'train loss': float(loss), 'train accuracy': float(acc)}
+                    step_log = {'train loss': float(loss), 
+                                'tidyup accuracy': float(tidyup_acc), 
+                                'class accuracy': float(class_acc)}
                     wandb.log(step_log)
                 count_steps += 1
 
         # evaluate accuracy at end of each epoch
         model.eval()
-        accuracies = []
+        tidyup_accuracies = []
+        class_accuracies = []
         for test_dataloader in [us_test_dataloader, su_test_dataloader, uu_test_dataloader]:
             matchings = []
             for X_val, Y_val, S_val in test_dataloader:
                 X_val = preprocess(X_val).to(device)
                 Y_val = Y_val[:, 0].to(device)
-                y_pred = model(X_val)
+                y_pred, logit_pred, dist_pred = model(X_val)
+                #y_pred = model(X_val)
                 B = y_pred.size(0)
                 y_pred = y_pred[torch.arange(B), S_val]
 
                 indices = torch.logical_or(Y_val==0, Y_val==1)
                 matching = (y_pred.round()==Y_val)[indices].float().detach().cpu().numpy()
                 matchings.append(matching)
+                _, predicted = torch.max(dist_pred, 1)
+                class_matching = (predicted==labels).float().detach().cpu().numpy()
+                class_matchings.append(class_matching)
             matchings = np.concatenate(matchings, axis=0)
-            accuracy = np.mean(matchings)
-            accuracies.append(accuracy)
-        print("US validation accuracy:", accuracies[0])
-        print("SU validation accuracy:", accuracies[1])
-        print("UU validation accuracy:", accuracies[2])
-        print("mean validation accuracy:", np.mean(accuracies))
+            class_matchings = np.concatenate(class_matchings, axis=0)
+            tidyup_accuracy = np.mean(matchings)
+            tidyup_accuracies.append(tidyup_accuracy)
+            class_accuracy = np.mean(class_matchings)
+            class_accuracies.append(class_accuracy)
+        print("US validation accuracy:", tidyup_accuracies[0], class_accuracies[0])
+        print("SU validation accuracy:", tidyup_accuracies[1], class_accuracies[1])
+        print("UU validation accuracy:", tidyup_accuracies[2], class_accuracies[2])
+        print("mean validation accuracy:", np.mean(tidyup_accuracies), np.mean(class_accuracies))
         if not args.wandb_off:
             step_log = {
-                    'us valid accuracy': float(accuracies[0]),
-                    'su valid accuracy': float(accuracies[1]),
-                    'uu valid accuracy': float(accuracies[2]),
-                    'mean valid accuracy': float(np.mean(accuracies)),
+                    'us valid tidyup accuracy': float(tidyup_accuracies[0]),
+                    'su valid tidyup accuracy': float(tidyup_accuracies[1]),
+                    'uu valid tidyup accuracy': float(tidyup_accuracies[2]),
+                    'mean valid tidyup accuracy': float(np.mean(tidyup_accuracies)),
+                    'us valid class accuracy': float(class_accuracies[0]),
+                    'su valid class accuracy': float(class_accuracies[1]),
+                    'uu valid class accuracy': float(class_accuracies[2]),
+                    'mean valid class accuracy': float(np.mean(class_accuracies)),
                     }
             wandb.log(step_log)
-        if np.mean(accuracies) > best_accuracy:
-            best_accuracy = np.mean(accuracies)
+        if np.mean(tidyup_accuracies) > best_accuracy:
+            best_accuracy = np.mean(tidyup_accuracies)
             best_weights = copy.deepcopy(model.state_dict())
 
         # optionally save model
