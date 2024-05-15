@@ -36,7 +36,7 @@ countNode = {}
 def hash(table, depth=None):
     result = ' '.join(table[0].reshape(-1).astype(int).astype('str').tolist())
     result += ' '.join(table[1].reshape(-1).astype(int).astype('str').tolist())
-    if depth is not None:
+    if False: #if depth is not None:
         result += '-d'+str(int(depth))
     return result
         
