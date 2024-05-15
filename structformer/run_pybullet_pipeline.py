@@ -13,7 +13,16 @@ from structformer.evaluation.test_structformer import PriorInference
 from structformer.utils.rearrangement import show_pcs_with_predictions, get_initial_scene_idxs, evaluate_target_object_predictions, save_img, show_pcs_with_labels, test_new_vis, show_pcs
 from structformer.evaluation.inference import PointCloudRearrangement
 
+# point cloud utils
 from pc_utils import depth2pc
+
+# tabletop environment
+FILE_PATH = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
+from custom_env import TableTopTidyingUpEnv, get_contact_objects
+from utilities import Camera, Camera_front_top
+sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
+from collect_template_list import scene_list
 
 
 def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config, beam_size=3):
