@@ -24,12 +24,15 @@ from matplotlib import pyplot as plt
 import sys
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
-from custom_env import TableTopTidyingUpEnv, get_contact_objects
+from custom_env import TableTopTidyingUpEnv, get_contact_objects, quaternion_multiply
 from utilities import Camera, Camera_front_top
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
+# from scene_utils import 
 from collect_template_list import scene_list
 sys.path.append(os.path.join(FILE_PATH, '..', 'mcts'))
 from utils import suppress_stdout
+
+from transform_utils import mat2quat
 
 
 def setupEnvironment(args):
@@ -54,7 +57,7 @@ def setupEnvironment(args):
     env.reset()
     return env
 
-def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config, args, beam_size=3):
+def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config, args, beam_size=1):
     """
     Run a simple demo. Creates the object selection inference model, pose generation model,
     and so on. Requires paths to the model + config directories.
@@ -179,7 +182,7 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
                                                                                      'length_increment': 0.05, 
                                                                                      'max_length': 1.0, 
                                                                                      'min_length': 0.0, 
-                                                                                     'place_at_once': 'True', 
+                                                                                     'place_at_once': 'False', 
                                                                                      'position': [0.4856287214206586, 0.0, 0.0], 
                                                                                      'rotation': [0.0, -0.0, 0.0], 
                                                                                      'type': 'dinner', 
@@ -203,6 +206,7 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
             datum["struct_z_inputs"] = [beam_goal_struct_pose[b][2]]
             datum["struct_theta_inputs"] = [beam_goal_struct_pose[b][3:]]
 
+        
         # then iteratively predict pose of each object
         beam_goal_obj_poses = []
         for obj_idx in range(num_target_objects):
@@ -229,6 +233,34 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
         for pi, pc_rearrangement in enumerate(beam_pc_rearrangements):
             print("Visualize rearranged scene sample {}".format(pi))
             pc_rearrangement.visualize("goal", add_other_objects=True, add_table=True, side_view=True)
+
+
+        
+        # then iteratively predict pose of each object
+        # struct_preds, target_object_preds = pose_generation_inference.limited_batch_inference(beam_data)
+        for obj_idx in range(num_target_objects):
+            # target_pose = target_object_preds[0][obj_idx]
+            # initial_pose = beam_pc_rearrangements[0].initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
+            # translation = target_pose[:3] - initial_pose
+            translation = beam_pc_rearrangements[0].goal_xyzs["xyzs"][obj_idx].mean(0).numpy()\
+                         - beam_pc_rearrangements[0].initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
+
+            ratio = init_datum["depth"].max() / env.camera.origin_depth.max()
+            translation = translation * ratio
+            # translation[2] = 0
+
+            
+            pid = env.pre_selected_objects[obj_idxs[obj_idx]]
+            orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
+
+            rot = mat2quat(np.array(beam_pc_rearrangements[0].goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
+            new_rot = quaternion_multiply(rot, orig_rot)
+
+            # print(orig_pos)
+            p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
+            p.stepSimulation()
+
+        print("Done.")
 
 
 if __name__ == "__main__":

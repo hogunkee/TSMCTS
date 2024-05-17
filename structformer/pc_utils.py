@@ -96,7 +96,7 @@ def get_raw_data(obs, env, max_num_objects=10, num_pts=1024):
                                 'length_increment': 0.05,
                                 'max_length': 1.0,
                                 'min_length': 0.0,
-                                'place_at_once': 'True',
+                                'place_at_once': 'False',
                                 'position': [0.4856287214206586, 0.0, 0.0],
                                 'rotation': [0.0, -0.0, 0.0],
                                 'type': 'dinner',
@@ -153,7 +153,7 @@ def get_raw_data(obs, env, max_num_objects=10, num_pts=1024):
 
         # shuffle the position of objects since now the order is rearrange, anchor, distract
         shuffle_object_indices = list(range(len(all_objs)))
-        random.shuffle(shuffle_object_indices)
+        # random.shuffle(shuffle_object_indices)
         shuffle_object_indices = shuffle_object_indices + list(range(len(all_objs), max_num_objects))
         obj_xyzs = [obj_xyzs[i] for i in shuffle_object_indices]
         obj_rgbs = [obj_rgbs[i] for i in shuffle_object_indices]
@@ -172,6 +172,7 @@ def get_raw_data(obs, env, max_num_objects=10, num_pts=1024):
             "t": 0, #t,
             "filename": "", #filename,
             "goal_specification": None, #goal_specification,
+            "depth": depth,
         }
 
         return datum
