@@ -21,6 +21,43 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
+class CustomResNet18(nn.Module):
+    def __init__(self, num_classes=4, args=None):
+        super(CustomResNet18, self).__init__()
+        # Load the pre-trained ResNet-18 model
+        if args.model=='resnet-18':
+            resnet = resnet18
+        elif args.model=='resnet-34':
+            resnet = resnet34
+        elif args.model=='resnet-50':
+            resnet = resnet50
+
+        if args.finetune:
+            self.resnet = resnet(pretrained=True)
+            for param in self.resnet.parameters():
+                param.requires_grad = False
+        else:
+            self.resnet = resnet(pretrained=False)
+
+        # Remove the last fully connected layer
+        num_ftrs = self.resnet.fc.in_features
+        self.resnet.fc = nn.Identity()  # Removing the original fully connected layer
+
+        self.fc_class = nn.Linear(num_ftrs, num_classes)
+        self.fc_score = nn.Linear(num_ftrs, 1)
+        self.softmax = nn.Softmax(dim=1)
+        #self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.resnet(x)
+        # Get class distribution
+        logit = self.fc_class(x)
+        class_distribution = self.softmax(logit)
+        # Get the 1-dim score
+        score = self.fc_score(x)
+        #score = self.sigmoid(score)
+        return score, logit, class_distribution
+
 def train(args, log_name):
     n_epoch = args.n_epoch
     batch_size = args.batch_size
@@ -57,43 +94,6 @@ def train(args, log_name):
 
     # model #
     print("Create a ResNet model.")
-	class CustomResNet18(nn.Module):
-		def __init__(self, num_classes=4, args):
-			super(CustomResNet18, self).__init__()
-			# Load the pre-trained ResNet-18 model
-			if args.model=='resnet-18':
-				resnet = resnet18
-			elif args.model=='resnet-34':
-				resnet = resnet34
-			elif args.model=='resnet-50':
-				resnet = resnet50
-
-            if args.finetune:
-                self.resnet = resnet(pretrained=True)
-                for param in self.resnet.parameters():
-                    param.requires_grad = False
-            else:
-                self.resnet = resnet(pretrained=False)
-
-			# Remove the last fully connected layer
-			num_ftrs = self.resnet.fc.in_features
-			self.resnet.fc = nn.Identity()  # Removing the original fully connected layer
-
-			self.fc_class = nn.Linear(num_ftrs, num_classes)
-			self.fc_score = nn.Linear(num_ftrs, 1)
-			self.softmax = nn.Softmax(dim=1)
-			self.sigmoid = nn.Sigmoid()
-
-		def forward(self, x):
-			x = self.resnet(x)
-			# Get class distribution
-			logit = self.fc_class(x)
-			class_distribution = self.softmax(logit)
-			# Get the 1-dim score
-			score = self.fc_score(x)
-			score = self.sigmoid(score)
-			return score, logit, class_distribution
-
     if torch.cuda.is_available():
         device = "cuda:0"
     else:
@@ -125,7 +125,7 @@ def train(args, log_name):
                 y_pred, logit_pred, dist_pred = model(X_batch)
                 B = y_pred.size(0)
                 #y_pred = y_pred[torch.arange(B), S_batch]
-                loss = loss_score(y_pred, Y_batch) + loss_class(logit_pred, S_batch)
+                loss = loss_score(y_pred, Y_batch) + loss_class(logit_pred, S_batch.to(device))
                 # backward pass
                 optimizer.zero_grad()
                 loss.backward()
@@ -133,9 +133,9 @@ def train(args, log_name):
                 optimizer.step()
                 # print progress
                 indices = torch.logical_or(Y_batch==0, Y_batch==1)
-                tidyup_acc = (y_pred.round() == Y_batch)[indices].float().mean()
+                tidyup_acc = (y_pred[:,0].round() == Y_batch)[indices].float().mean()
                 _, predicted = torch.max(dist_pred, 1)
-                class_acc = (predicted == labels).float().mean()
+                class_acc = (predicted.cpu() == S_batch).float().mean()
 
                 bar.set_postfix(
                     loss=float(loss),
@@ -148,6 +148,7 @@ def train(args, log_name):
                                 'class accuracy': float(class_acc)}
                     wandb.log(step_log)
                 count_steps += 1
+                break
 
         # evaluate accuracy at end of each epoch
         model.eval()
@@ -155,19 +156,20 @@ def train(args, log_name):
         class_accuracies = []
         for test_dataloader in [us_test_dataloader, su_test_dataloader, uu_test_dataloader]:
             matchings = []
+            class_matchings = []
             for X_val, Y_val, S_val in test_dataloader:
                 X_val = preprocess(X_val).to(device)
                 Y_val = Y_val[:, 0].to(device)
                 y_pred, logit_pred, dist_pred = model(X_val)
                 #y_pred = model(X_val)
                 B = y_pred.size(0)
-                y_pred = y_pred[torch.arange(B), S_val]
+                #y_pred = y_pred[torch.arange(B), S_val]
 
                 indices = torch.logical_or(Y_val==0, Y_val==1)
-                matching = (y_pred.round()==Y_val)[indices].float().detach().cpu().numpy()
+                matching = (y_pred[:,0].round()==Y_val)[indices].float().detach().cpu().numpy()
                 matchings.append(matching)
                 _, predicted = torch.max(dist_pred, 1)
-                class_matching = (predicted==labels).float().detach().cpu().numpy()
+                class_matching = (predicted.cpu()==S_val).float().detach().cpu().numpy()
                 class_matchings.append(class_matching)
             matchings = np.concatenate(matchings, axis=0)
             class_matchings = np.concatenate(class_matchings, axis=0)
@@ -222,7 +224,7 @@ if __name__ == "__main__":
     # Dataset
     parser.add_argument("--data_dir", type=str, default='/ssd/disk/TableTidyingUp/dataset_template')
     parser.add_argument("--remove_bg", action="store_true") # default: False
-    parser.add_argument("--label_type", type=str, default='binary') # linspace / binary
+    parser.add_argument("--label_type", type=str, default='linspace') # linspace / binary
     parser.add_argument("--view", type=str, default='top') # top / front_top
     # etc
     parser.add_argument("--model", type=str, default='resnet-18')
