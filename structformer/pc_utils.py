@@ -153,7 +153,7 @@ def get_raw_data(obs, env, max_num_objects=10, num_pts=1024):
 
         # shuffle the position of objects since now the order is rearrange, anchor, distract
         shuffle_object_indices = list(range(len(all_objs)))
-        # random.shuffle(shuffle_object_indices)
+        random.shuffle(shuffle_object_indices)
         shuffle_object_indices = shuffle_object_indices + list(range(len(all_objs), max_num_objects))
         obj_xyzs = [obj_xyzs[i] for i in shuffle_object_indices]
         obj_rgbs = [obj_rgbs[i] for i in shuffle_object_indices]
@@ -173,6 +173,7 @@ def get_raw_data(obs, env, max_num_objects=10, num_pts=1024):
             "filename": "", #filename,
             "goal_specification": None, #goal_specification,
             "depth": depth,
+            "shuffle_indices": shuffle_object_indices[:len(all_objs)]
         }
 
         return datum
