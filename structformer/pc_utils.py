@@ -31,7 +31,7 @@ def depth2pc(depth, K, rgb=None):
     return (pc, rgb)
 
 
-def get_raw_data(obs, env, max_num_objects=10, num_pts=1024, view='top'):
+def get_raw_data(obs, env, structure_param, view='top', max_num_objects=10, num_pts=1024):
         # filename, t = self.arrangement_data[idx]
 
         # h5 = h5py.File(filename, 'r')
@@ -95,12 +95,13 @@ def get_raw_data(obs, env, max_num_objects=10, num_pts=1024, view='top'):
         sentence_pad_mask = []
         # structure parameters
         # 5 parameters
-        structure_parameters = {'length': 0.2631578947368421,
+        structure_parameters = {'length': structure_param['length'], #0.2631578947368421,
                                 'length_increment': 0.05,
                                 'max_length': 1.0,
                                 'min_length': 0.0,
                                 'place_at_once': 'False',
-                                'position': [0.4856287214206586, 0.0, 0.0],
+                                'position': [structure_param['position'], 0.0, 0.0],
+                                #'position': [0.4856287214206586, 0.0, 0.0],
                                 'rotation': [0.0, -0.0, 0.0],
                                 'type': 'dinner',
                                 'uniform_space': 'False'}

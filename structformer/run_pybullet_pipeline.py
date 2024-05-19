@@ -203,11 +203,13 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
             plt.imshow(initRgb)
             plt.savefig('%s-%s/scene-%d/initial.png'%(log_dir, log_name, sidx))
         
+        structure_param = {'length': np.random.uniform(0.25, 0.4),
+                           'position': np.random.uniform(0.35, 0.65)}
         print("--------------------------------")
         step = 0
         while step<10:
             # retrieve data
-            init_datum = get_raw_data(env.get_observation(), env, view=args.view)
+            init_datum = get_raw_data(env.get_observation(), env, structure_param, view=args.view)
             # test_datum = test_dataset.get_raw_data(idx)
             # goal_specification = init_datum["goal_specification"]
             # xyzs = init_datum["xyzs"] + test_datum["xyzs"]
@@ -216,7 +218,7 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
             object_selection_structured_sentence = [('dinner', 'scene'), ('PAD',), ('PAD',), ('PAD',)]
             structure_specification_structured_sentence = [('dinner', 'shape'),
                                                         (0.0, 'rotation'),
-                                                        (0.4856287214206586, 'position_x'),
+                                                        (structure_param['position'], 'position_x'),
                                                         (0.0, 'position_y'),
                                                         ('PAD',)]
             # object_selection_structured_sentence = init_datum["sentence"][5:]
@@ -226,7 +228,12 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
             structure_specification_natural_sentence = object_selection_inference.tokenizer.convert_structure_params_to_natural_language(structure_specification_structured_sentence)
 
             # object selection
-            predictions, gts = object_selection_inference.predict_target_objects(init_datum)
+            if args.random_select:
+                num_obj = len(init_datum["object_pad_mask"]) - np.sum(init_datum["object_pad_mask"])
+                predictions = np.random.choice([0, 1], num_obj)
+                gts = np.ones(num_obj)
+            else:
+                predictions, gts = object_selection_inference.predict_target_objects(init_datum)
 
             all_obj_xyzs = init_datum["xyzs"][:len(predictions)]
             all_obj_rgbs = init_datum["rgbs"][:len(predictions)]
@@ -262,12 +269,12 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
 
             pose_generation_datum = pose_generation_inference.dataset.prepare_test_data(obj_xyzs, obj_rgbs,
                                                                                         other_obj_xyzs, other_obj_rgbs,
-                                                                                        {'length': 0.2631578947368421, 
+                                                                                        {'length': structure_param['length'],
                                                                                         'length_increment': 0.05, 
                                                                                         'max_length': 1.0, 
                                                                                         'min_length': 0.0, 
                                                                                         'place_at_once': 'False', 
-                                                                                        'position': [0.4856287214206586, 0.0, 0.0], 
+                                                                                        'position': [structure_param['position'], 0.0, 0.0], 
                                                                                         'rotation': [0.0, -0.0, 0.0], 
                                                                                         'type': 'dinner', 
                                                                                         'uniform_space': 'False'})
@@ -363,6 +370,7 @@ if __name__ == "__main__":
     parser.add_argument('--use-template', action="store_true")
     parser.add_argument('--scenes', type=str, default='D1,D2,D3,D4,D5')
     parser.add_argument('--inorder', action="store_true")
+    parser.add_argument('--random-select', action="store_true")
     parser.add_argument('--scene-split', type=str, default='all') # 'all' / 'seen' / 'unseen'
     parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
