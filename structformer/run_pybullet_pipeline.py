@@ -207,7 +207,7 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
         step = 0
         while step<10:
             # retrieve data
-            init_datum = get_raw_data(env.get_observation(), env)
+            init_datum = get_raw_data(env.get_observation(), env, view=args.view)
             # test_datum = test_dataset.get_raw_data(idx)
             # goal_specification = init_datum["goal_specification"]
             # xyzs = init_datum["xyzs"] + test_datum["xyzs"]
@@ -359,6 +359,7 @@ if __name__ == "__main__":
     # Environment settings
     parser.add_argument('--data-dir', type=str, default='/ssd/disk')
     parser.add_argument("--seed", default=None, type=int)
+    parser.add_argument('--view', type=str, default='front') # 'front' / 'top'
     parser.add_argument('--use-template', action="store_true")
     parser.add_argument('--scenes', type=str, default='D1,D2,D3,D4,D5')
     parser.add_argument('--inorder', action="store_true")

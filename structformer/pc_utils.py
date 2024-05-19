@@ -31,7 +31,7 @@ def depth2pc(depth, K, rgb=None):
     return (pc, rgb)
 
 
-def get_raw_data(obs, env, max_num_objects=10, num_pts=1024):
+def get_raw_data(obs, env, max_num_objects=10, num_pts=1024, view='top'):
         # filename, t = self.arrangement_data[idx]
 
         # h5 = h5py.File(filename, 'r')
@@ -48,9 +48,9 @@ def get_raw_data(obs, env, max_num_objects=10, num_pts=1024):
         # scene = self._get_images(h5, t, ee=True)
         
         #rgb, depth, seg, valid, xyz = scene
-        rgb = obs['top']['rgb']
-        depth = obs['top']['depth']
-        seg = obs['top']['segmentation']
+        rgb = obs[view]['rgb']
+        depth = obs[view]['depth']
+        seg = obs[view]['segmentation']
 
         ids = {'table': 1}
         for id, tobj in env.table_objects_list.items():
@@ -59,7 +59,10 @@ def get_raw_data(obs, env, max_num_objects=10, num_pts=1024):
         num_rearrange_objs = len(env.table_objects_list)
 
         valid = np.logical_and(seg > 0, seg < 1000)
-        xyz = env.camera.rgbd_2_world_batch(env.camera.origin_depth) #depth)
+        if view=='top':
+            xyz = env.camera.rgbd_2_world_batch(env.camera.origin_depth) #depth)
+        else:
+            xyz = env.camera_front_top.rgbd_2_world_batch(env.camera_front_top.origin_depth) #depth)
 
         # getting object point clouds
         obj_xyzs = []
