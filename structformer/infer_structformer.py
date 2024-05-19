@@ -13,51 +13,24 @@ from structformer.evaluation.test_structformer import PriorInference
 from structformer.utils.rearrangement import show_pcs_with_predictions, get_initial_scene_idxs, evaluate_target_object_predictions, save_img, show_pcs_with_labels, test_new_vis, show_pcs
 from structformer.evaluation.inference import PointCloudRearrangement
 
-# point cloud utils
-from pc_utils import get_raw_data #depth2pc
-
 import json
 import datetime
 import random
 import pybullet as p
 from matplotlib import pyplot as plt
+from pc_utils import get_raw_data, setupEnvironment
+from transform_utils import mat2quat
 
 # tabletop environment
 import sys
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
-from custom_env import TableTopTidyingUpEnv, get_contact_objects, quaternion_multiply
-from utilities import Camera, Camera_front_top
+from custom_env import get_contact_objects, quaternion_multiply
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
-# from scene_utils import 
 from collect_template_list import scene_list
 sys.path.append(os.path.join(FILE_PATH, '..', 'mcts'))
 from utils import suppress_stdout
 
-from transform_utils import mat2quat
-
-
-def setupEnvironment(args):
-    camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
-    camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
-    
-    data_dir = args.data_dir
-    objects_cfg = { 'paths': {
-            'pybullet_object_path' : os.path.join(data_dir, 'pybullet-URDF-models/urdf_models/models'),
-            'ycb_object_path' : os.path.join(data_dir, 'YCB_dataset'),
-            'housecat_object_path' : os.path.join(data_dir, 'housecat6d/obj_models_small_size_final'),
-        },
-        'split' : args.object_split #'inference' #'train'
-    }
-    
-    gui_on = not args.gui_off
-    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85')
-    p.resetDebugVisualizerCamera(2.0, -270., -60., (0., 0., 0.))
-    p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
-    p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
-
-    env.reset()
-    return env
 
 def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config, args):
     """

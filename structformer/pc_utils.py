@@ -5,6 +5,15 @@ import random
 import torch
 
 from structformer.utils.rearrangement import get_pts
+import StructDiffusion.utils.transformations as tra
+
+# tabletop environment
+import sys
+import pybullet as p
+FILE_PATH = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
+from custom_env import TableTopTidyingUpEnv
+from utilities import Camera, Camera_front_top
 
 def depth2pc(depth, K, rgb=None):
     """
@@ -29,6 +38,29 @@ def depth2pc(depth, K, rgb=None):
         
     pc = np.vstack((world_x, world_y, world_z)).T
     return (pc, rgb)
+
+
+def setupEnvironment(args):
+    camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
+    camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
+    
+    data_dir = args.data_dir
+    objects_cfg = { 'paths': {
+            'pybullet_object_path' : os.path.join(data_dir, 'pybullet-URDF-models/urdf_models/models'),
+            'ycb_object_path' : os.path.join(data_dir, 'YCB_dataset'),
+            'housecat_object_path' : os.path.join(data_dir, 'housecat6d/obj_models_small_size_final'),
+        },
+        'split' : args.object_split #'inference' #'train'
+    }
+    
+    gui_on = not args.gui_off
+    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85')
+    p.resetDebugVisualizerCamera(2.0, -270., -60., (0., 0., 0.))
+    p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
+    p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
+
+    env.reset()
+    return env
 
 
 def get_raw_data(obs, env, structure_param, view='top', max_num_objects=10, num_pts=1024):
@@ -185,7 +217,7 @@ def get_raw_data(obs, env, structure_param, view='top', max_num_objects=10, num_
 
 #def get_diffusion_data(self, idx, inference_mode=False, shuffle_object_index=False):
 def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=False, \
-                        shuffle_object_index=False, max_num_objects=10, num_pts=1024):
+                        shuffle_object_index=False, num_pts=1024):
     # filename, _ = self.arrangement_data[idx]
 
     # h5 = h5py.File(filename, 'r')
@@ -216,9 +248,11 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
     # all_objs = target_objs + other_objs
 
     ###################################
+    ignore_rgb = True
     use_virtual_structure_frame = True
     ignore_distractor_objects = True
-    max_num_shape_parameters = 7
+    max_num_objects = 7
+    max_num_shape_parameters = 5
     max_num_other_objects = 5
     structure_parameters = {'length': structure_param['length'], #0.2631578947368421,
                             'length_increment': 0.05,
@@ -232,17 +266,19 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
                             'uniform_space': 'False'}
 
     # getting scene images and point clouds
-    scene = self._get_images(h5, step_t, ee=True)
+    # scene = self._get_images(h5, step_t, ee=True)
     #rgb, depth, seg, valid, xyz = scene
     rgb = obs[view]['rgb']
     depth = obs[view]['depth']
-    seg = obs[view]['segmentation']
+    seg = obs[view]['segmentation']    
 
     ids = {'table': 1}
     for id, tobj in env.table_objects_list.items():
         ids[tobj[0]] = id
     all_objs = [tobj[0] for id, tobj in env.table_objects_list.items()]
     num_rearrange_objs = len(env.table_objects_list)
+    target_objs = all_objs[:num_rearrange_objs]
+    other_objs = all_objs[num_rearrange_objs:]
     step_t = num_rearrange_objs
 
     valid = np.logical_and(seg > 0, seg < 1000)
@@ -250,8 +286,8 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
         xyz = env.camera.rgbd_2_world_batch(env.camera.origin_depth) #depth)
     else:
         xyz = env.camera_front_top.rgbd_2_world_batch(env.camera_front_top.origin_depth) #depth)
-
-
+    
+    scene = rgb, depth, seg, valid, xyz
     if inference_mode:
         initial_scene = scene
 
@@ -270,7 +306,7 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
             raise Exception
 
         if obj in target_objs:
-            if self.ignore_rgb:
+            if ignore_rgb:
                 obj_pcs.append(obj_xyz)
             else:
                 obj_pcs.append(torch.concat([obj_xyz, obj_rgb], dim=-1))
@@ -279,7 +315,7 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
             pc_pose[:3, 3] = torch.mean(obj_xyz, dim=0).numpy()
             current_pc_poses.append(pc_pose)
         elif obj in other_objs:
-            if self.ignore_rgb:
+            if ignore_rgb:
                 other_obj_pcs.append(obj_xyz)
             else:
                 other_obj_pcs.append(torch.concat([obj_xyz, obj_rgb], dim=-1))
@@ -301,8 +337,10 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
     current_obj_poses = []
     goal_pc_poses = []
     for obj, current_pc_pose in zip(target_objs, current_pc_poses):
-        goal_pose = h5[obj][0]
-        current_pose = h5[obj][step_t]
+        goal_pose = np.eye(4)
+        current_pose = np.eye(4)
+        # goal_pose = h5[obj][0]
+        # current_pose = h5[obj][step_t]
         if inference_mode:
             goal_obj_poses.append(goal_pose)
             current_obj_poses.append(current_pose)
@@ -311,33 +349,6 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
         if use_virtual_structure_frame:
             goal_pc_pose = goal_structure_pose_inv @ goal_pc_pose
         goal_pc_poses.append(goal_pc_pose)
-
-    # transform current object point cloud to the goal point cloud in the world frame
-    if self.debug:
-        new_obj_pcs = [copy.deepcopy(pc.numpy()) for pc in obj_pcs]
-        for i, obj_pc in enumerate(new_obj_pcs):
-
-            current_pc_pose = current_pc_poses[i]
-            goal_pc_pose = goal_pc_poses[i]
-            if self.use_virtual_structure_frame:
-                goal_pc_pose = goal_structure_pose @ goal_pc_pose
-            print("current pc pose", current_pc_pose)
-            print("goal pc pose", goal_pc_pose)
-
-            goal_pc_transform = goal_pc_pose @ np.linalg.inv(current_pc_pose)
-            print("transform", goal_pc_transform)
-            new_obj_pc = copy.deepcopy(obj_pc)
-            new_obj_pc[:, :3] = trimesh.transform_points(obj_pc[:, :3], goal_pc_transform)
-            print(new_obj_pc.shape)
-
-            # visualize rearrangement sequence (new_obj_xyzs), the current object before moving (obj_xyz), and other objects
-            new_obj_pcs[i] = new_obj_pc
-            new_obj_pcs[i][:, 3:] = np.tile(np.array([1, 0, 0], dtype=np.float), (new_obj_pc.shape[0], 1))
-            new_obj_rgb_current = np.tile(np.array([0, 1, 0], dtype=np.float), (new_obj_pc.shape[0], 1))
-            show_pcs([pc[:, :3] for pc in new_obj_pcs] + [pc[:, :3] for pc in other_obj_pcs] + [obj_pc[:, :3]],
-                     [pc[:, 3:] for pc in new_obj_pcs] + [pc[:, 3:] for pc in other_obj_pcs] + [new_obj_rgb_current],
-                     add_coordinate_frame=True)
-        show_pcs([pc[:, :3] for pc in new_obj_pcs], [pc[:, 3:] for pc in new_obj_pcs], add_coordinate_frame=True)
 
     # pad data
     for i in range(max_num_objects - len(target_objs)):
@@ -367,19 +378,6 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
     # paddings
     for i in range(max_num_objects - len(target_objs)):
         goal_pc_poses.append(np.eye(4))
-
-    ###################################
-    if self.debug:
-        print("---")
-        print("all objects:", all_objs)
-        print("target objects:", target_objs)
-        print("other objects:", other_objs)
-        print("goal specification:", goal_specification)
-        print("sentence:", sentence)
-        show_pcs([pc[:, :3] for pc in obj_pcs + other_obj_pcs], [pc[:, 3:] for pc in obj_pcs + other_obj_pcs], add_coordinate_frame=True)
-
-    assert len(obj_pcs) == len(goal_pc_poses)
-    ###################################
 
     # shuffle the position of objects
     if shuffle_object_index:
@@ -432,7 +430,7 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
         "position_index": position_index,
         "pad_mask": pad_mask,
         "t": step_t,
-        "filename": filename
+        "filename": "", #filename
     }
 
     if shuffle_object_index:
@@ -445,7 +443,7 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
         datum["target_objs"] = target_objs
         datum["initial_scene"] = initial_scene
         datum["ids"] = ids
-        datum["goal_specification"] = goal_specification
+        # datum["goal_specification"] = goal_specification
         datum["current_pc_poses"] = current_pc_poses
 
     return datum
