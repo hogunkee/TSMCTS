@@ -50,13 +50,13 @@ def main(args, cfg):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="infer")
     parser.add_argument("--base_config_file", help='base config yaml file',
-                        default='../configs/base.yaml',
+                        default='../../StructDiffusion/configs/base.yaml',
                         type=str)
     parser.add_argument("--config_file", help='config yaml file',
-                        default='../configs/conditional_pose_diffusion.yaml',
+                        default='../../StructDiffusion/configs/conditional_pose_diffusion.yaml',
                         type=str)
     parser.add_argument("--testing_data_config_file", help='config yaml file',
-                        default='../configs/testing_data.yaml',
+                        default='../../StructDiffusion/configs/testing_data.yaml',
                         type=str)
     parser.add_argument("--checkpoint_id",
                         default="ConditionalPoseDiffusion",
