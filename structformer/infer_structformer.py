@@ -40,6 +40,7 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
     # Logger
     now = datetime.datetime.now()
     log_name = now.strftime("%m%d_%H%M")
+    log_name += '-' + args.view
     # logname = 'SF-' + log_name
 
     # Random seed
@@ -181,22 +182,33 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
         print("--------------------------------")
         step = 0
         while step<10:
-            # retrieve data
-            init_datum = get_raw_data(env.get_observation(), env, structure_param, view=args.view)
-            # test_datum = test_dataset.get_raw_data(idx)
-            # goal_specification = init_datum["goal_specification"]
-            # xyzs = init_datum["xyzs"] + test_datum["xyzs"]
-            # rgbs = init_datum["rgbs"] + test_datum["rgbs"]
-            # show_pcs(xyzs, rgbs, side_view=True, add_table=True)
-            object_selection_structured_sentence = [('dinner', 'scene'), ('PAD',), ('PAD',), ('PAD',)]
-            structure_specification_structured_sentence = [('dinner', 'shape'),
-                                                        (0.0, 'rotation'),
-                                                        (structure_param['position'], 'position_x'),
-                                                        (0.0, 'position_y'),
-                                                        ('PAD',)]
-            # object_selection_structured_sentence = init_datum["sentence"][5:]
-            # structure_specification_structured_sentence = init_datum["sentence"][:5]
-            # init_datum["sentence"] = object_selection_structured_sentence + structure_specification_structured_sentence
+            # from dataset
+            if False:
+                init_datum = object_selection_inference.dataset.get_raw_data(step)
+                goal_specification = init_datum["goal_specification"]
+                xyzs = init_datum["xyzs"]
+                rgbs = init_datum["rgbs"]
+                show_pcs(xyzs, rgbs, side_view=True, add_table=True)
+                object_selection_structured_sentence = init_datum["sentence"][5:]
+                structure_specification_structured_sentence = init_datum["sentence"][:5]
+                init_datum["sentence"] = object_selection_structured_sentence + structure_specification_structured_sentence
+            # from pybullet env
+            else:
+                init_datum = get_raw_data(env.get_observation(), env, structure_param, view=args.view)
+                # test_datum = test_dataset.get_raw_data(idx)
+                # goal_specification = init_datum["goal_specification"]
+                # xyzs = init_datum["xyzs"] + test_datum["xyzs"]
+                # rgbs = init_datum["rgbs"] + test_datum["rgbs"]
+                # show_pcs(xyzs, rgbs, side_view=True, add_table=True)
+                object_selection_structured_sentence = [('dinner', 'scene'), ('PAD',), ('PAD',), ('PAD',)]
+                structure_specification_structured_sentence = [('dinner', 'shape'),
+                                                            (0.0, 'rotation'),
+                                                            (structure_param['position'], 'position_x'),
+                                                            (0.0, 'position_y'),
+                                                            ('PAD',)]
+                # object_selection_structured_sentence = init_datum["sentence"][5:]
+                # structure_specification_structured_sentence = init_datum["sentence"][:5]
+                # init_datum["sentence"] = object_selection_structured_sentence + structure_specification_structured_sentence
             object_selection_natural_sentence = object_selection_inference.tokenizer.convert_to_natural_sentence(object_selection_structured_sentence)
             structure_specification_natural_sentence = object_selection_inference.tokenizer.convert_structure_params_to_natural_language(structure_specification_structured_sentence)
 
@@ -347,7 +359,7 @@ if __name__ == "__main__":
     parser.add_argument('--scene-split', type=str, default='all') # 'all' / 'seen' / 'unseen'
     parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
-    parser.add_argument('--num-scenes', type=int, default=10)
+    parser.add_argument('--num-scenes', type=int, default=16)
     parser.add_argument('--gui-off', action="store_true")
     parser.add_argument('--logging', action="store_true")
     args = parser.parse_args()

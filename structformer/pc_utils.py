@@ -106,7 +106,9 @@ def get_raw_data(obs, env, structure_param, view='top', max_num_objects=10, num_
         if np.sum(obj_mask) <= 0:
             raise Exception
         ok, obj_xyz, obj_rgb, _ = get_pts(xyz, rgb, obj_mask, num_pts=num_pts)
-        obj_xyzs.append((obj_xyz - np.array([-0.475, 0, 0.625])).to(torch.float32))
+        #obj_xyz = (obj_xyz - np.array([-0.5, 0, 0.58])).to(torch.float32) # [-0.475, 0, 0.58], [-0.475, 0, 0.42]
+        obj_xyzs.append((obj_xyz - np.array([-0.5, 0, 0.62])).to(torch.float32))
+        # obj_xyzs.append((obj_xyz - np.array([-0.475, 0, 0.625])).to(torch.float32))
         obj_rgbs.append(obj_rgb[:, :3]/255)
         object_pad_mask.append(0)
         if i < num_rearrange_objs:
@@ -248,7 +250,7 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
     # all_objs = target_objs + other_objs
 
     ###################################
-    ignore_rgb = True
+    ignore_rgb = False #True
     use_virtual_structure_frame = True
     ignore_distractor_objects = True
     max_num_objects = 7
@@ -302,6 +304,7 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
         if np.sum(obj_mask) <= 0:
             raise Exception
         ok, obj_xyz, obj_rgb, _ = get_pts(xyz, rgb, obj_mask, num_pts=num_pts)
+        obj_xyz = (obj_xyz - np.array([-0.5, 0, 0.58])).to(torch.float32) # [-0.475, 0, 0.58], [-0.475, 0, 0.42]
         if not ok:
             raise Exception
 
@@ -309,7 +312,7 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
             if ignore_rgb:
                 obj_pcs.append(obj_xyz)
             else:
-                obj_pcs.append(torch.concat([obj_xyz, obj_rgb], dim=-1))
+                obj_pcs.append(torch.concat([obj_xyz, obj_rgb[:, :3]/255], dim=-1))
             obj_pad_mask.append(0)
             pc_pose = np.eye(4)
             pc_pose[:3, 3] = torch.mean(obj_xyz, dim=0).numpy()
@@ -318,7 +321,7 @@ def get_diffusion_data(obs, env, structure_param, view='top', inference_mode=Fal
             if ignore_rgb:
                 other_obj_pcs.append(obj_xyz)
             else:
-                other_obj_pcs.append(torch.concat([obj_xyz, obj_rgb], dim=-1))
+                other_obj_pcs.append(torch.concat([obj_xyz, obj_rgb[:, :3]/255], dim=-1))
             other_obj_pad_mask.append(0)
         else:
             raise Exception
