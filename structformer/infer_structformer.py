@@ -194,7 +194,10 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
                 init_datum["sentence"] = object_selection_structured_sentence + structure_specification_structured_sentence
             # from pybullet env
             else:
-                init_datum = get_raw_data(env.get_observation(), env, structure_param, view=args.view)
+                try:
+                    init_datum = get_raw_data(env.get_observation(), env, structure_param, view=args.view)
+                except:
+                    break
                 # test_datum = test_dataset.get_raw_data(idx)
                 # goal_specification = init_datum["goal_specification"]
                 # xyzs = init_datum["xyzs"] + test_datum["xyzs"]

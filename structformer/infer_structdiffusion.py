@@ -188,6 +188,9 @@ def main(args, cfg):
             # from dataset
             if False:
                 init_datum = dataset.get_raw_data(step)
+                # for i in range(len(init_datum["goal_poses"])):
+                #     init_datum["goal_poses"][i] = np.eye(4)
+                # init_datum["t"] = 200
                 print(tokenizer.convert_structure_params_to_natural_language(init_datum["sentence"]))
                 datum = dataset.convert_to_tensors(init_datum, tokenizer)
                 batch = dataset.single_datum_to_batch(datum, args.num_samples, device, inference_mode=True)
@@ -195,7 +198,11 @@ def main(args, cfg):
                 xs = sampler.sample(batch, num_poses) 
             # from pybullet env
             else:
-                init_datum = get_diffusion_data(env.get_observation(), env, structure_param, view=args.view, inference_mode=True)
+                try:
+                    init_datum = get_diffusion_data(env.get_observation(), env, structure_param, view=args.view, inference_mode=True)
+                except:
+                    break
+                print(tokenizer.convert_structure_params_to_natural_language(init_datum["sentence"]))
                 obj_ids = init_datum["ids"]
                 target_objects = init_datum["target_objs"]
 
