@@ -113,6 +113,7 @@ def main(args, cfg):
                 json.dump(args.__dict__, f, indent=2)
 
         if seed is not None: 
+            random.seed(seed + sidx)
             np.random.seed(seed + sidx)
 
         # Initial state
