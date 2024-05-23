@@ -254,7 +254,7 @@ class MCTS(object):
         while not nodePick.terminal: # self.isTerminal(node)[0]:
             assert nodePick.type=='pick'
             if nodePick.isFullyExpanded():
-                _, nodePlace = self.getBestChild(nodePick, self.explorationConstant)
+                _, nodePlace = self.getBestChild(nodePick, 0.) #self.explorationConstant)
                 if nodePlace.isFullyExpanded():
                     _, nodePick = self.getBestChild(nodePlace, self.explorationConstant)
                 else:
