@@ -556,7 +556,8 @@ class MCTS(object):
             elif self.rolloutPolicy=='onestep':
                 reward, value = self.oneStepPolicy(node)
             else:
-                reward, value = self.greedyPolicy(node, self.rolloutPolicy)
+                reward, value = self.oneStepGreedyPolicy(node, self.rolloutPolicy)
+                # reward, value = self.greedyPolicy(node, self.rolloutPolicy)
             
             if self.algorithm=='alphago':
                 nodeReward = self.puctLambda * reward + (1-self.puctLambda) * value
@@ -608,6 +609,45 @@ class MCTS(object):
         # et = time.time()
         # print(et - st, 'seconds.')
         return maxReward
+
+    def oneStepGreedyPolicy(self, node, policy):
+        # random / iql / policy / iql-uniform / policy-uniform
+        # print('greedyPolicy.')
+        # st = time.time()
+        if self.isTerminal(node)[0]:
+            return 0., 0.
+        
+        tables = [np.copy(node.table)]
+        
+        if node.numActionCandidates==0:
+            prob = self.getPossibleActions(node, policy)
+        else:
+            prob = node.actionProb
+        if 'uniform' in policy:
+            prob[prob>0] = 1.
+            prob /= np.sum(prob)
+        # prob: r x n x h x w
+        for _nb in range(prob.shape[1]):
+            _prob = prob[:, _nb] # r x h x w
+            _rots, _ys, _xs = np.where(_prob>0.)
+            _idx = np.random.choice(len(_rots), p=_prob[_rots, _ys, _xs]/_prob[_rots, _ys, _xs].sum())
+            _rot, _y, _x = _rots[_idx], _ys[_idx], _xs[_idx]
+            _action = (_nb+1, _y, _x, _rot+1)
+            # p = _prob[_rot, _y, _x]
+            _newTable = node.takeAction(_action)
+            tables.append(_newTable)
+            
+        if args.algorithm=='alphago':
+            rewards, values = self.getRewardValue(tables)
+        else:
+            rewards, values = self.getReward(tables)
+        # X # discounted rewards
+        # rewards = rewards * (self.gamma ** np.arange(len(rewards)))
+        maxReward = np.max(rewards)
+        value = values[0]
+        # et = time.time()
+        # print(et - st, 'seconds.')
+        return maxReward, value
 
     def greedyPolicy(self, node, policy):
         # random / iql / policy / iql-uniform / policy-uniform
@@ -911,6 +951,7 @@ if __name__=='__main__':
             logger.addHandler(file_handler)
 
         if seed is not None: 
+            random.seed(seed + sidx)
             np.random.seed(seed + sidx)
         
         # Initial state
