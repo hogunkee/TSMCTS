@@ -738,7 +738,7 @@ if __name__=='__main__':
     logname = 'TT-'
     logname += args.tree_policy
     if args.tree_policy=='iql':
-        logname += args.threshold_prob
+        logname += '_' + str(args.threshold_prob)
     if args.use_template:
         logname += '-' + args.scenes
     if not args.wandb_off:
