@@ -793,6 +793,8 @@ if __name__=='__main__':
     
     logname = 'MCTS-'
     logname += args.tree_policy
+    if args.tree_policy=='iql':
+        logname += args.threshold_prob
     if args.use_template:
         logname += '-' + args.scenes
     if not args.wandb_off:
