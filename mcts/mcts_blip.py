@@ -864,6 +864,7 @@ if __name__=='__main__':
     # model_path = args.reward_model_path
     #gtRewardNet, preprocess = loadRewardFunction(model_path)
     #searcher.setGTRewardNet(gtRewardNet)
+    image_size = 384
     blippreprocess = transforms.Compose([
             transforms.Resize((image_size,image_size),interpolation=InterpolationMode.BICUBIC),
             transforms.ToTensor(),
@@ -871,7 +872,7 @@ if __name__=='__main__':
             ])
     image_size = 384
     model_url = 'https://storage.googleapis.com/sfr-vision-language-research/BLIP/models/model_base_retrieval_coco.pth'
-    BLIPModel = blip_itm(pretrained=model_url, image_size=image_size, vit='base')
+    BLIPModel = blip_itm(pretrained=model_url, image_size=image_size, vit='base', med_config = '/home/gun/Desktop/BLIP/configs/med_config.json')
     BLIPModel.eval()
     BLIPModel = BLIPModel.to(device='cuda')
     searcher.setBLIPModel(BLIPModel, blippreprocess, args.input_text)
