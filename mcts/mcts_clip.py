@@ -27,6 +27,9 @@ from utilities import Camera, Camera_front_top
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
 from collect_template_list import scene_list
 
+import clip
+from torchvision import transforms
+
 import wandb
 import warnings
 warnings.filterwarnings("ignore")
@@ -139,8 +142,6 @@ class MCTS(object):
         self.thresholdSuccess = args.threshold_success
         self.thresholdProb = args.threshold_prob
 
-        self.rewardType = args.reward_type
-        self.normalize_reward = args.normalize_reward
         self.gtRewardNet = None
         self.rewardNet = None
         self.valueNet = None
@@ -151,6 +152,13 @@ class MCTS(object):
         self.searchCount = 0
         self.inferenceCount = 0
         self.blurring = args.blurring
+
+        # CLIP
+        self.clip = None
+        self.text_embedding = None
+        self.norm_bias = args.norm_bias
+        self.norm_scale = args.norm_scale    
+        self.similarity_score = args.similarity_score    
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
@@ -161,8 +169,10 @@ class MCTS(object):
     def setValueNet(self, valueNet):
         self.valueNet = valueNet
     
-    def setCLIPModel(self, clipModel):
+    def setCLIPModel(self, clipModel, preprocess, text):
         self.clip = clipModel
+        self.clipPreProcess = preprocess
+        self.text = clip.tokenize([text]).cuda()
 
     def setGTRewardNet(self, gtRewardNet):
         self.gtRewardNet = gtRewardNet
@@ -250,54 +260,14 @@ class MCTS(object):
         node.children[tuple(action)] = newNode
         return newNode
 
-    def getRewardValue(self, tables, groundTruth=False):
-        # print('getReward.')
-        states = []
-        for table in tables:
-            rgb = self.renderer.getRGB(table)
-            states.append(rgb)
-        s_value = torch.Tensor(np.array(states)/255.).to(torch.float32).cuda()
-        s_reward = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
-        if self.preProcess is not None:
-            s_reward = self.preProcess(s_reward)
-
-        if len(states) > self.batchSize:
-            rewards = []
-            values = []
-            numBatches = len(states)//self.batchSize
-            if len(states)%self.batchSize > 0:
-                numBatches += 1
-            for b in range(numBatches):
-                batchStatesR = s_reward[b*self.batchSize:(b+1)*self.batchSize]
-                batchStatesV = [s_value[b*self.batchSize:(b+1)*self.batchSize], None, None]
-
-                if groundTruth or self.rewardType=='gt':
-                    batchRewards = self.gtRewardNet(batchStatesR).cpu().detach().numpy()
-                else:
-                    batchRewards = self.rewardNet(batchStatesV).cpu().detach().numpy()
-                batchValues  = self.valueNet(batchStatesV).cpu().detach().numpy()
-                rewards.append(batchRewards)
-                values.append(batchValues)
-            rewards = np.concatenate(rewards)
-            values = np.concatenate(values)
-        else:
-            if groundTruth or self.rewardType=='gt':
-                rewards = self.gtRewardNet(s_reward).cpu().detach().numpy()
-            else:
-                rewards = self.rewardNet([s_value, None, None]).cpu().detach().numpy()
-            values = self.valueNet([s_value, None, None]).cpu().detach().numpy()
-        return rewards.reshape(-1), values.reshape(-1)
-
     def getReward(self, tables, groundTruth=False):
         # print('getReward.')
         states = []
         for table in tables:
             rgb = self.renderer.getRGB(table)
-            states.append(rgb)
-        s_value = torch.Tensor(np.array(states)/255.).to(torch.float32).cuda()
-        s_reward = torch.Tensor(np.array(states)/255.).permute([0,3,1,2]).cuda()
-        if self.preProcess is not None:
-            s_reward = self.preProcess(s_reward)
+            state = self.clipPreProcess(Image.fromarray(rgb)).unsqueeze(0)
+            states.append(state)
+        s_image = torch.cat(states, 0).to(torch.float32).cuda()
 
         if len(states) > self.batchSize:
             rewards = []
@@ -305,19 +275,42 @@ class MCTS(object):
             if len(states)%self.batchSize > 0:
                 numBatches += 1
             for b in range(numBatches):
-                batchStatesR = s_reward[b*self.batchSize:(b+1)*self.batchSize]
-                batchStatesV = [s_value[b*self.batchSize:(b+1)*self.batchSize], None, None]
-                if groundTruth or self.rewardType=='gt':
-                    batchRewards = self.gtRewardNet(batchStatesR).cpu().detach().numpy()
+                batchStates = s_image[b*self.batchSize:(b+1)*self.batchSize]
+                
+                if self.similarity_score:
+                    # Calculate features
+                    with torch.no_grad():
+                        image_features = self.clip.encode_image(batchStates)
+                        text_features = self.clip.encode_text(self.text)
+                    image_features /= image_features.norm(dim=-1, keepdim=True)
+                    text_features /= text_features.norm(dim=-1, keepdim=True)
+                    similarity = (image_features @ text_features.T).cpu().detach().numpy()
+                    batchRewards = (similarity - self.norm_bias) / self.norm_scale
                 else:
-                    batchRewards = self.rewardNet(batchStatesV).cpu().detach().numpy()
+                    with torch.no_grad():
+                        logits_per_image, logits_per_text = self.clip(batchStates, self.text)
+                    batchRewards = (logits_per_image.cpu().detach().numpy() - self.norm_bias) / self.norm_scale
+                    
                 rewards.append(batchRewards)
             rewards = np.concatenate(rewards)
         else:
-            if groundTruth or self.rewardType=='gt':
-                rewards = self.gtRewardNet(s_reward).cpu().detach().numpy()
+            if self.similarity_score:
+                # Calculate features
+                with torch.no_grad():
+                    image_features = self.clip.encode_image(s_image)
+                    text_features = self.clip.encode_text(self.text)
+                image_features /= image_features.norm(dim=-1, keepdim=True)
+                text_features /= text_features.norm(dim=-1, keepdim=True)
+                similarity = (image_features @ text_features.T).cpu().detach().numpy()
+                rewards = (similarity - self.norm_bias) / self.norm_scale
             else:
-                rewards = self.rewardNet([s_value, None, None]).cpu().detach().numpy()
+                with torch.no_grad():
+                    logits_per_image, logits_per_text = self.clip(s_image, self.text)
+                rewards = (logits_per_image.cpu().detach().numpy() - self.norm_bias) / self.norm_scale
+            # if groundTruth or self.rewardType=='gt':
+            #     rewards = self.gtRewardNet(s_reward).cpu().detach().numpy()
+            # else:
+            #     rewards = self.rewardNet([s_value, None, None]).cpu().detach().numpy()
         return rewards.reshape(-1), [0.0]
 
     def backpropagate(self, node, G):
@@ -376,11 +369,7 @@ class MCTS(object):
         bestValue = float("-inf")
         bestNodes = []
         for child in node.children.values():
-            if self.normalize_reward:
-                Qvalue = (self.gamma * child.Gmax - node.Gmin) / (node.Gmax - node.Gmin + 1e-6)
-                child.Qnorm = Qvalue
-            else:
-                Qvalue = child.Qmean
+            Qvalue = child.Qmean
             if self.algorithm=='alphago':
                 nodeValue = Qvalue + explorationValue * \
                     child.prob * np.sqrt(node.numVisits) / (1 + child.numVisits)
@@ -788,8 +777,9 @@ if __name__=='__main__':
     # CLIP
     parser.add_argument('--clip-model', type=str, default="ViT-L/14@336px")
     parser.add_argument('--input-text', type=str, default="Line shape")
-    parser.add_argument('--norm-scale', type=float, default=10)
-    parser.add_argument('--norm-bias', type=float, default=10)
+    parser.add_argument('--norm-scale', type=float, default=10) # 0.2
+    parser.add_argument('--norm-bias', type=float, default=10) # 0
+    parser.add_argument('--similarity-score', action='store_true')
     args = parser.parse_args()
 
     # Logger
@@ -862,26 +852,6 @@ if __name__=='__main__':
                 sizes.append('medium')
         objects = [[objects[i], sizes[i]] for i in range(len(objects))]
         
-        ###
-        if False:
-            template_folder = os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/templates')
-            template_files = os.listdir(template_folder)
-            template_files = [f for f in template_files if f.lower().endswith('.json') and f.lower().startswith(args.template.lower())]
-
-            if args.scene_split=='unseen':
-                template_files = [f for f in template_files if f.upper().split('_')[0] in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-            elif args.scene_split=='seen':
-                template_files = [f for f in template_files if f.upper().split('_')[0] not in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-            
-            template_file = random.choice(template_files)
-            print_fn('Selected template: %s' %template_file)
-            # scene = template_file.split('_')[0]
-            # template_id = template_file.split('_')[-1].split('.')[0]
-            with open(os.path.join(template_folder, template_file), 'r') as f:
-                templates = json.load(f)
-            augmented_template = env.get_augmented_templates(templates, 2)[-1]
-            objects = [v for k,v in augmented_template['objects'].items()]
-            # env.load_template(augmented_template)
     else:
         objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
                     'glue', 'knife', 'lotion', 'marker', 'pitcher', 'plate', 'remote', 'scissors', 'shampoo', \
@@ -903,15 +873,16 @@ if __name__=='__main__':
     searcher = MCTS(renderer, args, explorationConstant=args.exploration) #1/np.sqrt(2)
 
     # Network setup
-    #args.clip_model
-    #args.input_text
-    #args.norm_scale
-    #args.norm_bias
-    model_path = args.reward_model_path
+    # model_path = args.reward_model_path
     #gtRewardNet, preprocess = loadRewardFunction(model_path)
-    CLIPModel, preprocess = clip.load("ViT-L/14@336px", device=device)
-    searcher.setCLIPModel(CLIPModel)
     #searcher.setGTRewardNet(gtRewardNet)
+    CLIPModel, clippreprocess = clip.load("ViT-L/14@336px", device='cuda')
+    searcher.setCLIPModel(CLIPModel, clippreprocess, args.input_text)
+    
+    preprocess = transforms.Compose([
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
     searcher.setPreProcess(preprocess)
 
     # IQL policy
@@ -919,12 +890,6 @@ if __name__=='__main__':
         valuenet = loadIQLValueNetwork(args.iql_path, args)
         valuenet = valuenet.to("cuda:0")
         searcher.setValueNet(valuenet)
-
-    # Reward function
-    if args.reward_type=='iql':
-        rnet = loadIQLRewardNetwork(args.iql_path, args, args.sigmoid)
-        rnet = rnet.to("cuda:0")
-        searcher.setRewardNet(rnet)
 
     # Policy-based MCTS
     if args.tree_policy.startswith('policy') or args.rollout_policy.startswith('policy'):
