@@ -52,12 +52,13 @@ class PybulletNpyDataset(Dataset):
         self.buff_i = buff_i
 
 class TabletopTemplateDataset(Dataset):
-    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', remove_bg=True, label_type='linspace', view='top', scene_index=False):
+    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', remove_bg=True, label_type='linspace', view='top', scene_index=False, get_mask=False):
         super().__init__()
         self.data_dir = data_dir
         self.remove_bg = remove_bg
         self.label_type = label_type
         self.scene_index = scene_index
+        self.get_mask = get_mask
         self.view = view
         self.data_paths, self.data_labels = self.get_data_paths()
     
@@ -126,7 +127,11 @@ class TabletopTemplateDataset(Dataset):
         if self.scene_index:
             return rgb, label, scene_index
         else:
-            return rgb, label
+            if self.get_mask:
+                mask = torch.from_numpy((mask!=mask.max())).type(torch.float)
+                return mask, label, rgb
+            else:
+                return rgb, label
 
     def __len__(self):
         return len(self.data_paths)
