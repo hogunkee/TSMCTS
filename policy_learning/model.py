@@ -53,3 +53,13 @@ class ResNet(nn.Module):
         p = F.softmax(h, dim=1)
         prob = p.view(-1, H, W)
         return prob
+    
+    def get_logits(self, x):
+        h = self.resnet(x)  # [B, 1, 12, 15]
+        #h = F.interpolate(h, scale_factor=1/4, mode='bilinear')
+        _, C, H, W = h.shape
+        h = h.reshape(-1, C*H*W)
+        logit = h.view(-1, H, W)
+        p = F.softmax(h, dim=1)
+        prob = p.view(-1, H, W)
+        return logit, prob
