@@ -46,7 +46,7 @@ class NodePick(object):
     def __init__(self, numObjects, table, exceptPick=None, parent=None, actionProb=0.):
         self.type = 'pick'
         self.table = table
-        self.exceptPick = exceptPick
+        self.exceptPick = None #exceptPick
         self.parent = parent
         self.prob = actionProb
 
@@ -254,7 +254,7 @@ class MCTS(object):
         while not nodePick.terminal: # self.isTerminal(node)[0]:
             assert nodePick.type=='pick'
             if nodePick.isFullyExpanded():
-                _, nodePlace = self.getBestChild(nodePick, 0.) #self.explorationConstant)
+                _, nodePlace = self.getBestChild(nodePick, self.explorationConstant)
                 if nodePlace.isFullyExpanded():
                     _, nodePick = self.getBestChild(nodePlace, self.explorationConstant)
                 else:
