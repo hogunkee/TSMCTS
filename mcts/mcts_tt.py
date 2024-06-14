@@ -196,17 +196,17 @@ class MCTS(object):
 
     def selectNode(self, node):
         # print('selectNode.')
-        #trajectory = []
         while not node.terminal: # self.isTerminal(node)[0]:
-            if node.isFullyExpanded(): # or random.uniform(0, 1) < 0.5:
+            if len(node.children)==0:
+                action, newNode = self.expand(node)
+                return newNode
+            elif node.isFullyExpanded() or random.uniform(0, 1) < 0.5:
                 action, newNode = self.getBestChild(node, self.explorationConstant)
-                #trajectory.append((node, action))
                 node = newNode
             else:
                 action, newNode = self.expand(node)
-                #trajectory.append((node, action))
-                return newNode#, trajectory
-        return node#, trajectory
+                return newNode
+        return node
 
     def sampleFromProb(self, prob, exceptActions=[]):
         # shape: r x n x h x w

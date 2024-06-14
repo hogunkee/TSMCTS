@@ -316,6 +316,18 @@ class PolicyOpt1(nn.Module):
         action_probs = action_probs_flatten.view(B, H, W)
         return action_probs
 
+    def get_logits(self, obs):
+        _, state, patch = obs
+        state = state.permute(0, 3, 1, 2)
+        h_state = self.cnn_state(state) # B x 32 x H x W
+        q = self.fconv(h_state).squeeze(1)  # B x H x W
+
+        B, H, W = q.size()
+        logit = q.view(B, H*W)
+        action_probs_flatten = torch.softmax(logit, dim=-1)
+        action_probs = action_probs_flatten.view(B, H, W)
+        return logit, action_probs
+
 # Option 2: H,W of object patches
 class PolicyOpt2(nn.Module):
     def __init__(self, hidden_dim=32):
