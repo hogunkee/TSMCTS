@@ -705,7 +705,7 @@ if __name__=='__main__':
     parser.add_argument('--rollout-policy', type=str, default='nostep') # 'nostep' / 'policy' / 'iql-policy'
     parser.add_argument('--tree-policy', type=str, default='random') # 'random' / 'policy' / 'iql-policy'
     parser.add_argument('--puct-lambda', type=float, default=0.5)
-    parser.add_argument('--threshold-success', type=float, default=0.9) #0.85
+    parser.add_argument('--threshold-success', type=float, default=0.85) #0.85
     parser.add_argument('--threshold-prob', type=float, default=1e-5)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--binary-reward', action="store_true")
@@ -799,7 +799,7 @@ if __name__=='__main__':
         objects = [[objects[i], sizes[i]] for i in range(len(objects))]
     else:
         objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
-                    'glue', 'knife', 'lotion', 'marker', 'pitcher', 'plate', 'remote', 'scissors', 'shampoo', \
+                    'glue', 'knife', 'lotion', 'marker', 'plate', 'remote', 'scissors', 'shampoo', \
                     'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
         # objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
         objects = [(o, 'medium') for o in objects]
