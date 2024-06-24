@@ -52,13 +52,14 @@ class PybulletNpyDataset(Dataset):
         self.buff_i = buff_i
 
 class TabletopTemplateDataset(Dataset):
-    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', remove_bg=True, label_type='linspace', view='top', scene_index=False, get_mask=False):
+    def __init__(self, data_dir='/ssd/disk/TableTidyingUp/dataset_template/train', remove_bg=True, label_type='linspace', view='top', scene_index=False, get_mask=False, target_scene=''):
         super().__init__()
         self.data_dir = data_dir
         self.remove_bg = remove_bg
         self.label_type = label_type
         self.scene_index = scene_index
         self.get_mask = get_mask
+        self.target_scene = target_scene
         self.view = view
         self.data_paths, self.data_labels = self.get_data_paths()
     
@@ -74,7 +75,10 @@ class TabletopTemplateDataset(Dataset):
         data_paths = []
         data_labels = []
         scene_indices = []
-        for scene in sorted(os.listdir(self.data_dir)):
+        scene_list = sorted(os.listdir(self.data_dir))
+        if self.target_scene!='':
+            scene_list = [s for s in scene_list if s.startswith(self.target_scene)]
+        for scene in scene_list:
             if scene.startswith('B'):
                 scene_index = 0
             elif scene.startswith('C'):
@@ -83,6 +87,8 @@ class TabletopTemplateDataset(Dataset):
                 scene_index = 2
             elif scene.startswith('O'):
                 scene_index = 3
+            else:
+                scene_index = -1
             scene_path = os.path.join(self.data_dir, scene)
             for template in sorted(os.listdir(scene_path)):
                 template_path = os.path.join(scene_path, template)
