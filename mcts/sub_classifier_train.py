@@ -177,6 +177,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default='resnet-18')
     parser.add_argument('--wandb-off', action='store_true')
     args = parser.parse_args()
+    args.remove_bg = True
 
     now = datetime.datetime.now()
     log_name = now.strftime("%m%d_%H%M")
