@@ -755,10 +755,12 @@ if __name__=='__main__':
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
     
-    logname = 'MCTS-'
-    logname += args.tree_policy
-    if args.tree_policy=='iql':
-        logname += '_' + str(args.threshold_prob)
+    logname = 'Sub-'
+    logname += args.sub_reward_model_path.split('/')[-1].split('_')[0] + '-'
+    logname += str(float(args.alpha))
+    #logname += args.tree_policy
+    #if args.tree_policy=='iql':
+    #    logname += '_' + str(args.threshold_prob)
     if args.use_template:
         logname += '-' + args.scenes
     if not args.wandb_off:
@@ -894,7 +896,7 @@ if __name__=='__main__':
     success = 0
     success_eplen = []
     best_scores = []
-    log_dir = 'data/%s' %args.algorithm
+    log_dir = 'data/%s' %logname #args.algorithm
     if args.logging:
         bar = tqdm(range(args.num_scenes))
     else:
