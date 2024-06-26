@@ -11,7 +11,7 @@ from torch.nn.utils import clip_grad_norm_
 from torchvision.utils import make_grid
 from torchvision.transforms import Resize
 
-from datasets.transform import Transform
+#from datasets.transform import Transform
 from models import Encoder, Decoder, ConditionalDiffusion
 
 import wandb
@@ -22,6 +22,8 @@ import time
 def train():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_pth', type=str, default='data/')
+    parser.add_argument('--data_dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/train')
+    parser.add_argument('--val_data_dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/test-unseen_obj-unseen_template')
     parser.add_argument('--ckpt_dir', type=str, default='/home/gun/ssd/disk/PreferenceDiffusion/tidying-line-diffusion')
     parser.add_argument('--encoder_pth', type=str, default='1129_1701')
     parser.add_argument('--batch_size', type=int, default=4)
@@ -33,7 +35,9 @@ def train():
     parser.add_argument('--remove_bg', action='store_true')
     parser.add_argument('--cond_type', type=str, default='mask')
     parser.add_argument('--wandb_off', action='store_true')
+    parser.add_argument('--tabletop', action='store_true')
     args = parser.parse_args()
+    args.tabletop = True
 
     now = datetime.datetime.now()
     exp_name = 'TD_%s_%s' %(args.cond_type, now.strftime("%m%d_%H%M"))
@@ -42,26 +46,33 @@ def train():
         shutil.rmtree(log_dir)
     wandb_off = args.wandb_off
     if not wandb_off:
-        wandb.init(project="instruct-pix2pix")
+        wandb.init(project="TabletopDiffusion")
         wandb.run.name = exp_name
         wandb.config.update(args)
         wandb.run.save()
     checkpoint_dir = os.path.join(args.ckpt_dir, exp_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    rgb_data = np.load(os.path.join(args.data_pth, 'rgb_128.npy'))
-    segmap_data = np.load(os.path.join(args.data_pth, 'segmap_16.npy'))
-    if args.remove_bg:
-        from datasets.datasets import TargetCondDiffusionDatsetNoBG
-        mask_data = np.load(os.path.join(args.data_pth, 'segmap_128.npy'))
-        dataset = TargetCondDiffusionDatasetNoBG(rgb_data, segmap_data, mask_data)
+    if args.tabletop:
+        from datasets.tabletop_datasets import TargetTabletopDiffusionDataset
+        train_dataset = TargetTabletopDiffusionDataset(args.data_dir, args.remove_bg, num_duplication=5)
+        val_dataset = TargetTabletopDiffusionDataset(args.val_data_dir, args.remove_bg, num_duplication=5)
+        train_data_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=4, drop_last=True)
+        val_data_loader = DataLoader(val_dataset, args.batch_size, shuffle=True, num_workers=4, drop_last=True)
     else:
-        from datasets.datasets import TargetCondDiffusionDataset
-        dataset = TargetCondDiffusionDataset(rgb_data, segmap_data)
-    val_data_size = int(0.05 * len(dataset))
-    train_dataset, val_dataset = random_split(dataset, (len(dataset) - val_data_size, val_data_size))
-    train_data_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=1, drop_last=True)
-    val_data_loader = DataLoader(val_dataset, args.batch_size, shuffle=True, num_workers=1, drop_last=True)
+        rgb_data = np.load(os.path.join(args.data_pth, 'rgb_128.npy'))
+        segmap_data = np.load(os.path.join(args.data_pth, 'segmap_16.npy'))
+        if args.remove_bg:
+            from datasets.datasets import TargetCondDiffusionDatsetNoBG
+            mask_data = np.load(os.path.join(args.data_pth, 'segmap_128.npy'))
+            dataset = TargetCondDiffusionDatasetNoBG(rgb_data, segmap_data, mask_data)
+        else:
+            from datasets.datasets import TargetCondDiffusionDataset
+            dataset = TargetCondDiffusionDataset(rgb_data, segmap_data)
+        val_data_size = int(0.05 * len(dataset))
+        train_dataset, val_dataset = random_split(dataset, (len(dataset) - val_data_size, val_data_size))
+        train_data_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=1, drop_last=True)
+        val_data_loader = DataLoader(val_dataset, args.batch_size, shuffle=True, num_workers=1, drop_last=True)
 
     device = torch.device('cuda')
     diffusion = ConditionalDiffusion(input_dim=args.latent_dim, cond_dim=args.latent_dim, n_timesteps=args.n_timesteps).to(device)
@@ -73,8 +84,9 @@ def train():
     encoder.load_state_dict(state_dict['encoder'])
     decoder.load_state_dict(state_dict['decoder'])
 
-    transform = Transform()
-    resize = Resize((128, 128))
+    #transform = Transform()
+    transform = Resize([96, 128])
+    resize = Resize((96, 128))
 
     epoch, n_updates, min_val_loss = 0, 0, 10000
     total_updates = args.epochs * args.updates_per_epoch

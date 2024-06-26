@@ -11,8 +11,8 @@ from torch.nn.utils import clip_grad_norm_
 from torchvision.utils import make_grid
 from torchvision.transforms import Resize
 
-from datasets.datasets import DiffusionDataset
-from datasets.transform import Transform
+from datasets.tabletop_datasets import TabletopDiffusionDataset
+#from datasets.transform import Transform
 from models import Encoder, Decoder, ConditionalDiffusion, AttentionMask
 
 import wandb
@@ -23,7 +23,8 @@ from tqdm import tqdm
 def train():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_pth', type=str, default='data/')
-    #'/data/codes/tidying_line/train')
+    parser.add_argument('--data_dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/train')
+    parser.add_argument('--val_data_dir', type=str, default='/ssd/disk/TableTidyingUp/dataset_template/test-unseen_obj-unseen_template')
     parser.add_argument('--ckpt_dir', type=str, default='/home/gun/ssd/disk/PreferenceDiffusion/tidying-line-diffusion')
     parser.add_argument('--encoder_pth', type=str, default='1120_1902')
     parser.add_argument('--batch_size', type=int, default=4)
@@ -43,7 +44,7 @@ def train():
         shutil.rmtree(log_dir)
     wandb_off = args.wandb_off
     if not wandb_off:
-        wandb.init(project="instruct-pix2pix")
+        wandb.init(project="TabletopDiffusion")
         wandb.run.name = exp_name
         wandb.config.update(args)
         wandb.run.save()
@@ -51,11 +52,9 @@ def train():
     checkpoint_dir = os.path.join(args.ckpt_dir, exp_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    data = np.load(os.path.join(args.data_pth, 'resized.npy'))
-    dataset = DiffusionDataset(data)
-    val_data_size = int(0.05 * len(dataset))
-    train_dataset, val_dataset = random_split(dataset, (len(dataset) - val_data_size, val_data_size))
-    train_data_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=1, drop_last=True)
+    train_dataset = TabletopDiffusionDataset(args.data_dir, args.remove_bg)
+    val_dataset = TabletopDiffusionDataset(args.val_data_dir, args.remove_bg)
+    train_data_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=4, drop_last=True)
     val_data_loader = DataLoader(val_dataset, args.batch_size, shuffle=True, num_workers=1, drop_last=True)
 
     device = torch.device('cuda')
@@ -70,8 +69,9 @@ def train():
     encoder.load_state_dict(state_dict['encoder'])
     decoder.load_state_dict(state_dict['decoder'])
 
-    transform = Transform()
-    resize = Resize((128, 128))
+    #transform = Transform()
+    transform = Resize([96, 128])
+    resize = Resize((96, 128))
 
     epoch, n_updates, min_val_loss = 0, 0, 10000
     total_updates = args.epochs * args.updates_per_epoch
