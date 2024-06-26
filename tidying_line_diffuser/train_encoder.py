@@ -9,7 +9,8 @@ import numpy as np
 from torch.utils.data import DataLoader, random_split
 from torch.nn.utils import clip_grad_norm_
 from torchvision.utils import make_grid
-from torchvision.transforms import Resize
+from torchvision import transforms
+from torchvision.transforms import Resize, Pad
 
 #from datasets.transform import Transform
 from models import Encoder, Decoder
@@ -82,7 +83,7 @@ def train():
     optimizer = torch.optim.Adam(params, lr=1e-4)
 
     #transform = Transform()
-    transform = Resize([96, 128])
+    transform = transforms.Compose([Resize([96, 128]), Pad([0, 16, 0, 16])])
 
     epoch, n_updates, min_val_loss = 0, 0, 10000
     total_updates = args.epochs * args.updates_per_epoch
@@ -168,7 +169,7 @@ def train():
                     'decoder': decoder.state_dict(),
                     'optimizer': optimizer.state_dict()
                 }
-                torch.save(state_dict, os.path.join(checkpoint_dir, 'checkpoint.pt'))
+                torch.save(state_dict, os.path.join(checkpoint_dir, 'checkpoint-%d.pt'%epoch))
                 if validation_loss < min_val_loss:
                     min_val_loss = validation_loss
                     torch.save(state_dict, os.path.join(checkpoint_dir, 'checkpoint_best.pt'))
