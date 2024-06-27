@@ -108,8 +108,6 @@ def train():
                 assert torch.max(feature) <= 1.
 
             if args.cond_type=='point':
-                print('feature:', feature.shape)
-                print('masks:', masks.shape)
                 cond = (masks != 0).to(torch.float32).view(-1, 1, 16, 16) * feature
             elif args.cond_type=='mask':
                 cond = torch.zeros_like(feature)
