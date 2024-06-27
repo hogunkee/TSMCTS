@@ -102,6 +102,7 @@ class CondTabletopDiffusionDataset(TabletopDataset):
         label = torch.from_numpy(np.array([data_label])).type(torch.float)
 
         segmap = mask * (mask!=mask.max())
+        segmap[segmap!=0] = segmap[segmap!=0] - 1
         segmap = torch.from_numpy(segmap).type(torch.float)
         if self.remove_bg:
             mask = torch.from_numpy((mask!=mask.max())).type(torch.float)
@@ -151,6 +152,8 @@ class TargetTabletopDiffusionDataset(TabletopDataset):
 
         src_segmap = src_mask * (src_mask!=src_mask.max())
         tar_segmap = tar_mask * (tar_mask!=tar_mask.max())
+        src_segmap[src_segmap!=0] = src_segmap[src_segmap!=0] - 1
+        tar_segmap[tar_segmap!=0] = tar_segmap[tar_segmap!=0] - 1
         src_segmap = torch.from_numpy(src_segmap).type(torch.float)
         tar_segmap = torch.from_numpy(tar_segmap).type(torch.float)
         #src_mask = torch.from_numpy((src_mask!=src_mask.max())).type(torch.float)

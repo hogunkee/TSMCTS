@@ -65,7 +65,7 @@ def train():
         rgb_data = np.load(os.path.join(args.data_pth, 'rgb_128.npy'))
         segmap_data = np.load(os.path.join(args.data_pth, 'segmap_16.npy'))
         if args.remove_bg:
-            from datasets.datasets import CondDiffusionDatsetNoBG
+            from datasets.datasets import CondDiffusionDatasetNoBG
             mask_data = np.load(os.path.join(args.data_pth, 'segmap_128.npy'))
             dataset = CondDiffusionDatasetNoBG(rgb_data, segmap_data, mask_data)
         else:
@@ -90,6 +90,7 @@ def train():
 
     #transform = Transform()
     transform = transforms.Compose([Resize([96, 128]), Pad([0, 16, 0, 16])])
+    transform_seg = transforms.Compose([Resize([96, 128]), Pad([0, 16, 0, 16]), Resize([16, 16])])
     resize = Resize((128, 128))
 
     epoch, n_updates, min_val_loss = 0, 0, 10000
@@ -100,13 +101,15 @@ def train():
             x, masks, _ = batch
             x = transform(x.permute((0, 3, 1, 2)))
             x = x.to(torch.float32).to(device)
-            masks = transform(masks).to(device)
+            masks = transform_seg(masks).to(device)
             with torch.no_grad():
                 posterior, _ = encoder(x, compute_loss=False)
                 feature = posterior.mean
                 assert torch.max(feature) <= 1.
 
             if args.cond_type=='point':
+                print('feature:', feature.shape)
+                print('masks:', masks.shape)
                 cond = (masks != 0).to(torch.float32).view(-1, 1, 16, 16) * feature
             elif args.cond_type=='mask':
                 cond = torch.zeros_like(feature)
@@ -149,7 +152,7 @@ def train():
                         x, masks, _ = batch
                         x = transform(x.permute((0, 3, 1, 2)))
                         x = x.to(torch.float32).to(device)
-                        masks = trasnform(masks).to(device)
+                        masks = transform_seg(masks).to(device)
                         posterior, _ = encoder(x, compute_loss=False)
                         feature = posterior.mean
 

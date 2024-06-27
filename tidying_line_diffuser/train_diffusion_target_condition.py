@@ -64,7 +64,7 @@ def train():
         rgb_data = np.load(os.path.join(args.data_pth, 'rgb_128.npy'))
         segmap_data = np.load(os.path.join(args.data_pth, 'segmap_16.npy'))
         if args.remove_bg:
-            from datasets.datasets import TargetCondDiffusionDatsetNoBG
+            from datasets.datasets import TargetCondDiffusionDatasetNoBG
             mask_data = np.load(os.path.join(args.data_pth, 'segmap_128.npy'))
             dataset = TargetCondDiffusionDatasetNoBG(rgb_data, segmap_data, mask_data)
         else:
@@ -87,6 +87,7 @@ def train():
 
     #transform = Transform()
     transform = transforms.Compose([Resize([96, 128]), Pad([0, 16, 0, 16])])
+    transform_seg = transforms.Compose([Resize([96, 128]), Pad([0, 16, 0, 16]), Resize([16, 16])])
     resize = Resize((128, 128))
 
     epoch, n_updates, min_val_loss = 0, 0, 10000
@@ -97,8 +98,8 @@ def train():
             x_s, masks_s, x_t, masks_t = batch
             x_s = transform(x_s.permute((0, 3, 1, 2))).to(torch.float32).to(device)
             x_t = transform(x_t.permute((0, 3, 1, 2))).to(torch.float32).to(device)
-            masks_s = masks_s.to(device)
-            masks_t = masks_t.to(device)
+            masks_s = transform_seg(masks_s).to(device)
+            masks_t = transform_seg(masks_t).to(device)
 
             with torch.no_grad():
                 posterior_s, _ = encoder(x_s, compute_loss=False)
@@ -108,7 +109,7 @@ def train():
                 assert (torch.max(feature_s) <= 1.) and (torch.max(feature_t) <= 1.)
 
             cond = torch.zeros_like(feature_s)
-            for m in range(1, 5): # int(masks.max())
+            for m in range(1, int(masks_s.max())): #5
                 # get features from source image & mask #
                 mask_source_m = (masks_s == m).to(torch.float32).view(-1, 1, 16, 16)
                 count_source_m = mask_source_m.sum((2, 3))
@@ -139,11 +140,11 @@ def train():
                 with torch.no_grad():
                     validation_losses = []
                     for batch in val_data_loader:
-                        x_s, masks_x, x_t, masks_t = batch
+                        x_s, masks_s, x_t, masks_t = batch
                         x_s = transform(x_s.permute((0, 3, 1, 2))).to(torch.float32).to(device)
                         x_t = transform(x_t.permute((0, 3, 1, 2))).to(torch.float32).to(device)
-                        masks_s = masks_s.to(device)
-                        masks_t = masks_t.to(device)
+                        masks_s = transform_seg(masks_s).to(device)
+                        masks_t = transform_seg(masks_t).to(device)
 
                         posterior_s, _ = encoder(x_s, compute_loss=False)
                         feature_s = posterior_s.mean
@@ -151,7 +152,7 @@ def train():
                         feature_t = posterior_t.mean
 
                         cond = torch.zeros_like(feature_s)
-                        for m in range(1, 5): # int(masks.max())
+                        for m in range(1, int(masks_s.max())): # 5
                             # get features from source image & mask #
                             mask_source_m = (masks_s == m).to(torch.float32).view(-1, 1, 16, 16)
                             count_source_m = mask_source_m.sum((2, 3))
