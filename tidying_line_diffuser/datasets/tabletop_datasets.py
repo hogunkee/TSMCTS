@@ -44,12 +44,10 @@ class TabletopDataset(Dataset):
     def __getitem__(self, index):
         data_path = self.data_paths[index]
         data_label = self.data_labels[index]
+        rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
         if self.remove_bg:
-            rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
             mask = np.load(os.path.join(data_path, 'seg_%s.npy'%self.view))
             rgb = rgb * (mask!=mask.max())[:, :, None]
-        else:
-            rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
 
         #rgb = np.transpose(rgb[:, :, :3], [2, 0, 1]) / 255.
         rgb = rgb[:, :, :3] / 255.
@@ -71,12 +69,10 @@ class TabletopDiffusionDataset(TabletopDataset):
     def __getitem__(self, index):
         data_path = self.data_paths[index]
         data_label = self.data_labels[index]
+        rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
         if self.remove_bg:
-            rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
             mask = np.load(os.path.join(data_path, 'seg_%s.npy'%self.view))
             rgb = rgb * (mask!=mask.max())[:, :, None]
-        else:
-            rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
 
         #rgb = np.transpose(rgb[:, :, :3], [2, 0, 1]) / 255.
         rgb = rgb[:, :, :3] / 255.
@@ -95,12 +91,10 @@ class CondTabletopDiffusionDataset(TabletopDataset):
     def __getitem__(self, index):
         data_path = self.data_paths[index]
         data_label = self.data_labels[index]
+        rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
+        mask = np.load(os.path.join(data_path, 'seg_%s.npy'%self.view))
         if self.remove_bg:
-            rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
-            mask = np.load(os.path.join(data_path, 'seg_%s.npy'%self.view))
             rgb = rgb * (mask!=mask.max())[:, :, None]
-        else:
-            rgb = np.array(Image.open(os.path.join(data_path, 'rgb_%s.png'%self.view)))
 
         #rgb = np.transpose(rgb[:, :, :3], [2, 0, 1]) / 255.
         rgb = rgb[:, :, :3] / 255.
@@ -134,22 +128,19 @@ class TargetTabletopDiffusionDataset(TabletopDataset):
         return self.fsize #len(self.data_paths)
 
     def __getitem__(self, index):
-        idx1 = item // len(self.hash_augment)
-        idx2 = item % len(self.hash_augment)
+        idx1 = index // len(self.hash_augment)
+        idx2 = index % len(self.hash_augment)
         source_idx, target_idx = self.num_duplication * idx1 + self.hash_augment[idx2]
 
-        src_data_path = self.data_paths[source_index]
-        tar_data_path = self.data_paths[target_index]
+        src_data_path = self.data_paths[source_idx]
+        tar_data_path = self.data_paths[target_idx]
+        src_rgb = np.array(Image.open(os.path.join(src_data_path, 'rgb_%s.png'%self.view)))
+        tar_rgb = np.array(Image.open(os.path.join(tar_data_path, 'rgb_%s.png'%self.view)))
+        src_mask = np.load(os.path.join(src_data_path, 'seg_%s.npy'%self.view))
+        tar_mask = np.load(os.path.join(tar_data_path, 'seg_%s.npy'%self.view))
         if self.remove_bg:
-            src_rgb = np.array(Image.open(os.path.join(src_data_path, 'rgb_%s.png'%self.view)))
-            tar_rgb = np.array(Image.open(os.path.join(tar_data_path, 'rgb_%s.png'%self.view)))
-            src_mask = np.load(os.path.join(src_data_path, 'seg_%s.npy'%self.view))
-            tar_mask = np.load(os.path.join(tar_data_path, 'seg_%s.npy'%self.view))
             src_rgb = src_rgb * (src_mask!=src_mask.max())[:, :, None]
             tar_rgb = tar_rgb * (tar_mask!=tar_mask.max())[:, :, None]
-        else:
-            src_rgb = np.array(Image.open(os.path.join(src_data_path, 'rgb_%s.png'%self.view)))
-            tar_rgb = np.array(Image.open(os.path.join(tar_data_path, 'rgb_%s.png'%self.view)))
 
         #src_rgb = np.transpose(src_rgb[:, :, :3], [2, 0, 1]) / 255.
         #tar_rgb = np.transpose(tar_rgb[:, :, :3], [2, 0, 1]) / 255.

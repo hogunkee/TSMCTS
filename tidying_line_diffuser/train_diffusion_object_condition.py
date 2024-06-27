@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, random_split
 from torch.nn.utils import clip_grad_norm_
 from torchvision.utils import make_grid
 from torchvision import transforms
-from torchvision.transforms import Resize
+from torchvision.transforms import Resize, Pad
 
 #from datasets.transform import Transform
 from models import Encoder, Decoder, ConditionalDiffusion, AttentionMask
@@ -57,8 +57,8 @@ def train():
 
     if args.tabletop:
         from datasets.tabletop_datasets import CondTabletopDiffusionDataset
-        train_dataset = TargetTabletopDiffusionDataset(args.data_dir, args.remove_bg, num_duplication=5)
-        val_dataset = TargetTabletopDiffusionDataset(args.val_data_dir, args.remove_bg, num_duplication=5)
+        train_dataset = CondTabletopDiffusionDataset(args.data_dir, args.remove_bg)
+        val_dataset = CondTabletopDiffusionDataset(args.val_data_dir, args.remove_bg)
         train_data_loader = DataLoader(train_dataset, args.batch_size, shuffle=True, num_workers=4, drop_last=True)
         val_data_loader = DataLoader(val_dataset, args.batch_size, shuffle=True, num_workers=4, drop_last=True)
     else:
@@ -100,7 +100,7 @@ def train():
             x, masks, _ = batch
             x = transform(x.permute((0, 3, 1, 2)))
             x = x.to(torch.float32).to(device)
-            masks = masks.to(device)
+            masks = transform(masks).to(device)
             with torch.no_grad():
                 posterior, _ = encoder(x, compute_loss=False)
                 feature = posterior.mean
@@ -149,7 +149,7 @@ def train():
                         x, masks, _ = batch
                         x = transform(x.permute((0, 3, 1, 2)))
                         x = x.to(torch.float32).to(device)
-                        masks = masks.to(device)
+                        masks = trasnform(masks).to(device)
                         posterior, _ = encoder(x, compute_loss=False)
                         feature = posterior.mean
 

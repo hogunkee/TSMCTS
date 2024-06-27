@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, random_split
 from torch.nn.utils import clip_grad_norm_
 from torchvision.utils import make_grid
 from torchvision import transforms
-from torchvision.transforms import Resize
+from torchvision.transforms import Resize, Pad
 
 #from datasets.transform import Transform
 from models import Encoder, Decoder, ConditionalDiffusion
