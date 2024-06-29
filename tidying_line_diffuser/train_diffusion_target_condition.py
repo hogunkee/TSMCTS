@@ -98,8 +98,8 @@ def train():
             x_s, masks_s, x_t, masks_t = batch
             x_s = transform(x_s.permute((0, 3, 1, 2))).to(torch.float32).to(device)
             x_t = transform(x_t.permute((0, 3, 1, 2))).to(torch.float32).to(device)
-            masks_s = transform_seg(masks_s).to(device)
-            masks_t = transform_seg(masks_t).to(device)
+            masks_s = torch.round(transform_seg(masks_s)).to(device)
+            masks_t = torch.round(transform_seg(masks_t)).to(device)
 
             with torch.no_grad():
                 posterior_s, _ = encoder(x_s, compute_loss=False)
@@ -143,8 +143,8 @@ def train():
                         x_s, masks_s, x_t, masks_t = batch
                         x_s = transform(x_s.permute((0, 3, 1, 2))).to(torch.float32).to(device)
                         x_t = transform(x_t.permute((0, 3, 1, 2))).to(torch.float32).to(device)
-                        masks_s = transform_seg(masks_s).to(device)
-                        masks_t = transform_seg(masks_t).to(device)
+                        masks_s = torch.round(transform_seg(masks_s)).to(device)
+                        masks_t = torch.round(transform_seg(masks_t)).to(device)
 
                         posterior_s, _ = encoder(x_s, compute_loss=False)
                         feature_s = posterior_s.mean

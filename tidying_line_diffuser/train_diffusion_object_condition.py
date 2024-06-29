@@ -101,7 +101,7 @@ def train():
             x, masks, _ = batch
             x = transform(x.permute((0, 3, 1, 2)))
             x = x.to(torch.float32).to(device)
-            masks = transform_seg(masks).to(device)
+            masks = torch.round(transform_seg(masks)).to(device)
             with torch.no_grad():
                 posterior, _ = encoder(x, compute_loss=False)
                 feature = posterior.mean
@@ -150,7 +150,7 @@ def train():
                         x, masks, _ = batch
                         x = transform(x.permute((0, 3, 1, 2)))
                         x = x.to(torch.float32).to(device)
-                        masks = transform_seg(masks).to(device)
+                        masks = torch.round(transform_seg(masks)).to(device)
                         posterior, _ = encoder(x, compute_loss=False)
                         feature = posterior.mean
 
