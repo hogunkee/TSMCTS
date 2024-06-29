@@ -11,7 +11,6 @@ from torch.nn.utils import clip_grad_norm_
 from torchvision.utils import make_grid
 from torchvision import transforms
 from torchvision.transforms import Resize, Pad
-import torchvision.transforms.InterpolationMode as InterpolationMode
 
 #from datasets.transform import Transform
 from models import Encoder, Decoder, ConditionalDiffusion
@@ -89,9 +88,9 @@ def train():
     #transform = Transform()
     transform = transforms.Compose([Resize([96, 128]), Pad([0, 16, 0, 16])])
     transform_seg = transforms.Compose([
-                    Resize([96, 128], interpolation=InterpolationMode.NEAREST), 
+                    Resize([96, 128], interpolation=transforms.InterpolationMode.NEAREST), 
                     Pad([0, 16, 0, 16]), 
-                    Resize([16, 16], interpolation=InterpolationMode.NEAREST)
+                    Resize([16, 16], interpolation=transforms.InterpolationMode.NEAREST)
                     ])
     resize = Resize((128, 128))
 
