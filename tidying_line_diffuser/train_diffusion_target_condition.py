@@ -109,7 +109,7 @@ def train():
                 assert (torch.max(feature_s) <= 1.) and (torch.max(feature_t) <= 1.)
 
             cond = torch.zeros_like(feature_s)
-            for m in range(1, int(masks_s.max())): #5
+            for m in range(1, int(masks_s.max())+1): #5
                 # get features from source image & mask #
                 mask_source_m = (masks_s == m).to(torch.float32).view(-1, 1, 16, 16)
                 count_source_m = mask_source_m.sum((2, 3))
@@ -152,7 +152,7 @@ def train():
                         feature_t = posterior_t.mean
 
                         cond = torch.zeros_like(feature_s)
-                        for m in range(1, int(masks_s.max())): # 5
+                        for m in range(1, int(masks_s.max())+1): # 5
                             # get features from source image & mask #
                             mask_source_m = (masks_s == m).to(torch.float32).view(-1, 1, 16, 16)
                             count_source_m = mask_source_m.sum((2, 3))
