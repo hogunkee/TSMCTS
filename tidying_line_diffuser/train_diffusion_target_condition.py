@@ -192,8 +192,7 @@ def train():
                     'decoder': decoder.state_dict(),
                     'optimizer': optimizer.state_dict(),
                 }
-                if epoch%5==0:
-                    torch.save(state_dict, os.path.join(checkpoint_dir, 'checkpoint-%d.pt'%epoch))
+                torch.save(state_dict, os.path.join(checkpoint_dir, 'checkpoint-%d.pt'%epoch))
                 if validation_loss < min_val_loss:
                     min_val_loss = validation_loss
                     torch.save(state_dict, os.path.join(checkpoint_dir, 'checkpoint_best.pt'))
