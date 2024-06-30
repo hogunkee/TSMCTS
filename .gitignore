@@ -19,5 +19,7 @@ logs/
 sample/
 test/
 runs/
+outputs/
+vae_outputs/
 
 step-*.png
