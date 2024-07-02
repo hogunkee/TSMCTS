@@ -283,7 +283,9 @@ class MCTS(object):
             rewards = np.concatenate(rewards)
         else:
             if groundTruth or self.rewardType=='gt':
-                rewards = self.gtRewardNet(s_reward).cpu().detach().numpy()
+                gtRewards = self.gtRewardNet(s_reward).cpu().detach().numpy()
+                subRewards = self.subRewardNet(s_reward).cpu().detach().numpy()
+                rewards = (1-self.alpha) * gtRewards + self.alpha * subRewards
             else:
                 rewards = self.rewardNet([s_value, None, None]).cpu().detach().numpy()
         return rewards.reshape(-1), [0.0]
