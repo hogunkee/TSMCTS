@@ -763,8 +763,8 @@ if __name__=='__main__':
     #logname += args.tree_policy
     #if args.tree_policy=='iql':
     #    logname += '_' + str(args.threshold_prob)
-    if args.use_template:
-        logname += '-' + args.scenes
+    #if args.use_template:
+    #    logname += '-' + args.scenes
     if not args.wandb_off:
         wandb.init(project="MCTS")
         wandb.config.update(parser.parse_args())
