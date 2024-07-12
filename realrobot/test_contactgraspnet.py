@@ -1,5 +1,6 @@
 import rospy
 import cv2
+import sys
 import numpy as np
 from matplotlib import pyplot as plt
 from sklearn.cluster import SpectralClustering
@@ -15,7 +16,11 @@ from std_msgs.msg import String
 # robotiq gripper
 import pyRobotiqGripper
 
-from transform_utils import mat2pose, quat2mat #mat2quat
+# ik solver
+sys.path.append('/home/ur-plusle/Desktop/ikfastpy')
+import ikfastpy
+
+from transform_utils import mat2pose, quat2mat, mat2euler, euler2quat #mat2quat
 
 try:
     from math import pi, tau, dist, fabs, cos
@@ -35,7 +40,8 @@ class UR5Robot:
         self.rs = realsense
 
         #ARM_JOINT_NAME = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint', 'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']
-        self.ROBOT_INIT_POS = [0.0, -0.3, 0.65]
+        self.ROBOT_INIT_POS = np.array([0.0, -0.4, 0.6])
+        #self.ROBOT_INIT_POS = np.array([0.0, -0.3, 0.65])
         self.ROBOT_INIT_ROTATION = np.array([[1., 0., 0.], [0., -1., 0.], [0., 0., -1.]])
 
         # init node
@@ -50,8 +56,46 @@ class UR5Robot:
 
         # eef to realsense offset
         self.T_eef_to_rs = np.load('rs_extrinsic.npy')
-        self.T_eef_to_rs[2, 3] += 0.15
+        #self.T_eef_to_rs[2, 3] -= 0.10
         print('T_eef_to_rs:', self.T_eef_to_rs)
+        
+        # IK solver
+        self.ur5_kin = ikfastpy.PyKinematics()
+        self.n_joints = 6
+
+    def solve_ik(self, ee_pose):
+        # ee_pose: 3x4 rigid transform matrix
+        if ee_pose.shape[0]==4 and ee_pose.shape[1]==4:
+            ee_pose = ee_pose[:3]
+        ee_pose = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]).dot(ee_pose)
+        print(ee_pose)
+        joint_configs = self.ur5_kin.inverse(ee_pose.reshape(-1).tolist())
+        n_solutions = int(len(joint_configs) / self.n_joints)
+        joint_configs = np.asarray(joint_configs).reshape(n_solutions, self.n_joints)
+
+        # find the cloest solution
+        current_joint = self.get_joint_states()
+        #print('current:', current_joint)
+        current_yaw = current_joint[-1]
+        diffs = []
+        for joint in joint_configs:
+            print(joint)
+            yaw = joint[-1]
+            yaw_candidates = np.array([yaw - 2*np.pi, yaw, yaw + 2*np.pi])
+            yaw_nearest = yaw_candidates[np.argmin((current_yaw - yaw_candidates)**2)]
+            joint[-1] = yaw_nearest
+            priority = np.array([1, 1, 1, 1, 10, 1])
+            diff = np.linalg.norm(priority * (current_joint - joint))
+            diffs.append(diff)
+        if len(diffs)==0:
+            return []
+        idx = diffs.index(min(diffs))
+        final_joint_config = joint_configs[idx]
+        return final_joint_config
+
+    def set_rs_bias(self, bias):
+        print("Add bias:", bias)
+        self.T_eef_to_rs[:3, 3] += bias
 
     def get_joint_states(self):
         return self.move_group.get_current_joint_values()
@@ -62,9 +106,48 @@ class UR5Robot:
         quaternion = [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
         return position, quaternion
 
+    def move_to_joints(self, joints):
+        self.move_group.set_joint_value_target(joints)
+        res = self.move_group.plan()
+        # check success
+        if res[0] is False:
+            print("Failed planning to the goal")
+            return None, None
+        else:
+            # move to the view
+            self.move_group.execute(res[1], wait=True)
+
     def get_view(self, goal_pos=None, quat=[1, 0, 0, 0], grasp=0.0, show_img=False):
         # quat: xyzw
         if goal_pos is not None:
+            goal_pos[2] = np.clip(goal_pos[2], 0.2, 0.7)
+            goal_P = form_T(quat2mat(quat), goal_pos)
+            joints = self.solve_ik(goal_P)
+            if len(joints)==0:
+                pose_goal = geometry_msgs.msg.Pose()
+                pose_goal.orientation.x = quat[0]
+                pose_goal.orientation.y = quat[1]
+                pose_goal.orientation.z = quat[2]
+                pose_goal.orientation.w = quat[3]
+                pose_goal.position.x = goal_pos[0]
+                pose_goal.position.y = goal_pos[1]
+                pose_goal.position.z = goal_pos[2]
+                self.move_group.set_pose_target(pose_goal)
+                res = self.move_group.plan()
+            else:
+                print(goal_pos)
+                print(quat)
+                self.move_group.set_joint_value_target(joints)
+                res = self.move_group.plan()
+            # check success
+            if res[0] is False:
+                print("Failed planning to the goal")
+                return None, None
+            else:
+                # move to the view
+                self.move_group.execute(res[1], wait=True)
+
+        if False: #goal_pos is not None:
             pose_goal = geometry_msgs.msg.Pose()
             pose_goal.orientation.x = quat[0]
             pose_goal.orientation.y = quat[1]
@@ -83,6 +166,7 @@ class UR5Robot:
             else:
                 # move to the view
                 self.move_group.execute(res[1], wait=True)
+
         # gripper control
         if grasp > 0.0:
             self.gripper_controller.close()
@@ -99,7 +183,7 @@ class UR5Robot:
             return color, depth
         return None, None
     
-    def move_to_grasp(self, grasp):
+    def get_goal_from_grasp(self, grasp):
         T_eef_to_grasp = np.dot(self.T_eef_to_rs, grasp)
 
         eef_pose, eef_quat = self.get_eef_pose()
@@ -108,16 +192,32 @@ class UR5Robot:
         print('goal P:', T_robot_to_grasp)
 
         pos, quat = mat2pose(T_robot_to_grasp)
+        return pos, quat
         #print('pose')
         #print(pos)
         #print('quat')
         #print(quat)
-        return self.get_view(pos, quat, show_img=True)
+        #return self.get_view(pos, quat, show_img=True)
 
+
+def project_grasp_4dof(grasp):
+    grasp = grasp.copy()
+    roll, pitch, yaw = mat2euler(grasp[:3, :3])
+    x,y,z,w = euler2quat([0, 0, yaw])
+    rot_4dof = quat2mat([x,y,z,w])
+    grasp[:3, :3] = rot_4dof
+    return grasp
+
+def check_go():
+    x = input('go?')
+    print(x)
+    if x!='y' and x!='go':
+        print('exit.')
+        exit()
 
 if __name__=='__main__':
     n_obj = 3
-    z_thres = 0.54 ##0.34
+    z_thres = 0.49 #0.54 ##0.34
 
     RS = RealSense()
     CGN = ContactGraspNet(K=RS.K_rs)
@@ -125,17 +225,42 @@ if __name__=='__main__':
 
     rospy.sleep(1.0)
     rgb, depth = UR5.get_view(UR5.ROBOT_INIT_POS, show_img=True)
+    INIT_JOINTS = UR5.get_joint_states()
 
     #rgb, depth = RS.get_frames()
     segmap, mask = CGN.get_masks(rgb, depth, n_cluster=n_obj, thres=z_thres)
     plt.imshow(segmap)
     plt.show()
 
+    #RS_BIAS = [0.02, -0.01, -0.05]
+    #UR5.set_rs_bias(RS_BIAS)
+
     for segmap_id in range(1, n_obj+1):
         grasps, scores = CGN.get_grasps(rgb, depth, segmap, segmap_id, num_K=1, show_result=True)
+        #grasps, scores = CGN.get_4dof_grasps(rgb, depth, segmap, segmap_id, num_K=1, show_result=True)
         print(grasps)
-        UR5.move_to_grasp(grasps[0])
+        grasp = grasps[0]
+        grasp_4dof = project_grasp_4dof(grasp)
+
+        check_go()
+        pick_pos, pick_quat = UR5.get_goal_from_grasp(grasp)
+        pick_4dof_pos, pick_4dof_quat = UR5.get_goal_from_grasp(grasp_4dof)
+        #UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_4dof_quat)
+        #check_go()
+        UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_quat)
+        check_go()
+        UR5.get_view(pick_pos + np.array([0, 0, 0.05]), pick_quat)
+        check_go()
         UR5.get_view(grasp=1.0)
-        UR5.get_view(UR5.ROBOT_INIT_POS, grasp=1.0)
+        check_go()
+        UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_quat, grasp=1.0)
+        check_go()
+        #UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_4dof_quat, grasp=1.0)
+        #check_go()
+        UR5.get_view(pick_pos + np.array([0, 0, 0.2]), grasp=1.0)
+        check_go()
+        UR5.move_to_joints(INIT_JOINTS)
+        check_go()
+        UR5.get_view(UR5.ROBOT_INIT_POS, grasp=0.0)
         break
 

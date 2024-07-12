@@ -5,6 +5,8 @@ import cv2
 from matplotlib import pyplot as plt
 from utils_ur5 import *
 from Pose_Estimation_Class import *
+from transform_utils import mat2euler, quat2mat
+from groundingdino.util.inference import load_model, load_image, predict, annotate, Model
 
 class RealSense:
     def __init__(self):
@@ -103,6 +105,7 @@ class ContactGraspNet:
                                         forward_passes=forward_passes)
         grasps = pred_grasps_cam[segmap_id]
         scores = pred_scores[segmap_id]
+        print('# grasps:', len(grasps))
 
         def get_theta(grasp):
             cos_theta = (grasp[:3, :3].dot(np.array([[0, 0, 1]]).T).T[0]).dot(np.array([0, 0, 1]))
@@ -110,6 +113,57 @@ class ContactGraspNet:
         grasps, scores = zip(*[(g, s) for g, s in zip(grasps, scores) if get_theta(g) > 0.8])
         #grasps, scores = zip(*[(g, s) for g, s in zip(grasps, scores) if (np.trace(g[:3, :3])-1) / 2 > 0.8])
         grasps, scores = zip(*sorted(zip(grasps, scores), key=lambda x: x[1]))
+        filtered_grasps_cam = {segmap_id: grasps[:num_K]}
+        filtered_scores = {segmap_id: scores[:num_K]}
+
+        if show_result:
+            # Visualize results
+            show_image(rgb, segmap)
+            #visualize_grasps(pc_full, pred_grasps_cam, pred_scores, plot_opencv_cam=True, pc_colors=pc_colors)
+            visualize_grasps(pc_full, filtered_grasps_cam, filtered_scores, plot_opencv_cam=True, pc_colors=pc_colors)
+        return filtered_grasps_cam[segmap_id], filtered_scores[segmap_id]
+
+    def get_4dof_grasps(self, rgb, depth, segmap=None, segmap_id=-1, num_K=10, show_result=True):
+        # os.makedirs('results', exist_ok=True)
+        local_regions = False
+        filter_grasps = True #False
+        skip_border_objects = True
+        forward_passes = 1
+        z_range = [0.2, 1.0]
+
+        pc_segments = {}
+        pc_full = None
+        pc_colors = None
+
+        if segmap is None and (local_regions or filter_grasps):
+            raise ValueError('Need segmentation map to extract local regions or filter grasps')
+
+        if pc_full is None:
+            print('Converting depth to point cloud(s)...')
+            pc_full, pc_segments, pc_colors = self.grasp_estimator.extract_point_clouds(
+                                depth, self.K_rs, segmap=segmap, rgb=rgb, segmap_id=segmap_id, 
+                                skip_border_objects=skip_border_objects, z_range=z_range)
+
+        print('Generating Grasps...')
+        pred_grasps_cam, pred_scores, contact_pts, _ = self.grasp_estimator.predict_scene_grasps(
+                                        self.sess, pc_full, pc_segments=pc_segments, 
+                                        local_regions=local_regions, filter_grasps=filter_grasps,
+                                        forward_passes=forward_passes)
+        grasps = pred_grasps_cam[segmap_id]
+        scores = pred_scores[segmap_id]
+        print('# grasps:', len(grasps))
+
+        def get_theta(grasp):
+            cos_theta = (grasp[:3, :3].dot(np.array([[0, 0, 1]]).T).T[0]).dot(np.array([0, 0, 1]))
+            return cos_theta
+        grasps, scores = zip(*[(g, s) for g, s in zip(grasps, scores) if get_theta(g) > 0.8])
+        #grasps, scores = zip(*[(g, s) for g, s in zip(grasps, scores) if (np.trace(g[:3, :3])-1) / 2 > 0.8])
+        grasps, scores = zip(*sorted(zip(grasps, scores), key=lambda x: x[1]))
+        for g in grasps:
+            roll, pitch, yaw = mat2euler(g[:3, :3])
+            x,y,z,w = euler2quat([0, 0, yaw])
+            rot_4dof = quat2mat([x,y,z,w])
+            g[:3, :3] = rot_4dof
         filtered_grasps_cam = {segmap_id: grasps[:num_K]}
         filtered_scores = {segmap_id: scores[:num_K]}
 
@@ -147,6 +201,9 @@ class ContactGraspNet:
         fmask = cv2.resize(fmask, (W, H), interpolation=cv2.INTER_NEAREST)
 
         return masks, fmask
+
+    def get_masks_gsam(self, color, depth):
+        return
 
 
 if __name__=='__main__':
