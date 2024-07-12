@@ -5,6 +5,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from sklearn.cluster import SpectralClustering
 from utils_contactgraspnet import RealSense, ContactGraspNet, form_T
+from utils_gsam import GroundedSAM
 
 # moveit planner
 import rospy
@@ -228,7 +229,10 @@ if __name__=='__main__':
     INIT_JOINTS = UR5.get_joint_states()
 
     #rgb, depth = RS.get_frames()
-    segmap, mask = CGN.get_masks(rgb, depth, n_cluster=n_obj, thres=z_thres)
+
+    classes = ["Orange", "Apple", "Lemon"]
+    segmap = GSAM.get_masks(rgb, classes)
+    #segmap, mask = CGN.get_masks(rgb, depth, n_cluster=n_obj, thres=z_thres)
     plt.imshow(segmap)
     plt.show()
 

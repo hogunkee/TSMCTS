@@ -2,11 +2,12 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
+import torch
 from matplotlib import pyplot as plt
 from utils_ur5 import *
 from Pose_Estimation_Class import *
 from transform_utils import mat2euler, quat2mat
-from groundingdino.util.inference import load_model, load_image, predict, annotate, Model
+
 
 class RealSense:
     def __init__(self):
@@ -201,9 +202,6 @@ class ContactGraspNet:
         fmask = cv2.resize(fmask, (W, H), interpolation=cv2.INTER_NEAREST)
 
         return masks, fmask
-
-    def get_masks_gsam(self, color, depth):
-        return
 
 
 if __name__=='__main__':
