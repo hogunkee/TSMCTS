@@ -51,7 +51,7 @@ class GroundedSAM:
             # annotate image with detections
             box_annotator = sv.BoxAnnotator()
             labels = [
-                f"{CLASSES[class_id]} {confidence:0.2f}" 
+                f"{classes[class_id]} {confidence:0.2f}" 
                 for _, _, confidence, class_id, _, _ 
                 in detections]
             annotated_frame = box_annotator.annotate(scene=image.copy(), detections=detections, labels=labels)
@@ -65,7 +65,7 @@ class GroundedSAM:
         nms_idx = torchvision.ops.nms(
             torch.from_numpy(detections.xyxy), 
             torch.from_numpy(detections.confidence), 
-            NMS_THRESHOLD
+            nms_threshold
         ).numpy().tolist()
 
         detections.xyxy = detections.xyxy[nms_idx]
@@ -76,7 +76,6 @@ class GroundedSAM:
 
         # convert detections to masks
         detections.mask = self.segment(
-            sam_predictor=self.sam_predictor,
             image=cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
             xyxy=detections.xyxy
         )
@@ -86,7 +85,7 @@ class GroundedSAM:
             box_annotator = sv.BoxAnnotator()
             mask_annotator = sv.MaskAnnotator()
             labels = [
-                f"{CLASSES[class_id]} {confidence:0.2f}" 
+                f"{classes[class_id]} {confidence:0.2f}" 
                 for _, _, confidence, class_id, _, _ 
                 in detections]
             annotated_image = mask_annotator.annotate(scene=image.copy(), detections=detections)

@@ -222,19 +222,26 @@ if __name__=='__main__':
 
     RS = RealSense()
     CGN = ContactGraspNet(K=RS.K_rs)
-    UR5 = UR5Robot(RS)
+    #UR5 = UR5Robot(RS)
+    GSAM = GroundedSAM()
 
     rospy.sleep(1.0)
-    rgb, depth = UR5.get_view(UR5.ROBOT_INIT_POS, show_img=True)
-    INIT_JOINTS = UR5.get_joint_states()
-
-    #rgb, depth = RS.get_frames()
+    #rgb, depth = UR5.get_view(UR5.ROBOT_INIT_POS, show_img=True)
+    rgb, depth = RS.get_frames()
+    #INIT_JOINTS = UR5.get_joint_states()
 
     classes = ["Orange", "Apple", "Lemon"]
-    segmap = GSAM.get_masks(rgb, classes)
-    #segmap, mask = CGN.get_masks(rgb, depth, n_cluster=n_obj, thres=z_thres)
+    detections = GSAM.get_masks(rgb, classes)
+    #print(detections.class_id)
+
+    segmap = np.zeros(depth.shape)
+    for i, m in enumerate(detections.mask):
+        segmap[m] = i+1
     plt.imshow(segmap)
     plt.show()
+
+    ## Spectral Clustering ##
+    # segmap, mask = CGN.get_masks(rgb, depth, n_cluster=n_obj, thres=z_thres)
 
     #RS_BIAS = [0.02, -0.01, -0.05]
     #UR5.set_rs_bias(RS_BIAS)
