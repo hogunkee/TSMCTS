@@ -1,0 +1,24 @@
+RealSense image: 480x640
+
+Pybullet image: 360x480
+
+Object patch (crop): 128x128
+
+Table size: 12x15
+
+
+
+I_rs [480, 640] -> resize(240, 320) -> pad([60, 60], [80, 80]) -> I_rs_resized [360x480]
+Segmap [480, 640] -> resize(240, 320) -> pad([60, 60], [80, 80]) -> Segmap_resized [360x480]
+
+Table[:2], Table[-2:], Table[:, :3], Table[:, -3:] is blocked.
+
+Action space
+1) original: 12 x 15 = 180
+2) real: 8 x 9 = 72
+
+
+convert_action: Table action -> Pixel action (PyBullet) -> Pixel action (RealSense)
+py, px, rot = action
+ty, tx = (py, px) * ratio
+ry, rx = ((ty, tx) - (180, 240)) * 2 + (180, 240)

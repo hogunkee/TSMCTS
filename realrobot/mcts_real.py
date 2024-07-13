@@ -16,11 +16,8 @@ from tqdm import tqdm
 
 import torch
 
-FILE_PATH = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(FILE_PATH, '..', 'mcts'))
-from data_loader import TabletopTemplateDataset
-from utils import loadRewardFunction, Renderer, getGraph, visualizeGraph, summaryGraph
-from utils import loadPolicyNetwork, loadIQLPolicyNetwork, loadIQLRewardNetwork, loadIQLValueNetwork
+from utils_mcts import loadRewardFunction, Renderer, getGraph, visualizeGraph, summaryGraph
+from utils_mcts import loadPolicyNetwork, loadIQLPolicyNetwork, loadIQLRewardNetwork, loadIQLValueNetwork
 
 import warnings
 warnings.filterwarnings("ignore")
