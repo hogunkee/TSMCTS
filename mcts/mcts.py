@@ -879,7 +879,10 @@ if __name__=='__main__':
     else:
         objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
                     'glue', 'knife', 'lotion', 'marker', 'plate', 'remote', 'scissors', 'shampoo', \
-                    'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
+                    'soap_dish', 'spoon', 'stapler', 'timer', 'toothpaste']
+        #objects = ['book', 'bowl', 'can_drink', 'can_food', 'cleanser', 'cup', 'fork', 'fruit', 'glass', \
+        #            'glue', 'knife', 'lotion', 'marker', 'plate', 'remote', 'scissors', 'shampoo', \
+        #            'soap', 'soap_dish', 'spoon', 'stapler', 'teapot', 'timer', 'toothpaste']
         # objects = ['bowl', 'can_drink', 'plate', 'marker', 'soap_dish', 'book', 'remote', 'fork', 'knife', 'spoon', 'teapot', 'cup']
         objects = [(o, 'medium') for o in objects]
     if args.num_objects==0: # use the template
