@@ -502,7 +502,8 @@ class Renderer(object):
         target_object = obj # + 3
         ty, tx = np.round((np.array([py, px]) + 0.5) * self.ratio - 0.5).astype(int)
         # ty, tx = np.array([py, px]) * self.ratio + self.offset
-        target_position = [ty, tx]
+        ry, rx = (np.array([ty, tx]) - np.array([180, 240])) * 2 + np.array([180, 240])
+        target_position = [ry, rx]
 
         rot_angle = self.objectAngles[rot][obj-1]
         rot_angle = rot_angle / 180 * np.pi

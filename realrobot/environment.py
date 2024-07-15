@@ -44,7 +44,7 @@ class RealEnvironment:
                 'segmentation': segmap_pad
                 }
         self.INIT_JOINTS = self.UR5.get_joint_states()
-        self.current_classses = classes
+        self.current_classes = classes
         self.current_obs = obs
         return obs
 
@@ -55,6 +55,38 @@ class RealEnvironment:
             print('exit.')
             exit()
 
+    def move_to_pixel(self, target_position, rot_angle):
+        depth = self.current_obs['depth_raw']
+
+        target_pose = inverse_projection(depth, target_position, self.RS.K_rs, self.RS.D_rs)
+        target_pose[2] -= 0.16
+        roll, pitch, yaw = np.pi/8, -np.pi/8, 0
+        yaw += rot_angle
+        yaw %= 2*np.pi
+        quat = euler2quat([roll, pitch, yaw])
+
+        placement = form_T(quat2mat(quat), target_pose)
+        place_pos, place_quat = self.UR5.get_goal_from_grasp(placement)
+        print('original placement:', placement)
+
+        delta_t = np.dot(quat2mat(quat), np.array([[0, 0, -0.1]]).T).T[0]
+        placement = form_T(quat2mat(quat), target_pose+delta_t)
+        pos1, quat1 = self.UR5.get_goal_from_grasp(placement)
+        print('pose 1:', placement)
+
+        delta_t = np.dot(quat2mat(quat), np.array([[0, 0, -0.05]]).T).T[0]
+        placement = form_T(quat2mat(quat), target_pose+delta_t)
+        pos2, quat2 = self.UR5.get_goal_from_grasp(placement)
+        print('pose 2:', placement)
+
+        check_go()
+        self.UR5.get_view(pos1, quat1, grasp=0.0)
+        check_go()
+        self.UR5.get_view(pos2, quat2, grasp=0.0)
+
+        check_go()
+        self.UR5.get_view(self.UR5.ROBOT_INIT_POS, grasp=0.0)
+
     def step(self, target_object, target_position, rot_angle):
         rgb = self.current_obs['rgb_raw']
         depth = self.current_obs['depth_raw']
@@ -62,62 +94,95 @@ class RealEnvironment:
 
         # 1. Pick up the target object.
         grasps, scores = self.CGN.get_grasps(rgb, depth, segmap, target_object, num_K=1, show_result=True)
-        print(grasps)
+        print('grasp:', grasps[0])
         grasp = grasps[0]
         #grasp_4dof = project_grasp_4dof(grasp)
-        self.pick(grasp)
+        self.pick(grasp, stop=True)
 
         # 2. Place down at the target position with rotation.
-        self.place(grasp, target_position, rot_angle)
-
-        return self.reset(self.current_classes)
-
-
-    def pick(self, grasp): #, grasp_4dof
-        pick_pos, pick_quat = self.UR5.get_goal_from_grasp(grasp)
-        #pick_4dof_pos, pick_4dof_quat = self.UR5.get_goal_from_grasp(grasp_4dof)
-        #UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_4dof_quat)
-        self.check_go()
-        self.UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_quat)
-        self.check_go()
-        self.UR5.get_view(pick_pos + np.array([0, 0, 0.05]), pick_quat)
-        self.check_go()
-        self.UR5.get_view(grasp=1.0)
-        self.check_go()
-        self.UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_quat, grasp=1.0)
-        self.check_go()
-        #UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_4dof_quat, grasp=1.0)
-        #check_go()
-        self.UR5.get_view(pick_pos + np.array([0, 0, 0.2]), grasp=1.0)
-        self.check_go()
-        self.UR5.move_to_joints(self.INIT_JOINTS)
-        self.check_go()
-        self.UR5.get_view(self.UR5.ROBOT_INIT_POS, grasp=0.0)
-
-    def place(self, grasp, target_position, rot_angle):
         target_pose = inverse_projection(depth, target_position, self.RS.K_rs, self.RS.D_rs)
         roll, pitch, yaw = mat2euler(grasp[:3, :3])
         yaw += rot_angle
         yaw %= 2*np.pi
         quat = euler2quat([roll, pitch, yaw])
         placement = form_T(quat2mat(quat), target_pose)
-        print(placement)
+        print('placement:', placement)
+        self.place(placement, stop=True)
 
-        place_pos, place_quat = self.UR5.get_goal_from_grasp(placement)
-        self.check_go()
-        self.UR5.get_view(place_pos + np.array([0, 0, 0.1]), place_quat, grasp=1.0)
-        self.check_go()
-        self.UR5.get_view(place_pos + np.array([0, 0, 0.05]), place_quat, grasp=1.0)
-        self.check_go()
-        self.UR5.get_view(grasp=0.0)
-        self.check_go()
-        self.UR5.get_view(place_pos + np.array([0, 0, 0.1]), place_quat, grasp=0.0)
-        self.check_go()
-        self.UR5.get_view(place_pos + np.array([0, 0, 0.2]), place_quat, grasp=0.0)
-        self.check_go()
+        return self.reset(self.current_classes)
+
+
+    def pick(self, grasp, stop=True): #, grasp_4dof
+        if stop:
+            check_go = self.check_go
+        else:
+            def check_go():
+                return None
+
+        target_pose = grasp[:3, 3]
+        target_rot = grasp[:3,:3]
+        #print('grasp:', grasp)
+
+        delta_t = np.dot(target_rot, np.array([[0, 0, -0.1]]).T).T[0]
+        pre_grasp1 = form_T(target_rot, target_pose+delta_t)
+        pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1)
+        #print('pose 1:', pre_grasp1)
+
+        delta_t = np.dot(target_rot, np.array([[0, 0, -0.05]]).T).T[0]
+        pre_grasp2 = form_T(target_rot, target_pose+delta_t)
+        pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2)
+        #print('pose 2:', pre_grasp2)
+
+        check_go()
+        self.UR5.get_view(pos1, quat1)
+        check_go()
+        self.UR5.get_view(pos2, quat2)
+        check_go()
+        self.UR5.get_view(grasp=1.0)
+        check_go()
+        self.UR5.get_view(pos1, quat1, grasp=1.0)
+        check_go()
         self.UR5.move_to_joints(self.INIT_JOINTS)
-        self.check_go()
-        self.UR5.get_view(self.UR5.ROBOT_INIT_POS, grasp=0.0)
+        check_go()
+        self.UR5.get_view(self.UR5.ROBOT_INIT_POS, grasp=1.0)
+
+
+    def place(self, placement, stop=True):
+        if stop:
+            check_go = self.check_go
+        else:
+            def check_go():
+                return None
+
+        target_pose = placement[:3, 3]
+        target_rot = placement[:3,:3]
+
+        delta_t = np.dot(target_rot, np.array([[0, 0, -0.25]]).T).T[0]
+        pre_place1 = form_T(target_rot, target_pose+delta_t)
+        pos1, quat1 = self.UR5.get_goal_from_grasp(pre_place1)
+
+        delta_t = np.dot(target_rot, np.array([[0, 0, -0.2]]).T).T[0]
+        pre_place2 = form_T(target_rot, target_pose+delta_t)
+        pos2, quat2 = self.UR5.get_goal_from_grasp(pre_place2)
+
+        #delta_t = np.dot(target_rot, np.array([[0, 0, -0.3]]).T).T[0]
+        #pre_place3 = form_T(target_rot, target_pose+delta_t)
+        #pos3, quat3 = self.UR5.get_goal_from_grasp(pre_place3)
+
+        check_go()
+        self.UR5.get_view(pos1, quat1, grasp=1.0)
+        check_go()
+        self.UR5.get_view(pos2, quat2, grasp=1.0)
+        check_go()
+        self.UR5.get_view(grasp=0.0)
+        check_go()
+        self.UR5.get_view(pos1, quat1, grasp=0.0)
+        #check_go()
+        #self.UR5.get_view(pos3, quat3, grasp=0.0)
+        check_go()
+        self.UR5.move_to_joints(self.INIT_JOINTS)
+        #check_go()
+        #self.UR5.get_view(self.UR5.ROBOT_INIT_POS, grasp=0.0)
 
 
 if __name__=='__main__':
@@ -125,7 +190,9 @@ if __name__=='__main__':
     classes = ['Apple. Orange. Fruit.']
 
     obs = env.reset(classes, move_ur5=True)
-    plt.imshow(obs['rgb'])#.astype(np.uint8))
+    plt.imshow(obs['rgb_raw'])#.astype(np.uint8))
+    plt.show()
+    plt.imshow(obs['depth_raw'])
     plt.show()
     #plt.imshow(obs['depth'])
     #plt.show()
@@ -134,4 +201,6 @@ if __name__=='__main__':
 
     x = input('where to place?')
     place = [int(p) for p in x.replace(' ', '').split(',')]
-    env.step(1, np.array(place), None)
+    rot_angle = np.pi/2 #0.0
+    #env.move_to_pixel(np.array(place), rot_angle)
+    env.step(1, np.array(place), rot_angle)
