@@ -289,11 +289,11 @@ class Renderer(object):
 
     def setup(self, rgbImage, segmentation):
         # segmentation info
-        # 1: background (table)
+        # 1: background (table) -> 0
         # 2: None
         # 3: robot arm
-        # 4~N: objects
-        self.numObjects = int(np.max(segmentation)) - 3
+        # 4~N: objects -> 1~N
+        self.numObjects = int(np.max(segmentation))
         self.ratio, self.offset = self.getRatio()
         self.masks, self.centers = self.getMasks(segmentation)
         if np.isnan(self.centers).any():
@@ -502,8 +502,10 @@ class Renderer(object):
         target_object = obj # + 3
         ty, tx = np.round((np.array([py, px]) + 0.5) * self.ratio - 0.5).astype(int)
         # ty, tx = np.array([py, px]) * self.ratio + self.offset
-        ry, rx = (np.array([ty, tx]) - np.array([180, 240])) * 2 + np.array([180, 240])
-        target_position = [ry, rx]
+        ry, rx = 2 * np.array([ty, tx]) - np.array([120, 160])
+        target_position = [rx, ry]
+        #ry, rx = (np.array([ty, tx]) - np.array([180, 240])) * 2 + np.array([180, 240])
+        #target_position = [ry, rx]
 
         rot_angle = self.objectAngles[rot][obj-1]
         rot_angle = rot_angle / 180 * np.pi

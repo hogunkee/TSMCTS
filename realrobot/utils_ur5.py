@@ -69,7 +69,7 @@ class UR5Robot:
         if ee_pose.shape[0]==4 and ee_pose.shape[1]==4:
             ee_pose = ee_pose[:3]
         ee_pose = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]).dot(ee_pose)
-        print(ee_pose)
+        #print(ee_pose)
         joint_configs = self.ur5_kin.inverse(ee_pose.reshape(-1).tolist())
         n_solutions = int(len(joint_configs) / self.n_joints)
         joint_configs = np.asarray(joint_configs).reshape(n_solutions, self.n_joints)
@@ -80,7 +80,7 @@ class UR5Robot:
         current_yaw = current_joint[-1]
         diffs = []
         for joint in joint_configs:
-            print(joint)
+            #print(joint)
             yaw = joint[-1]
             yaw_candidates = np.array([yaw - 2*np.pi, yaw, yaw + 2*np.pi])
             yaw_nearest = yaw_candidates[np.argmin((current_yaw - yaw_candidates)**2)]
@@ -190,7 +190,7 @@ class UR5Robot:
         eef_pose, eef_quat = self.get_eef_pose()
         T_robot_to_eef = form_T(quat2mat(eef_quat), eef_pose)
         T_robot_to_grasp = np.dot(T_robot_to_eef, T_eef_to_grasp)
-        print('goal P:', T_robot_to_grasp)
+        #print('goal P:', T_robot_to_grasp)
 
         pos, quat = mat2pose(T_robot_to_grasp)
         return pos, quat

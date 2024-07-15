@@ -8,7 +8,6 @@ import random
 import numpy as np
 import logging
 import json
-import pybullet as p
 from argparse import ArgumentParser
 from PIL import Image
 from matplotlib import pyplot as plt
@@ -18,6 +17,7 @@ import torch
 
 from utils_mcts import loadRewardFunction, Renderer, getGraph, visualizeGraph, summaryGraph
 from utils_mcts import loadPolicyNetwork, loadIQLPolicyNetwork, loadIQLRewardNetwork, loadIQLValueNetwork
+from environment import RealEnvironment
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -390,15 +390,15 @@ class MCTS(object):
 
     def removeBoundaryActions(self, probMap):
         if len(probMap.shape)==3:
-            probMap[:, 0, :] = 0
-            probMap[:, -1, :] = 0
-            probMap[:, :, 0] = 0
-            probMap[:, :, -1] = 0
+            probMap[:, :3, :] = 0
+            probMap[:, -3:, :] = 0
+            probMap[:, :, :3] = 0
+            probMap[:, :, -3:] = 0
         else:
-            probMap[:, :, 0, :] = 0
-            probMap[:, :, -1, :] = 0
-            probMap[:, :, :, 0] = 0
-            probMap[:, :, :, -1] = 0
+            probMap[:, :, :3, :] = 0
+            probMap[:, :, -3:, :] = 0
+            probMap[:, :, :, :3] = 0
+            probMap[:, :, :, -3:] = 0
         return probMap
     
     def getPossibleActions(self, node, policy='random'):
@@ -710,8 +710,6 @@ if __name__=='__main__':
     parser.add_argument('--data-dir', type=str, default='/ssd/disk')
     # Inference
     parser.add_argument("--seed", default=None, type=int)
-    parser.add_argument('--use-template', action="store_true")
-    parser.add_argument('--scenes', type=str, default='') # e.g., 'B2,B5,C4,C6,C12,D5,D8,D11,O3,O7'
     parser.add_argument('--inorder', action="store_true")
     parser.add_argument('--scene-split', type=str, default='all') # 'all' / 'seen' / 'unseen'
     parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
@@ -741,7 +739,7 @@ if __name__=='__main__':
     # Reward model
     parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
-    parser.add_argument('--reward-model-path', type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
+    parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
     parser.add_argument('--label-type', type=str, default='linspace')
     # Pretrained Models
     parser.add_argument('--qnet-path', type=str, default='')
@@ -765,12 +763,13 @@ if __name__=='__main__':
     logname += args.tree_policy
     if args.tree_policy=='iql':
         logname += '_' + str(args.threshold_prob)
-    if args.use_template:
-        logname += '-' + args.scenes
 
     def print_fn(s=''):
-        if args.logging: logger.info(s)
-        else: print(s)
+        if args.logging: 
+            logger.info(s)
+            print(s)
+        else: 
+            print(s)
 
     # Random seed
     seed = args.seed
@@ -854,7 +853,8 @@ if __name__=='__main__':
             np.random.seed(seed + sidx)
         
         # Initial state
-        obs = env.reset()
+        classes = ["Apple. Lemon. Orange. Fruit."]
+        obs = env.reset(classes)
         initRgb = obs['rgb']
         initSeg = obs['segmentation']
 
@@ -916,8 +916,13 @@ if __name__=='__main__':
                 plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
 
             # simulation step in pybullet #
+            print()
+            print('action:', action)
             target_object, target_position, rot_angle = renderer.convert_action(action)
-            obs = env.step(target_object, target_position, rot_angle)
+            print('target_object:', target_object)
+            print('target_position:', target_position)
+            print()
+            obs = env.step(target_object, target_position, rot_angle, stop=False)
             currentRgb = obs['rgb']
             currentSeg = obs['segmentation']
             if args.logging:
