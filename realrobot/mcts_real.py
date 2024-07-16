@@ -873,8 +873,8 @@ if __name__=='__main__':
             numInference = searcher.inferenceCount
         
             print_fn("Num Children: %d"%len(searcher.root.children))
-            for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
-                print_fn(f"{i} {c} {str(searcher.root.children[c])}")
+            #for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
+            #    print_fn(f"{i} {c} {str(searcher.root.children[c])}")
             action = resultDict['action']
             et = time.time()
             print_fn(f'{et-st} seconds to search.')

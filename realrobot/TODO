@@ -22,3 +22,5 @@ convert_action: Table action -> Pixel action (PyBullet) -> Pixel action (RealSen
 py, px, rot = action
 ty, tx = (py, px) * ratio
 ry, rx = ((ty, tx) - (180, 240)) * 2 + (180, 240)
+
+python mcts_real.py --iteration-limit 1000 --logging --threshold-success 0.8

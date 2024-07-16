@@ -21,7 +21,7 @@ import pyRobotiqGripper
 sys.path.append('/home/ur-plusle/Desktop/ikfastpy')
 import ikfastpy
 
-from transform_utils import mat2pose, quat2mat, mat2euler, euler2quat #mat2quat
+from transform_utils import mat2pose, quat2mat, mat2euler, euler2quat, mat2quat
 
 try:
     from math import pi, tau, dist, fabs, cos
@@ -40,10 +40,17 @@ class UR5Robot:
     def __init__(self, realsense):
         self.rs = realsense
 
-        #ARM_JOINT_NAME = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint', 'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']
-        self.ROBOT_INIT_POS = np.array([0.0, -0.4, 0.6])
-        #self.ROBOT_INIT_POS = np.array([0.0, -0.3, 0.65])
-        self.ROBOT_INIT_ROTATION = np.array([[1., 0., 0.], [0., -1., 0.], [0., 0., -1.]])
+        theta = np.pi/8
+        self.ROBOT_INIT_POS = np.array([0.0, -0.25, 0.6])
+        self.ROBOT_INIT_ROTATION = np.array([[1., 0., 0.], 
+            [0., -np.cos(theta), -np.sin(theta)], 
+            [0., np.sin(theta), -np.cos(theta)]])
+        self.ROBOT_INIT_QUAT = mat2quat(self.ROBOT_INIT_ROTATION)
+        #print("INIT Quat:")
+        #print(mat2quat(self.ROBOT_INIT_ROTATION))
+
+        #self.ROBOT_INIT_POS = np.array([0.0, -0.4, 0.6])
+        #self.ROBOT_INIT_ROTATION = np.array([[1., 0., 0.], [0., -1., 0.], [0., 0., -1.]])
 
         # init node
         rospy.init_node("test", anonymous=True)
@@ -121,7 +128,7 @@ class UR5Robot:
     def get_view(self, goal_pos=None, quat=[1, 0, 0, 0], grasp=0.0, show_img=False):
         # quat: xyzw
         if goal_pos is not None:
-            goal_pos[2] = np.clip(goal_pos[2], 0.2, 0.7)
+            goal_pos[2] = np.clip(goal_pos[2], 0.21, 0.7)
             goal_P = form_T(quat2mat(quat), goal_pos)
             joints = self.solve_ik(goal_P)
             if len(joints)==0:
@@ -148,33 +155,13 @@ class UR5Robot:
                 # move to the view
                 self.move_group.execute(res[1], wait=True)
 
-        if False: #goal_pos is not None:
-            pose_goal = geometry_msgs.msg.Pose()
-            pose_goal.orientation.x = quat[0]
-            pose_goal.orientation.y = quat[1]
-            pose_goal.orientation.z = quat[2]
-            pose_goal.orientation.w = quat[3]
-            pose_goal.position.x = goal_pos[0]
-            pose_goal.position.y = goal_pos[1]
-            pose_goal.position.z = goal_pos[2]
-            self.move_group.set_pose_target(pose_goal)
-            res = self.move_group.plan()
-
-            # check success
-            if res[0] is False:
-                print("Failed planning to the goal")
-                return None, None
-            else:
-                # move to the view
-                self.move_group.execute(res[1], wait=True)
-
         # gripper control
         if grasp > 0.0:
-            self.gripper_controller.close()
+            self.gripper_controller.close(force=100)
             # suction gripper grasping
             # gripper_controller.grasp()
         else:
-            self.gripper_controller.open()
+            self.gripper_controller.open(force=100)
         
         rospy.sleep(0.5)
         if show_img:
@@ -184,10 +171,13 @@ class UR5Robot:
             return color, depth
         return None, None
     
-    def get_goal_from_grasp(self, grasp):
+    def get_goal_from_grasp(self, grasp, eef_P=None):
         T_eef_to_grasp = np.dot(self.T_eef_to_rs, grasp)
 
-        eef_pose, eef_quat = self.get_eef_pose()
+        if eef_P is None:
+            eef_pose, eef_quat = self.get_eef_pose()
+        else:
+            eef_pose, eef_quat = eef_P
         T_robot_to_eef = form_T(quat2mat(eef_quat), eef_pose)
         T_robot_to_grasp = np.dot(T_robot_to_eef, T_eef_to_grasp)
         #print('goal P:', T_robot_to_grasp)
@@ -226,7 +216,7 @@ if __name__=='__main__':
     GSAM = GroundedSAM()
 
     rospy.sleep(1.0)
-    rgb, depth = UR5.get_view(UR5.ROBOT_INIT_POS, show_img=True)
+    rgb, depth = UR5.get_view(UR5.ROBOT_INIT_POS, UR5.ROBOT_INIT_QUAT, show_img=True)
     #rgb, depth = RS.get_frames()
     INIT_JOINTS = UR5.get_joint_states()
 
@@ -268,10 +258,10 @@ if __name__=='__main__':
         check_go()
         #UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_4dof_quat, grasp=1.0)
         #check_go()
-        UR5.get_view(pick_pos + np.array([0, 0, 0.2]), grasp=1.0)
+        UR5.get_view(pick_pos + np.array([0, 0, 0.2]), UR5.ROBOT_INIT_QUAT, grasp=1.0)
         check_go()
         UR5.move_to_joints(INIT_JOINTS)
         check_go()
-        UR5.get_view(UR5.ROBOT_INIT_POS, grasp=0.0)
+        UR5.get_view(UR5.ROBOT_INIT_POS, UR5.ROBOT_INIT_QUAT, grasp=0.0)
         break
 

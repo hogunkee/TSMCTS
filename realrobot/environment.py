@@ -15,12 +15,33 @@ class RealEnvironment:
         RS_BIAS = [0, 0, 0] #[0, -0.01, 0] #[0.02, -0.01, -0.05]
         self.UR5.set_rs_bias(RS_BIAS)
 
-    def reset(self, classes, move_ur5=True):
+        self.default_depth = None
+        self.init_eef_P = None
+
+    def set_default_depth(self, move_ur5=True):
         rospy.sleep(1.0)
         if move_ur5:
-            rgb, depth = self.UR5.get_view(self.UR5.ROBOT_INIT_POS, show_img=True)
+            rgb, depth = self.UR5.get_view(self.UR5.ROBOT_INIT_POS, self.UR5.ROBOT_INIT_QUAT, 
+                                            show_img=True)
         else:
             rgb, depth = self.RS.get_frames()
+        np.save('default_depth.npy', depth)
+
+    def get_observation(self, move_ur5=True):
+        rospy.sleep(1.0)
+        if move_ur5:
+            rgb, depth = self.UR5.get_view(self.UR5.ROBOT_INIT_POS, self.UR5.ROBOT_INIT_QUAT,
+                                            grasp=0.0, show_img=True)
+        else:
+            rgb, depth = self.RS.get_frames()
+        self.init_eef_P = self.UR5.get_eef_pose()
+        return rgb, depth
+
+    def reset(self, classes, move_ur5=True):
+        #if self.default_depth is None:
+        #    self.default_depth = np.load('default_depth.npy')
+
+        rgb, depth = self.get_observation(move_ur5)
         detections = self.GSAM.get_masks(rgb, classes)
         segmap = np.zeros(depth.shape)
         for i, m in enumerate(detections.mask):
@@ -66,17 +87,17 @@ class RealEnvironment:
         quat = euler2quat([roll, pitch, yaw])
 
         placement = form_T(quat2mat(quat), target_pose)
-        place_pos, place_quat = self.UR5.get_goal_from_grasp(placement)
+        place_pos, place_quat = self.UR5.get_goal_from_grasp(placement, self.init_eef_P)
         print('original placement:', placement)
 
         delta_t = np.dot(quat2mat(quat), np.array([[0, 0, -0.1]]).T).T[0]
         placement = form_T(quat2mat(quat), target_pose+delta_t)
-        pos1, quat1 = self.UR5.get_goal_from_grasp(placement)
+        pos1, quat1 = self.UR5.get_goal_from_grasp(placement, self.init_eef_P)
         print('pose 1:', placement)
 
         delta_t = np.dot(quat2mat(quat), np.array([[0, 0, -0.05]]).T).T[0]
         placement = form_T(quat2mat(quat), target_pose+delta_t)
-        pos2, quat2 = self.UR5.get_goal_from_grasp(placement)
+        pos2, quat2 = self.UR5.get_goal_from_grasp(placement, self.init_eef_P)
         print('pose 2:', placement)
 
         check_go()
@@ -85,7 +106,7 @@ class RealEnvironment:
         self.UR5.get_view(pos2, quat2, grasp=0.0)
 
         check_go()
-        self.UR5.get_view(self.UR5.ROBOT_INIT_POS, grasp=0.0)
+        return self.get_observation()
 
     def step(self, target_object, target_position, rot_angle, stop=True):
         self.check_go()
@@ -138,12 +159,12 @@ class RealEnvironment:
 
         delta_t = np.dot(target_rot, np.array([[0, 0, -0.1]]).T).T[0]
         pre_grasp1 = form_T(target_rot, target_pose+delta_t)
-        pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1)
+        pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1, self.init_eef_P)
         #print('pose 1:', pre_grasp1)
 
         delta_t = np.dot(target_rot, np.array([[0, 0, -0.05]]).T).T[0]
         pre_grasp2 = form_T(target_rot, target_pose+delta_t)
-        pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2)
+        pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2, self.init_eef_P)
         #print('pose 2:', pre_grasp2)
 
         check_go()
@@ -157,7 +178,7 @@ class RealEnvironment:
         check_go()
         self.UR5.move_to_joints(self.INIT_JOINTS)
         check_go()
-        self.UR5.get_view(self.UR5.ROBOT_INIT_POS, grasp=1.0)
+        self.UR5.get_view(self.UR5.ROBOT_INIT_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
 
     def place(self, placement, stop=True):
         if stop:
@@ -171,15 +192,15 @@ class RealEnvironment:
 
         delta_t = np.dot(target_rot, np.array([[0, 0, -0.25]]).T).T[0]
         pre_place1 = form_T(target_rot, target_pose+delta_t)
-        pos1, quat1 = self.UR5.get_goal_from_grasp(pre_place1)
+        pos1, quat1 = self.UR5.get_goal_from_grasp(pre_place1, self.init_eef_P)
 
         delta_t = np.dot(target_rot, np.array([[0, 0, -0.20]]).T).T[0]
         pre_place2 = form_T(target_rot, target_pose+delta_t)
-        pos2, quat2 = self.UR5.get_goal_from_grasp(pre_place2)
+        pos2, quat2 = self.UR5.get_goal_from_grasp(pre_place2, self.init_eef_P)
 
         #delta_t = np.dot(target_rot, np.array([[0, 0, -0.3]]).T).T[0]
         #pre_place3 = form_T(target_rot, target_pose+delta_t)
-        #pos3, quat3 = self.UR5.get_goal_from_grasp(pre_place3)
+        #pos3, quat3 = self.UR5.get_goal_from_grasp(pre_place3, self.init_eef_P)
 
         check_go()
         self.UR5.get_view(pos1, quat1, grasp=1.0)
