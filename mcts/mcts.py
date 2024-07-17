@@ -151,6 +151,7 @@ class MCTS(object):
         self.searchCount = 0
         self.inferenceCount = 0
         self.blurring = args.blurring
+        self.prob_expand = args.prob_expand
     
     def reset(self, rgbImage, segmentation):
         table = self.renderer.setup(rgbImage, segmentation)
@@ -201,7 +202,7 @@ class MCTS(object):
         while not node.terminal: # self.isTerminal(node)[0]:
             if len(node.children)==0:
                 return self.expand(node)
-            elif node.isFullyExpanded() or random.uniform(0, 1) < 0.5:
+            elif node.isFullyExpanded() or random.uniform(0, 1) < args.prob_expand: #0.5:
                 node = self.getBestChild(node, self.explorationConstant)
             else:
                 return self.expand(node)
@@ -769,6 +770,7 @@ if __name__=='__main__':
     parser.add_argument('--blurring', type=int, default=3)
     parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
     parser.add_argument('--gamma', type=float, default=1)
+    parser.add_argument('--prob-expand', type=float, default=0.5)
     # Reward model
     parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
