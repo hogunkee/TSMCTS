@@ -22,7 +22,7 @@ from utils import suppress_stdout
 
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
-from custom_env import TableTopTidyingUpEnv, get_contact_objects
+from custom_nvisii_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
 from collect_template_list import scene_list
