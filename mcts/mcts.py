@@ -1010,6 +1010,9 @@ if __name__=='__main__':
             initRgb = obs[args.view]['rgb']
             initSeg = obs[args.view]['segmentation']
             initRgbFront = obs['front']['rgb']
+            initRgbNV = obs['nv-'+args.view]['rgb']
+            initSegNV = obs['nv-'+args.view]['segmentation']
+            initRgbFrontNV = obs['nv-front']['rgb']
             # Check occlusions
             for o in range(len(selected_objects)):
                 # get the segmentation mask of each object #
@@ -1036,6 +1039,14 @@ if __name__=='__main__':
             plt.savefig('%s-%s/scene-%d/top_initial.png'%(log_dir, log_name, sidx))
             plt.imshow(initRgbFront)
             plt.savefig('%s-%s/scene-%d/front_initial.png'%(log_dir, log_name, sidx))
+            plt.imshow(initRgbNV)
+            plt.savefig('%s-%s/scene-%d/nv_top_initial.png'%(log_dir, log_name, sidx))
+            plt.imshow(initRgbFrontNV)
+            plt.savefig('%s-%s/scene-%d/nv_front_initial.png'%(log_dir, log_name, sidx))
+            plt.imshow(initSeg)
+            plt.savefig('%s-%s/scene-%d/top_seg_init.png'%(log_dir, log_name, sidx))
+            plt.imshow(initSegNV)
+            plt.savefig('%s-%s/scene-%d/top_seg_init_nv.png'%(log_dir, log_name, sidx))
         initTable = searcher.reset(initRgb, initSeg)
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
@@ -1096,11 +1107,22 @@ if __name__=='__main__':
             currentRgb = obs[args.view]['rgb']
             currentSeg = obs[args.view]['segmentation']
             currentRgbFront = obs['front']['rgb']
+            currentRgbNV = obs['nv-'+args.view]['rgb']
+            currentSegNV = obs['nv-'+args.view]['segmentation']
+            currentRgbFrontNV = obs['nv-front']['rgb']
             if args.logging:
                 plt.imshow(currentRgb)
                 plt.savefig('%s-%s/scene-%d/top_real_%d.png'%(log_dir, log_name, sidx, step))
                 plt.imshow(currentRgbFront)
                 plt.savefig('%s-%s/scene-%d/front_real_%d.png'%(log_dir, log_name, sidx, step))
+                plt.imshow(currentRgbNV)
+                plt.savefig('%s-%s/scene-%d/nv_top_real_%d.png'%(log_dir, log_name, sidx, step))
+                plt.imshow(currentRgbFrontNV)
+                plt.savefig('%s-%s/scene-%d/nv_front_real_%d.png'%(log_dir, log_name, sidx, step))
+                plt.imshow(currentSeg)
+                plt.savefig('%s-%s/scene-%d/top_seg_%d.png'%(log_dir, log_name, sidx, step))
+                plt.imshow(currentSegNV)
+                plt.savefig('%s-%s/scene-%d/top_seg_%d_nv.png'%(log_dir, log_name, sidx, step))
 
             table = searcher.reset(currentRgb, currentSeg)
             if table is None:
@@ -1138,6 +1160,14 @@ if __name__=='__main__':
                     plt.savefig('%s-%s/scene-%d/top_final.png'%(log_dir, log_name, sidx))
                     plt.imshow(currentRgbFront)
                     plt.savefig('%s-%s/scene-%d/front_final.png'%(log_dir, log_name, sidx))
+                    plt.imshow(currentRgbNV)
+                    plt.savefig('%s-%s/scene-%d/nv_top_final.png'%(log_dir, log_name, sidx))
+                    plt.imshow(currentRgbFrontNV)
+                    plt.savefig('%s-%s/scene-%d/nv_front_final.png'%(log_dir, log_name, sidx))
+                    plt.imshow(currentSeg)
+                    plt.savefig('%s-%s/scene-%d/top_seg_final.png'%(log_dir, log_name, sidx))
+                    plt.imshow(currentSegNV)
+                    plt.savefig('%s-%s/scene-%d/top_seg_final_nv.png'%(log_dir, log_name, sidx))
                 break
         best_scores.append(best_score)
         if args.logging and bestRgb is not None:
