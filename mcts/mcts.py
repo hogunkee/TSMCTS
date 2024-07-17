@@ -941,6 +941,7 @@ if __name__=='__main__':
     for sidx in bar:
         best_score = 0.0
         bestRgb = None
+        bestRgbFront = None
         if args.logging: 
             bar.set_description("Episode %d/%d"%(sidx, args.num_scenes))
             if sidx>0:
@@ -1008,6 +1009,7 @@ if __name__=='__main__':
             obs = env.get_observation()
             initRgb = obs[args.view]['rgb']
             initSeg = obs[args.view]['segmentation']
+            initRgbFront = obs['front']['rgb']
             # Check occlusions
             for o in range(len(selected_objects)):
                 # get the segmentation mask of each object #
@@ -1031,7 +1033,9 @@ if __name__=='__main__':
 
         if args.logging:
             plt.imshow(initRgb)
-            plt.savefig('%s-%s/scene-%d/initial.png'%(log_dir, log_name, sidx))
+            plt.savefig('%s-%s/scene-%d/top_initial.png'%(log_dir, log_name, sidx))
+            plt.imshow(initRgbFront)
+            plt.savefig('%s-%s/scene-%d/front_initial.png'%(log_dir, log_name, sidx))
         initTable = searcher.reset(initRgb, initSeg)
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
@@ -1091,9 +1095,12 @@ if __name__=='__main__':
             obs = env.step(target_object, target_position, rot_angle)
             currentRgb = obs[args.view]['rgb']
             currentSeg = obs[args.view]['segmentation']
+            currentRgbFront = obs['front']['rgb']
             if args.logging:
                 plt.imshow(currentRgb)
-                plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
+                plt.savefig('%s-%s/scene-%d/top_real_%d.png'%(log_dir, log_name, sidx, step))
+                plt.imshow(currentRgbFront)
+                plt.savefig('%s-%s/scene-%d/front_real_%d.png'%(log_dir, log_name, sidx, step))
 
             table = searcher.reset(currentRgb, currentSeg)
             if table is None:
@@ -1108,6 +1115,7 @@ if __name__=='__main__':
             if reward > best_score:
                 best_score = reward
                 bestRgb = currentRgb
+                bestRgbFront = currentRgbFront
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
@@ -1127,12 +1135,16 @@ if __name__=='__main__':
                 print_fn("--------------------------------")
                 if args.logging:
                     plt.imshow(currentRgb)
-                    plt.savefig('%s-%s/scene-%d/final.png'%(log_dir, log_name, sidx))
+                    plt.savefig('%s-%s/scene-%d/top_final.png'%(log_dir, log_name, sidx))
+                    plt.imshow(currentRgbFront)
+                    plt.savefig('%s-%s/scene-%d/front_final.png'%(log_dir, log_name, sidx))
                 break
         best_scores.append(best_score)
         if args.logging and bestRgb is not None:
             plt.imshow(bestRgb)
-            plt.savefig('%s-%s/scene-%d/best.png'%(log_dir, log_name, sidx))
+            plt.savefig('%s-%s/scene-%d/top_best.png'%(log_dir, log_name, sidx))
+            plt.imshow(bestRgbFront)
+            plt.savefig('%s-%s/scene-%d/front_best.png'%(log_dir, log_name, sidx))
         if not args.wandb_off:
             wandb.log({'Success': float(best_score>args.threshold_success),
                        'Eplen': step+1,
