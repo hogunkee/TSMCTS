@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 
 argparser = ArgumentParser()
 argparser.add_argument('--threshold', type=float, default=0.9)
+argparser.add_argument('--after', type=str, default=None)
 args = argparser.parse_args()
 
 def filter_log_time(log):
@@ -34,7 +35,10 @@ def filter_log(log):
     log.append(success)
     return log
 
-logs = sorted([d for d in os.listdir('data') if d.startswith('mcts') or d.startswith('alphago')])
+logs = sorted([d for d in os.listdir('data') if d.startswith('mcts') or d.startswith('Sub')])
+if args.after is not None:
+    logs = sorted([d for d in logs if d[-9:-5] >= args.after])
+    print('Measure metrics for:', logs)
 for logname in logs:
     ep_length = []
     ep_success_length = []
