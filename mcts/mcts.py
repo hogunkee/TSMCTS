@@ -731,6 +731,7 @@ def setupEnvironment(args):
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
 
+    env.set_floor(texture_id=-1)
     #env.reset()
     return env
 
