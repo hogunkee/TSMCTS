@@ -731,8 +731,8 @@ def setupEnvironment(args):
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
 
-    env.set_floor(texture_id=-1)
-    #env.reset()
+    #env.set_floor(texture_id=-1)
+    env.reset()
     return env
 
 
@@ -967,7 +967,8 @@ if __name__=='__main__':
         
         # Initial state
         with suppress_stdout():
-            obs = env.get_observation() #env.reset()
+            obs = env.reset()
+            #obs = env.get_observation() #env.reset()
         if args.use_template:
             if args.inorder:
                 selected_scene = scenes[sidx%len(scenes)]
