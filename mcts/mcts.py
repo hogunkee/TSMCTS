@@ -731,7 +731,7 @@ def setupEnvironment(args):
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
 
-    env.reset()
+    #env.reset()
     return env
 
 
@@ -966,7 +966,7 @@ if __name__=='__main__':
         
         # Initial state
         with suppress_stdout():
-            obs = env.reset()
+            obs = env.get_observation() #env.reset()
         if args.use_template:
             if args.inorder:
                 selected_scene = scenes[sidx%len(scenes)]
@@ -1127,6 +1127,7 @@ if __name__=='__main__':
             table = searcher.reset(currentRgb, currentSeg)
             if table is None:
                 print_fn("Scenario ended.")
+                env.reset()
                 break
             #table = copy.deepcopy(nextTable)
             print_fn("Current state: \n %s"%table[0])
@@ -1168,6 +1169,7 @@ if __name__=='__main__':
                     plt.savefig('%s-%s/scene-%d/top_seg_final.png'%(log_dir, log_name, sidx))
                     plt.imshow(currentSegNV)
                     plt.savefig('%s-%s/scene-%d/top_seg_final_nv.png'%(log_dir, log_name, sidx))
+                env.reset()
                 break
         best_scores.append(best_score)
         if args.logging and bestRgb is not None:
@@ -1179,6 +1181,7 @@ if __name__=='__main__':
             wandb.log({'Success': float(best_score>args.threshold_success),
                        'Eplen': step+1,
                        'Score:': best_score})
+        env.reset()
     print_fn("Average scores: %.2f"%np.mean(best_scores))
     print_fn("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
     print_fn("Episode length: %.1f"%(np.mean(success_eplen) if len(success_eplen)>0 else 0))
