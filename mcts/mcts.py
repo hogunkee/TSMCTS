@@ -733,7 +733,7 @@ def setupEnvironment(args):
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
 
     #env.set_floor(texture_id=-1)
-    env.reset()
+    #env.reset()
     return env
 
 
@@ -1050,7 +1050,7 @@ if __name__=='__main__':
             plt.savefig('%s-%s/scene-%d/top_seg_init.png'%(log_dir, log_name, sidx))
             plt.imshow(initSegNV)
             plt.savefig('%s-%s/scene-%d/top_seg_init_nv.png'%(log_dir, log_name, sidx))
-        initTable = searcher.reset(initRgb, initSeg)
+        initTable = searcher.reset(initRgbNV, initSegNV)
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
 
@@ -1127,7 +1127,7 @@ if __name__=='__main__':
                 plt.imshow(currentSegNV)
                 plt.savefig('%s-%s/scene-%d/top_seg_%d_nv.png'%(log_dir, log_name, sidx, step))
 
-            table = searcher.reset(currentRgb, currentSeg)
+            table = searcher.reset(currentRgbNV, currentSegNV)
             if table is None:
                 print_fn("Scenario ended.")
                 env.reset()
@@ -1140,8 +1140,8 @@ if __name__=='__main__':
             print_fn("--------------------------------")
             if reward > best_score:
                 best_score = reward
-                bestRgb = currentRgb
-                bestRgbFront = currentRgbFront
+                bestRgb = currentRgbNV
+                bestRgbFront = currentRgbFrontNV
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
