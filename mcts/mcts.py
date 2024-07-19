@@ -714,7 +714,8 @@ class MCTS(object):
 
 def setupEnvironment(args):
     camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
-    camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
+    camera_front_top = Camera_front_top((0.47, 0, 0.94+0.3), 0.02, 2, (480, 360), 60)
+    #camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
     
     data_dir = args.data_dir
     objects_cfg = { 'paths': {
