@@ -9,6 +9,7 @@ import numpy as np
 import logging
 import json
 import pybullet as p
+import gc
 from argparse import ArgumentParser
 from PIL import Image
 from matplotlib import pyplot as plt
@@ -71,6 +72,12 @@ class Node(object):
             countNode[hashT] = 1
         else:
             countNode[hashT] += 1
+
+    def clear(self):
+        self.children.clear()
+        self.parent = None
+        del self
+        return
     
     def takeAction(self, move):
         obj, py, px, rot = move
@@ -153,7 +160,17 @@ class MCTS(object):
         self.blurring = args.blurring
         self.prob_expand = args.prob_expand
     
+    def clearTree(self):
+        self.clearChild(self.root)
+
+    def clearChild(self, node):
+        for c in node.children:
+            self.clearChild(node.children[c])
+        return node.clear()
+
     def reset(self, rgbImage, segmentation):
+        self.clearTree()
+        gc.collect()
         table = self.renderer.setup(rgbImage, segmentation)
         self.searchCount = 0
         self.inferenceCount = 0
