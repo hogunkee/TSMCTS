@@ -712,7 +712,7 @@ class MCTS(object):
         # print(et - st, 'seconds.')
         return maxReward, value
 
-def setupEnvironment(args):
+def setupEnvironment(args, logname):
     camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
     camera_front_top = Camera_front_top((0.47, 0, 1.1+0.25), 0.02, 2, (480, 360), 60, at=[-0.08, 0, 0.25])
     #camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
@@ -727,7 +727,7 @@ def setupEnvironment(args):
     }
     
     gui_on = not args.gui_off
-    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85')
+    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85', logname=logname)
     p.resetDebugVisualizerCamera(2.0, -270., -60., (0., 0., 0.))
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
@@ -827,7 +827,7 @@ if __name__=='__main__':
 
     # Environment setup
     with suppress_stdout():
-        env = setupEnvironment(args)
+        env = setupEnvironment(args, log_name)
     if args.use_template:
         scenes = sorted(list(scene_list.keys()))
         if args.scenes=='':
