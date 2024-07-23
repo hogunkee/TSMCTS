@@ -959,6 +959,7 @@ if __name__=='__main__':
 
     cmap = plt.cm.get_cmap('hsv', 10)
     cmap = np.array([cmap(i) for i in range(10)])
+    cmap = (255*cmap).astype(np.uint8)
 
     for sidx in bar:
         best_score = 0.0
@@ -1064,20 +1065,6 @@ if __name__=='__main__':
             cv2.imwrite('%s-%s/scene-%d/nv_front_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbFrontNV, cv2.COLOR_RGB2BGR))
             cv2.imwrite('%s-%s/scene-%d/top_seg_init.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[initSeg.astype(int)], cv2.COLOR_RGB2BGR))
             cv2.imwrite('%s-%s/scene-%d/top_seg_init_nv.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[initSegNV.astype(int)], cv2.COLOR_RGB2BGR))
-
-            if False:
-                plt.imshow(initRgb)
-                plt.savefig('%s-%s/scene-%d/top_initial.png'%(log_dir, log_name, sidx))
-                plt.imshow(initRgbFront)
-                plt.savefig('%s-%s/scene-%d/front_initial.png'%(log_dir, log_name, sidx))
-                plt.imshow(initRgbNV)
-                plt.savefig('%s-%s/scene-%d/nv_top_initial.png'%(log_dir, log_name, sidx))
-                plt.imshow(initRgbFrontNV)
-                plt.savefig('%s-%s/scene-%d/nv_front_initial.png'%(log_dir, log_name, sidx))
-                plt.imshow(initSeg)
-                plt.savefig('%s-%s/scene-%d/top_seg_init.png'%(log_dir, log_name, sidx))
-                plt.imshow(initSegNV)
-                plt.savefig('%s-%s/scene-%d/top_seg_init_nv.png'%(log_dir, log_name, sidx))
         initTable = searcher.reset(initRgbNV, initSegNV)
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
@@ -1118,8 +1105,9 @@ if __name__=='__main__':
                 elif len(actionProb.shape)==4:
                     #plt.imshow(np.mean(actionProb, axis=(0, 1)))
                     actionProb = np.mean(actionProb, axis=(0,1))
-                #plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
-                cv2.imwrite('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step), actionProb)
+                plt.imshow(actionProb)
+                plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
+                #cv2.imwrite('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step), actionProb)
 
             # expected result in mcts #
             nextTable = searcher.root.takeAction(action)
@@ -1134,8 +1122,6 @@ if __name__=='__main__':
 
             tableRgb = renderer.getRGB(nextTable)
             if args.logging:
-                #plt.imshow(tableRgb)
-                #plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
                 cv2.imwrite('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(tableRgb, cv2.COLOR_RGB2BGR))
 
 
@@ -1155,20 +1141,6 @@ if __name__=='__main__':
                 cv2.imwrite('%s-%s/scene-%d/nv_front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
                 cv2.imwrite('%s-%s/scene-%d/top_seg_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
                 cv2.imwrite('%s-%s/scene-%d/top_seg_%d_nv.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
-
-                if False:
-                    plt.imshow(currentRgb)
-                    plt.savefig('%s-%s/scene-%d/top_real_%d.png'%(log_dir, log_name, sidx, step))
-                    plt.imshow(currentRgbFront)
-                    plt.savefig('%s-%s/scene-%d/front_real_%d.png'%(log_dir, log_name, sidx, step))
-                    plt.imshow(currentRgbNV)
-                    plt.savefig('%s-%s/scene-%d/nv_top_real_%d.png'%(log_dir, log_name, sidx, step))
-                    plt.imshow(currentRgbFrontNV)
-                    plt.savefig('%s-%s/scene-%d/nv_front_real_%d.png'%(log_dir, log_name, sidx, step))
-                    plt.imshow(currentSeg)
-                    plt.savefig('%s-%s/scene-%d/top_seg_%d.png'%(log_dir, log_name, sidx, step))
-                    plt.imshow(currentSegNV)
-                    plt.savefig('%s-%s/scene-%d/top_seg_%d_nv.png'%(log_dir, log_name, sidx, step))
 
             table = searcher.reset(currentRgbNV, currentSegNV)
             if table is None:
@@ -1209,32 +1181,12 @@ if __name__=='__main__':
                     cv2.imwrite('%s-%s/scene-%d/nv_front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
                     cv2.imwrite('%s-%s/scene-%d/top_seg_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
                     cv2.imwrite('%s-%s/scene-%d/top_seg_final_nv.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
-
-                    if False:
-                        plt.imshow(currentRgb)
-                        plt.savefig('%s-%s/scene-%d/top_final.png'%(log_dir, log_name, sidx))
-                        plt.imshow(currentRgbFront)
-                        plt.savefig('%s-%s/scene-%d/front_final.png'%(log_dir, log_name, sidx))
-                        plt.imshow(currentRgbNV)
-                        plt.savefig('%s-%s/scene-%d/nv_top_final.png'%(log_dir, log_name, sidx))
-                        plt.imshow(currentRgbFrontNV)
-                        plt.savefig('%s-%s/scene-%d/nv_front_final.png'%(log_dir, log_name, sidx))
-                        plt.imshow(currentSeg)
-                        plt.savefig('%s-%s/scene-%d/top_seg_final.png'%(log_dir, log_name, sidx))
-                        plt.imshow(currentSegNV)
-                        plt.savefig('%s-%s/scene-%d/top_seg_final_nv.png'%(log_dir, log_name, sidx))
                 env.reset()
                 break
         best_scores.append(best_score)
         if args.logging and bestRgb is not None:
             cv2.imwrite('%s-%s/scene-%d/top_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgb, cv2.COLOR_RGB2BGR))
             cv2.imwrite('%s-%s/scene-%d/front_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgbFront, cv2.COLOR_RGB2BGR))
-
-            if False:
-                plt.imshow(bestRgb)
-                plt.savefig('%s-%s/scene-%d/top_best.png'%(log_dir, log_name, sidx))
-                plt.imshow(bestRgbFront)
-                plt.savefig('%s-%s/scene-%d/front_best.png'%(log_dir, log_name, sidx))
         if not args.wandb_off:
             wandb.log({'Success': float(best_score>args.threshold_success),
                        'Eplen': step+1,
