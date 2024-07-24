@@ -1145,7 +1145,6 @@ if __name__=='__main__':
             table = searcher.reset(currentRgbNV, currentSegNV)
             if table is None:
                 print_fn("Scenario ended.")
-                env.reset()
                 break
             #table = copy.deepcopy(nextTable)
             print_fn("Current state: \n %s"%table[0])
@@ -1181,7 +1180,6 @@ if __name__=='__main__':
                     cv2.imwrite('%s-%s/scene-%d/nv_front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
                     cv2.imwrite('%s-%s/scene-%d/top_seg_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
                     cv2.imwrite('%s-%s/scene-%d/top_seg_final_nv.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
-                env.reset()
                 break
         best_scores.append(best_score)
         if args.logging and bestRgb is not None:
@@ -1191,7 +1189,6 @@ if __name__=='__main__':
             wandb.log({'Success': float(best_score>args.threshold_success),
                        'Eplen': step+1,
                        'Score:': best_score})
-        env.reset()
     print_fn("Average scores: %.2f"%np.mean(best_scores))
     print_fn("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
     print_fn("Episode length: %.1f"%(np.mean(success_eplen) if len(success_eplen)>0 else 0))
