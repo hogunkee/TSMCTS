@@ -957,8 +957,8 @@ if __name__=='__main__':
     else:
         bar = range(args.num_scenes)
 
-    cmap = plt.cm.get_cmap('hsv', 10)
-    cmap = np.array([cmap(i) for i in range(10)])
+    cmap = plt.cm.get_cmap('hsv', 20)
+    cmap = np.array([cmap(i) for i in range(20)])
     cmap = (255*cmap).astype(np.uint8)
 
     for sidx in bar:
