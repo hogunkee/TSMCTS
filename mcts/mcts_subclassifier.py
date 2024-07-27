@@ -153,9 +153,10 @@ class MCTS(object):
         self.searchCount = 0
         self.inferenceCount = 0
         self.blurring = args.blurring
+        self.numRotations = args.numRotations
     
     def reset(self, rgbImage, segmentation):
-        table = self.renderer.setup(rgbImage, segmentation)
+        table = self.renderer.setup(rgbImage, segmentation, self.numRotations)
         self.searchCount = 0
         self.inferenceCount = 0
         return table
@@ -226,7 +227,8 @@ class MCTS(object):
             nbs, ys, xs = np.where(prob>0.)
             idx = np.random.choice(len(nbs), p=prob[nbs, ys, xs])
             nb, y, x = nbs[idx], ys[idx], xs[idx]
-            rot = np.random.choice([1,2])
+            rot = np.random.choice(args.numRotations) + 1
+            #rot = np.random.choice([1,2])
             action = (nb+1, y, x, rot)
             p = prob[nb, y, x]
         else:
@@ -731,6 +733,7 @@ if __name__=='__main__':
     parser.add_argument('--blurring', type=int, default=3)
     parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
     parser.add_argument('--gamma', type=float, default=1)
+    parser.add_argument('--num-rotate', type=int, default=2)
     # Reward model
     parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
