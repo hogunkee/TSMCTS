@@ -36,6 +36,8 @@ def filter_log(log):
         end = log.index(success_score)+1
         #end = log.index(best_score)+1
         log = log[:end]
+    else:
+        success_score = best_score
     log.append(success)
     return log, success_score
 
@@ -54,38 +56,48 @@ for logname in logs:
         continue
     print(logname)
 
-    with open(os.path.join('data', logname, 'config.json'), 'r') as f:
-        cfg = json.load(f)
-    if 'iql_path' in cfg:
-        iql_path = cfg['iql_path']
-        print('IQL:', iql_path)
-    if 'scenes' in cfg:
-        cfg_scenes = cfg['scenes']
-        print('scenes:', cfg_scenes)
+    try:
+        with open(os.path.join('data', logname, 'config.json'), 'r') as f:
+            cfg = json.load(f)
+        if 'wandb_off' in cfg:
+            if cfg['wandb_off']:
+                continue
+        if 'iteration_limit' in cfg:
+            if cfg['iteration_limit']<1000:
+                continue
+        if 'iql_path' in cfg:
+            iql_path = cfg['iql_path']
+            print('IQL:', iql_path)
+        if 'scenes' in cfg:
+            cfg_scenes = cfg['scenes']
+            print('scenes:', cfg_scenes)
 
-    for scene in scenes:
-        scene_dir = os.path.join('data', logname, scene)
-        logfile = [f for f in os.listdir(scene_dir) if f.endswith('.log')]
-        if len(logfile)==0:
-            continue
-        logfile = logfile[0]
-        with open(os.path.join(scene_dir, logfile), 'r') as f:
-            x = f.readlines()
-        times = filter_log_time(x)
-        deltas += get_intervals(times)
-        scores, success_score = filter_log(x)
-        if success_score !=0:
-            ep_success_score.append(success_score)
-        if scores is None:
-            continue
-        if scores[-1]:
-            ep_success_length.append(len(scores[:-1]))
-        ep_length.append(len(scores[:-1]))
-    print('Num episodes:', len(scenes))
-    #print('Average time:', np.mean(deltas).seconds)
-    print('Success rate: %.3f' %(len(ep_success_length)/len(scenes)))
-    if len(ep_success_score)!=0:
-        print('Average score: %.3f' %np.mean(ep_success_score))
-    print('Episode length: %.3f' %np.mean(ep_success_length))
-    #print('Average length:', np.mean(ep_length))
-    print('-'*40)
+        for scene in scenes:
+            scene_dir = os.path.join('data', logname, scene)
+            logfile = [f for f in os.listdir(scene_dir) if f.endswith('.log')]
+            if len(logfile)==0:
+                continue
+            logfile = logfile[0]
+            with open(os.path.join(scene_dir, logfile), 'r') as f:
+                x = f.readlines()
+            times = filter_log_time(x)
+            deltas += get_intervals(times)
+            scores, success_score = filter_log(x)
+            if success_score !=0:
+                ep_success_score.append(success_score)
+            if scores is None:
+                continue
+            if scores[-1]:
+                ep_success_length.append(len(scores[:-1]))
+            ep_length.append(len(scores[:-1]))
+        print('Num episodes:', len(scenes))
+        #print('Average time:', np.mean(deltas).seconds)
+        print('Success rate: %.3f' %(len(ep_success_length)/len(scenes)))
+        if len(ep_success_score)!=0:
+            print('Average score: %.3f' %np.mean(ep_success_score))
+        print('Episode length: %.3f' %np.mean(ep_success_length))
+        #print('Average length:', np.mean(ep_length))
+        print('-'*40)
+    except:
+        print('-'*40)
+        continue
