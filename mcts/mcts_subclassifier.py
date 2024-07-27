@@ -161,7 +161,7 @@ class MCTS(object):
         self.inferenceCount = 0
         self.blurring = args.blurring
         self.prob_expand = args.prob_expand
-        self.numRotations = args.numRotations
+        self.numRotations = args.num_rotate
     
     def clearTree(self):
         self.clearChild(self.root)
