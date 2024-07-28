@@ -41,7 +41,9 @@ class UR5Robot:
         self.rs = realsense
 
         theta = np.pi/8
-        self.ROBOT_INIT_POS = np.array([0.0, -0.25, 0.6])
+        self.PRE_PLACE_POS = np.array([0.0, -0.35, 0.45])
+        #self.ROBOT_INIT_POS = np.array([0.0, -0.4, 0.6])
+        self.ROBOT_INIT_POS = np.array([0.0, -0.3, 0.6])
         self.ROBOT_INIT_ROTATION = np.array([[1., 0., 0.], 
             [0., -np.cos(theta), -np.sin(theta)], 
             [0., np.sin(theta), -np.cos(theta)]])

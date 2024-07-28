@@ -127,7 +127,7 @@ class RealEnvironment:
         #print("Delta Center:", delta_center)
 
         #grasp_4dof = project_grasp_4dof(grasp)
-        self.pick(grasp, stop=stop)
+        self.pick(grasp, stop=stop, back_to_init=False)
 
         # 2. Place down at the target position with rotation.
         target_pose = inverse_projection(depth, np.array(target_position), self.RS.K_rs, self.RS.D_rs)
@@ -146,7 +146,7 @@ class RealEnvironment:
 
         return self.reset(self.current_classes)
 
-    def pick(self, grasp, stop=True): #, grasp_4dof
+    def pick(self, grasp, stop=True, back_to_init=True): #, grasp_4dof
         if stop:
             check_go = self.check_go
         else:
@@ -175,10 +175,15 @@ class RealEnvironment:
         self.UR5.get_view(grasp=1.0)
         check_go()
         self.UR5.get_view(pos1, quat1, grasp=1.0)
-        check_go()
-        self.UR5.move_to_joints(self.INIT_JOINTS)
-        check_go()
-        self.UR5.get_view(self.UR5.ROBOT_INIT_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
+        if back_to_init:
+            check_go()
+            self.UR5.move_to_joints(self.INIT_JOINTS)
+            check_go()
+            self.UR5.get_view(self.UR5.ROBOT_INIT_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
+        else:
+            check_go()
+            self.UR5.get_view(self.UR5.PRE_PLACE_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
+
 
     def place(self, placement, stop=True):
         if stop:

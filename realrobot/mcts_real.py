@@ -710,9 +710,6 @@ if __name__=='__main__':
     parser.add_argument('--data-dir', type=str, default='/ssd/disk')
     # Inference
     parser.add_argument("--seed", default=None, type=int)
-    parser.add_argument('--inorder', action="store_true")
-    parser.add_argument('--scene-split', type=str, default='all') # 'all' / 'seen' / 'unseen'
-    parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--H', type=int, default=12)
@@ -736,6 +733,7 @@ if __name__=='__main__':
     parser.add_argument('--blurring', type=int, default=3)
     parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
     parser.add_argument('--gamma', type=float, default=1)
+    parser.add_argument('--classes', type=str, default="Apple. Lemon. Orange. Fruit.")
     # Reward model
     parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
@@ -853,7 +851,8 @@ if __name__=='__main__':
             np.random.seed(seed + sidx)
         
         # Initial state
-        classes = ["Apple. Lemon. Orange. Fruit."]
+        #classes = ["Apple. Lemon. Orange. Fruit."]
+        classes = [args.classes]
         obs = env.reset(classes)
         initRgb = obs['rgb']
         initSeg = obs['segmentation']
