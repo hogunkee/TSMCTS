@@ -287,7 +287,7 @@ class Renderer(object):
         self.cropSize = np.array(cropSize)
         self.rgb = None
 
-    def setup(self, rgbImage, segmentation):
+    def setup(self, rgbImage, segmentation, numRotations=2):
         # segmentation info
         # 1: background (table)
         # 2: None
@@ -300,7 +300,7 @@ class Renderer(object):
             return None
         self.rgb = np.copy(rgbImage)
         oPatches, oMasks = self.getObjectPatches()
-        self.objectPatches, self.objectMasks, self.objectAngles = self.getRotatedPatches(oPatches, oMasks)
+        self.objectPatches, self.objectMasks, self.objectAngles = self.getRotatedPatches(oPatches, oMasks, numRotations)
         self.segmap = np.copy(segmentation)
         posMap = self.getTable(segmentation)
         rotMap = np.zeros_like(posMap)
@@ -405,7 +405,8 @@ class Renderer(object):
                     rect = cv2.minAreaRect(X)
                     phi = rect[2]
             for r in range(numRotations):
-                angle = phi / np.pi * 180 + r * 90
+                angle = phi / np.pi * 180 + r * 180 / numRotations
+                #angle = phi / np.pi * 180 + r * 90
                 height, width = mask.shape[:2]
                 matrix = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
                 patch_rotated = cv2.warpAffine(patch, matrix, (width, height))

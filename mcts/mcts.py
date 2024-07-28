@@ -9,6 +9,7 @@ import numpy as np
 import logging
 import json
 import pybullet as p
+import gc
 from argparse import ArgumentParser
 from PIL import Image
 from matplotlib import pyplot as plt
@@ -22,7 +23,7 @@ from utils import suppress_stdout
 
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
-from custom_env import TableTopTidyingUpEnv, get_contact_objects
+from custom_nvisii_env import TableTopTidyingUpEnv, get_contact_objects
 from utilities import Camera, Camera_front_top
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
 from collect_template_list import scene_list
@@ -71,6 +72,12 @@ class Node(object):
             countNode[hashT] = 1
         else:
             countNode[hashT] += 1
+
+    def clear(self):
+        self.children.clear()
+        self.parent = None
+        del self
+        return
     
     def takeAction(self, move):
         obj, py, px, rot = move
@@ -151,8 +158,19 @@ class MCTS(object):
         self.searchCount = 0
         self.inferenceCount = 0
         self.blurring = args.blurring
+        self.prob_expand = args.prob_expand
     
+    def clearTree(self):
+        self.clearChild(self.root)
+
+    def clearChild(self, node):
+        for c in node.children:
+            self.clearChild(node.children[c])
+        return node.clear()
+
     def reset(self, rgbImage, segmentation):
+        #self.clearTree()
+        gc.collect()
         table = self.renderer.setup(rgbImage, segmentation)
         self.searchCount = 0
         self.inferenceCount = 0
@@ -201,7 +219,7 @@ class MCTS(object):
         while not node.terminal: # self.isTerminal(node)[0]:
             if len(node.children)==0:
                 return self.expand(node)
-            elif node.isFullyExpanded() or random.uniform(0, 1) < 0.5:
+            elif node.isFullyExpanded() or random.uniform(0, 1) < args.prob_expand: #0.5:
                 node = self.getBestChild(node, self.explorationConstant)
             else:
                 return self.expand(node)
@@ -711,9 +729,10 @@ class MCTS(object):
         # print(et - st, 'seconds.')
         return maxReward, value
 
-def setupEnvironment(args):
+def setupEnvironment(args, logname):
     camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
-    camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
+    camera_front_top = Camera_front_top((0.47, 0, 1.1+0.25), 0.02, 2, (480, 360), 60, at=[-0.08, 0, 0.25])
+    #camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
     
     data_dir = args.data_dir
     objects_cfg = { 'paths': {
@@ -725,12 +744,13 @@ def setupEnvironment(args):
     }
     
     gui_on = not args.gui_off
-    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85')
+    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85', logname=logname)
     p.resetDebugVisualizerCamera(2.0, -270., -60., (0., 0., 0.))
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
 
-    env.reset()
+    #env.set_floor(texture_id=-1)
+    #env.reset()
     return env
 
 
@@ -769,6 +789,7 @@ if __name__=='__main__':
     parser.add_argument('--blurring', type=int, default=3)
     parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
     parser.add_argument('--gamma', type=float, default=1)
+    parser.add_argument('--prob-expand', type=float, default=0.5)
     # Reward model
     parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
@@ -823,7 +844,7 @@ if __name__=='__main__':
 
     # Environment setup
     with suppress_stdout():
-        env = setupEnvironment(args)
+        env = setupEnvironment(args, log_name)
     if args.use_template:
         scenes = sorted(list(scene_list.keys()))
         if args.scenes=='':
@@ -936,9 +957,14 @@ if __name__=='__main__':
     else:
         bar = range(args.num_scenes)
 
+    cmap = plt.cm.get_cmap('hsv', 20)
+    cmap = np.array([cmap(i) for i in range(20)])
+    cmap = (255*cmap).astype(np.uint8)
+
     for sidx in bar:
         best_score = 0.0
         bestRgb = None
+        bestRgbFront = None
         if args.logging: 
             bar.set_description("Episode %d/%d"%(sidx, args.num_scenes))
             if sidx>0:
@@ -964,6 +990,7 @@ if __name__=='__main__':
         # Initial state
         with suppress_stdout():
             obs = env.reset()
+            #obs = env.get_observation() #env.reset()
         if args.use_template:
             if args.inorder:
                 selected_scene = scenes[sidx%len(scenes)]
@@ -1006,6 +1033,10 @@ if __name__=='__main__':
             obs = env.get_observation()
             initRgb = obs[args.view]['rgb']
             initSeg = obs[args.view]['segmentation']
+            initRgbFront = obs['front']['rgb']
+            initRgbNV = obs['nv-'+args.view]['rgb']
+            initSegNV = obs['nv-'+args.view]['segmentation']
+            initRgbFrontNV = obs['nv-front']['rgb']
             # Check occlusions
             for o in range(len(selected_objects)):
                 # get the segmentation mask of each object #
@@ -1028,14 +1059,19 @@ if __name__=='__main__':
         print_fn('Objects: %s' %[o for o,s in selected_objects])
 
         if args.logging:
-            plt.imshow(initRgb)
-            plt.savefig('%s-%s/scene-%d/initial.png'%(log_dir, log_name, sidx))
-        initTable = searcher.reset(initRgb, initSeg)
+            cv2.imwrite('%s-%s/scene-%d/top_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgb, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s-%s/scene-%d/front_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbFront, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s-%s/scene-%d/nv_top_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbNV, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s-%s/scene-%d/nv_front_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbFrontNV, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s-%s/scene-%d/top_seg_init.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[initSeg.astype(int)], cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s-%s/scene-%d/top_seg_init_nv.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[initSegNV.astype(int)], cv2.COLOR_RGB2BGR))
+        initTable = searcher.reset(initRgbNV, initSegNV)
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
 
         print_fn("--------------------------------")
         for step in range(10):
+            plt.cla()
             st = time.time()
             countNode.clear()
             resultDict = searcher.search(table=table, needDetails=True)
@@ -1061,12 +1097,17 @@ if __name__=='__main__':
             if args.logging and actionProb is not None:
                 actionProb[actionProb>args.threshold_prob] += 0.5
                 if len(actionProb.shape)==2:
-                    plt.imshow(actionProb)
+                    #plt.imshow(actionProb)
+                    pass
                 elif len(actionProb.shape)==3:
-                    plt.imshow(np.mean(actionProb, axis=0))
+                    #plt.imshow(np.mean(actionProb, axis=0))
+                    actionProb = np.mean(actionProb, axis=0)
                 elif len(actionProb.shape)==4:
-                    plt.imshow(np.mean(actionProb, axis=(0, 1)))
+                    #plt.imshow(np.mean(actionProb, axis=(0, 1)))
+                    actionProb = np.mean(actionProb, axis=(0,1))
+                plt.imshow(actionProb)
                 plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
+                #cv2.imwrite('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step), actionProb)
 
             # expected result in mcts #
             nextTable = searcher.root.takeAction(action)
@@ -1081,19 +1122,27 @@ if __name__=='__main__':
 
             tableRgb = renderer.getRGB(nextTable)
             if args.logging:
-                plt.imshow(tableRgb)
-                plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
+                cv2.imwrite('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(tableRgb, cv2.COLOR_RGB2BGR))
+
 
             # simulation step in pybullet #
             target_object, target_position, rot_angle = renderer.convert_action(action)
             obs = env.step(target_object, target_position, rot_angle)
             currentRgb = obs[args.view]['rgb']
             currentSeg = obs[args.view]['segmentation']
+            currentRgbFront = obs['front']['rgb']
+            currentRgbNV = obs['nv-'+args.view]['rgb']
+            currentSegNV = obs['nv-'+args.view]['segmentation']
+            currentRgbFrontNV = obs['nv-front']['rgb']
             if args.logging:
-                plt.imshow(currentRgb)
-                plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
+                cv2.imwrite('%s-%s/scene-%d/top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgb, cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s-%s/scene-%d/front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFront, cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s-%s/scene-%d/nv_top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s-%s/scene-%d/nv_front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s-%s/scene-%d/top_seg_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s-%s/scene-%d/top_seg_%d_nv.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
 
-            table = searcher.reset(currentRgb, currentSeg)
+            table = searcher.reset(currentRgbNV, currentSegNV)
             if table is None:
                 print_fn("Scenario ended.")
                 break
@@ -1105,7 +1154,8 @@ if __name__=='__main__':
             print_fn("--------------------------------")
             if reward > best_score:
                 best_score = reward
-                bestRgb = currentRgb
+                bestRgb = currentRgbNV
+                bestRgbFront = currentRgbFrontNV
             
             print_fn("Counts:")
             counts = [v for k,v in countNode.items() if v>1]
@@ -1124,13 +1174,17 @@ if __name__=='__main__':
                 print_fn("--------------------------------")
                 print_fn("--------------------------------")
                 if args.logging:
-                    plt.imshow(currentRgb)
-                    plt.savefig('%s-%s/scene-%d/final.png'%(log_dir, log_name, sidx))
+                    cv2.imwrite('%s-%s/scene-%d/top_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgb, cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s-%s/scene-%d/front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFront, cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s-%s/scene-%d/nv_top_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s-%s/scene-%d/nv_front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s-%s/scene-%d/top_seg_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s-%s/scene-%d/top_seg_final_nv.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
                 break
         best_scores.append(best_score)
         if args.logging and bestRgb is not None:
-            plt.imshow(bestRgb)
-            plt.savefig('%s-%s/scene-%d/best.png'%(log_dir, log_name, sidx))
+            cv2.imwrite('%s-%s/scene-%d/top_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgb, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s-%s/scene-%d/front_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgbFront, cv2.COLOR_RGB2BGR))
         if not args.wandb_off:
             wandb.log({'Success': float(best_score>args.threshold_success),
                        'Eplen': step+1,
