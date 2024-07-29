@@ -287,7 +287,7 @@ class Renderer(object):
         self.cropSize = np.array(cropSize)
         self.rgb = None
 
-    def setup(self, rgbImage, segmentation):
+    def setup(self, rgbImage, segmentation, numRotations=2):
         # segmentation info
         # 1: background (table) -> 0
         # 2: None
@@ -406,7 +406,7 @@ class Renderer(object):
                     rect = cv2.minAreaRect(X)
                     phi = rect[2]
             for r in range(numRotations):
-                angle = phi + r * 90
+                angle = phi / np.pi * 180 + r * 180 / numRotations
                 #angle = phi / np.pi * 180 + r * 90
                 height, width = mask.shape[:2]
                 matrix = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)

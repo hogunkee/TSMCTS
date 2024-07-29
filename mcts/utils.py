@@ -397,6 +397,7 @@ class Renderer(object):
                 try:
                     reg = LsqEllipse().fit(X)
                     center, width, height, phi = reg.as_parameters()
+                    phi = phi * 180 / np.pi
                     if np.abs(width-height) < 6:
                         # can be a rectangle
                         rect = cv2.minAreaRect(X)
