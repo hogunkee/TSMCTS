@@ -174,7 +174,7 @@ class MCTS(object):
     def reset(self, rgbImage, segmentation):
         #self.clearTree()
         gc.collect()
-        table = self.renderer.setup(rgbImage, segmentation)
+        table = self.renderer.setup(rgbImage, segmentation, self.numRotations)
         self.searchCount = 0
         self.inferenceCount = 0
         return table
@@ -245,7 +245,7 @@ class MCTS(object):
             nbs, ys, xs = np.where(prob>0.)
             idx = np.random.choice(len(nbs), p=prob[nbs, ys, xs])
             nb, y, x = nbs[idx], ys[idx], xs[idx]
-            rot = np.random.choice(args.numRotations) + 1
+            rot = np.random.choice(self.numRotations) + 1
             #rot = np.random.choice([1,2])
             action = (nb+1, y, x, rot)
             p = prob[nb, y, x]

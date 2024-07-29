@@ -172,7 +172,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_freq", type=int, default=1) #5
     parser.add_argument("--model-path", type=str, default='data/classification-best/top_nobg_linspace_mse-best.pth')
     # Dataset
-    parser.add_argument("--data_dir", type=str, default='/disk1/hogun/TableTidyingUp/dataset_shape2')
+    parser.add_argument("--data_dir", type=str, default='/disk1/hogun/TableTidyingUp/dataset_shape')
     parser.add_argument("--remove_bg", action="store_true") # default: False
     parser.add_argument("--label_type", type=str, default='linspace') # linspace / binary
     parser.add_argument("--view", type=str, default='top') # top / front_top
