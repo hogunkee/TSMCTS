@@ -111,8 +111,19 @@ class ContactGraspNet:
         def get_theta(grasp):
             cos_theta = (grasp[:3, :3].dot(np.array([[0, 0, 1]]).T).T[0]).dot(np.array([0, 0, 1]))
             return cos_theta
-        grasps, scores = zip(*[(g, s) for g, s in zip(grasps, scores) if get_theta(g) > 0.8])
+        grasp_over07 = [(g, s) for g, s in zip(grasps, scores) if get_theta(g) > 0.7]
+        if len(grasp_over07)==0:
+            grasp_over03 = [(g, s) for g, s in zip(grasps, scores) if get_theta(g) > 0.3]
+            if len(grasp_over03)==0:
+                grasp_over0 = [(g, s) for g, s in zip(grasps, scores) if get_theta(g) > 0.0]
+                grasps, scores = zip(*grasp_over0)
+            else:
+                grasps, scores = zip(*grasp_over03)
+        else:
+            grasps, scores = zip(*grasp_over07)
+        #grasps, scores = zip(*[(g, s) for g, s in zip(grasps, scores) if get_theta(g) > 0.7]) #0.8
         #grasps, scores = zip(*[(g, s) for g, s in zip(grasps, scores) if (np.trace(g[:3, :3])-1) / 2 > 0.8])
+
         grasps, scores = zip(*sorted(zip(grasps, scores), key=lambda x: x[1]))
         filtered_grasps_cam = {segmap_id: grasps[:num_K]}
         filtered_scores = {segmap_id: scores[:num_K]}

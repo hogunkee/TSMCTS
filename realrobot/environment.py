@@ -43,6 +43,7 @@ class RealEnvironment:
 
         rgb, depth = self.get_observation(move_ur5)
         detections = self.GSAM.get_masks(rgb, classes)
+        class_id = detections.class_id
         segmap = np.zeros(depth.shape)
         for i, m in enumerate(detections.mask):
             segmap[m] = i+1
@@ -62,7 +63,8 @@ class RealEnvironment:
                 'segmentation_raw': segmap,
                 'rgb': rgb_pad,
                 'depth': depth_pad,
-                'segmentation': segmap_pad
+                'segmentation': segmap_pad,
+                'class_id': class_id
                 }
         self.INIT_JOINTS = self.UR5.get_joint_states()
         self.current_classes = classes
@@ -145,6 +147,74 @@ class RealEnvironment:
         self.place(placement, stop=stop)
 
         return self.reset(self.current_classes)
+
+    def check_picknplace(self, target_object, stop=True):
+        if stop:
+            check_go = self.check_go
+        else:
+            def check_go():
+                return None
+        rgb = self.current_obs['rgb_raw']
+        depth = self.current_obs['depth_raw']
+        segmap = self.current_obs['segmentation_raw']
+
+        class_id = self.current_obs['class_id'][target_object-1]
+        object_class = self.current_classes[class_id]
+        if object_class.lower() in ['cup']:
+            delta_z = -0.05
+        elif object_class.lower() in ['bowl']:
+            delta_z = -0.03
+        elif object_class.lower() in ['clock', 'teapot']:
+            delta_z = -0.015
+        else:
+            delta_z = 0
+
+        # 1. Find the target object.
+        grasps, scores = self.CGN.get_grasps(rgb, depth, segmap, target_object, num_K=1, show_result=False)
+        grasp = grasps[0]
+
+        # 2. Pick
+        target_pose = grasp[:3, 3]
+        target_rot = grasp[:3,:3]
+        #print('grasp:', grasp)
+
+        delta_t = np.dot(target_rot, np.array([[0, 0, -0.1+delta_z]]).T).T[0]
+        pre_grasp1 = form_T(target_rot, target_pose+delta_t)
+        pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1, self.init_eef_P)
+        #print('pose 1:', pre_grasp1)
+
+        delta_t = np.dot(target_rot, np.array([[0, 0, -0.05+delta_z]]).T).T[0]
+        pre_grasp2 = form_T(target_rot, target_pose+delta_t)
+        pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2, self.init_eef_P)
+        #print('pose 2:', pre_grasp2)
+
+        check_go()
+        self.UR5.get_view(pos1, quat1)
+        check_go()
+        self.UR5.get_view(pos2, quat2)
+        check_go()
+        self.UR5.get_view(grasp=1.0)
+        check_go()
+        self.UR5.get_view(pos1, quat1, grasp=1.0)
+
+        check_go()
+        self.UR5.get_view(self.UR5.PRE_PLACE_POS, [1,0,0,0], grasp=1.0)
+        #self.UR5.get_view(self.UR5.PRE_PLACE_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
+
+        # 3. Place
+        check_go()
+        self.UR5.get_view(pos2, quat2, grasp=1.0)
+        check_go()
+        self.UR5.get_view(pos2, quat2, grasp=0.0)
+        check_go()
+        self.UR5.get_view(grasp=0.0)
+        check_go()
+        self.UR5.get_view(pos1, quat1, grasp=0.0)
+        check_go()
+        self.UR5.move_to_joints(self.INIT_JOINTS)
+
+        return
+        #return self.reset(self.current_classes)
 
     def pick(self, grasp, stop=True, back_to_init=True): #, grasp_4dof
         if stop:

@@ -42,8 +42,9 @@ class UR5Robot:
 
         theta = np.pi/8
         self.PRE_PLACE_POS = np.array([0.0, -0.35, 0.45])
+        self.ROBOT_INIT_POS = np.array([0.0, -0.2, 0.7])
+        #self.ROBOT_INIT_POS = np.array([0.0, -0.3, 0.6])
         #self.ROBOT_INIT_POS = np.array([0.0, -0.4, 0.6])
-        self.ROBOT_INIT_POS = np.array([0.0, -0.3, 0.6])
         self.ROBOT_INIT_ROTATION = np.array([[1., 0., 0.], 
             [0., -np.cos(theta), -np.sin(theta)], 
             [0., np.sin(theta), -np.cos(theta)]])
@@ -88,7 +89,18 @@ class UR5Robot:
         #print('current:', current_joint)
         current_yaw = current_joint[-1]
         diffs = []
+        joint_candidates = []
         for joint in joint_configs:
+            # joint constraints
+            if not (joint[0] < 0 and joint[0] > -np.pi):
+                continue
+            if not (joint[2] > 0):
+                continue
+            if not (joint[3] > -1.5 * np.pi and joint[3] < 0.2):
+                continue
+            if not (joint[4] > -np.pi and joint[4] < 0):
+                continue
+
             #print(joint)
             yaw = joint[-1]
             yaw_candidates = np.array([yaw - 2*np.pi, yaw, yaw + 2*np.pi])
@@ -97,10 +109,13 @@ class UR5Robot:
             priority = np.array([1, 1, 1, 1, 10, 1])
             diff = np.linalg.norm(priority * (current_joint - joint))
             diffs.append(diff)
+            joint_candidates.append(joint)
         if len(diffs)==0:
             return []
         idx = diffs.index(min(diffs))
-        final_joint_config = joint_configs[idx]
+        final_joint_config = joint_candidates[idx]
+        #final_joint_config = joint_configs[idx]
+        print("Find solutions:", final_joint_config)
         return final_joint_config
 
     def set_rs_bias(self, bias):
@@ -130,7 +145,7 @@ class UR5Robot:
     def get_view(self, goal_pos=None, quat=[1, 0, 0, 0], grasp=0.0, show_img=False):
         # quat: xyzw
         if goal_pos is not None:
-            goal_pos[2] = np.clip(goal_pos[2], 0.21, 0.7)
+            goal_pos[2] = np.clip(goal_pos[2], 0.22, 0.7)
             goal_P = form_T(quat2mat(quat), goal_pos)
             joints = self.solve_ik(goal_P)
             if len(joints)==0:
@@ -182,7 +197,7 @@ class UR5Robot:
             eef_pose, eef_quat = eef_P
         T_robot_to_eef = form_T(quat2mat(eef_quat), eef_pose)
         T_robot_to_grasp = np.dot(T_robot_to_eef, T_eef_to_grasp)
-        #print('goal P:', T_robot_to_grasp)
+        print('goal P:', T_robot_to_grasp)
 
         pos, quat = mat2pose(T_robot_to_grasp)
         return pos, quat
@@ -221,6 +236,7 @@ if __name__=='__main__':
     rgb, depth = UR5.get_view(UR5.ROBOT_INIT_POS, UR5.ROBOT_INIT_QUAT, show_img=True)
     #rgb, depth = RS.get_frames()
     INIT_JOINTS = UR5.get_joint_states()
+    INIT_EEF_P = UR5.get_eef_pose()
 
     classes = ["Orange", "Apple", "Lemon"]
     detections = GSAM.get_masks(rgb, classes)
@@ -246,8 +262,10 @@ if __name__=='__main__':
         grasp_4dof = project_grasp_4dof(grasp)
 
         check_go()
-        pick_pos, pick_quat = UR5.get_goal_from_grasp(grasp)
-        pick_4dof_pos, pick_4dof_quat = UR5.get_goal_from_grasp(grasp_4dof)
+        UR5.get_view(UR5.PRE_PLACE_POS, [1,0,0,0])
+        check_go()
+        pick_pos, pick_quat = UR5.get_goal_from_grasp(grasp, INIT_EEF_P)
+        pick_4dof_pos, pick_4dof_quat = UR5.get_goal_from_grasp(grasp_4dof, INIT_EEF_P)
         #UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_4dof_quat)
         #check_go()
         UR5.get_view(pick_pos + np.array([0, 0, 0.1]), pick_quat)

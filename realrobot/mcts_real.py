@@ -852,7 +852,8 @@ if __name__=='__main__':
         
         # Initial state
         #classes = ["Apple. Lemon. Orange. Fruit."]
-        classes = [args.classes]
+        #classes = ["Apple", "Lemon", "Orange", "Fruit"]
+        classes = args.classes.replace(" ", "").replace(",", ".").split(".")
         obs = env.reset(classes)
         initRgb = obs['rgb']
         initSeg = obs['segmentation']
@@ -921,7 +922,7 @@ if __name__=='__main__':
             print('target_object:', target_object)
             print('target_position:', target_position)
             print()
-            obs = env.step(target_object, target_position, rot_angle, stop=False)
+            obs = env.step(target_object, target_position, rot_angle, stop=True)#False)
             currentRgb = obs['rgb']
             currentSeg = obs['segmentation']
             if args.logging:
