@@ -406,7 +406,7 @@ class Renderer(object):
                     rect = cv2.minAreaRect(X)
                     phi = rect[2]
             for r in range(numRotations):
-                angle = phi / np.pi * 180 + r * 180 / numRotations
+                angle = phi + r * 180 / numRotations
                 #angle = phi / np.pi * 180 + r * 90
                 height, width = mask.shape[:2]
                 matrix = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
