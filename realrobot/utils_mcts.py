@@ -423,7 +423,7 @@ class Renderer(object):
                 #plt.show()
                 #print(angle)
                 rotatedObjMasks[r].append(mask_rotated)
-                rotatedAngles[r].append(angle)#-np.pi/2)
+                rotatedAngles[r].append(angle)
 
         objectPatches = [objPatches] + rotatedObjPatches
         objectMasks = [objMasks] + rotatedObjMasks
