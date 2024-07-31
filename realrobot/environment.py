@@ -116,6 +116,18 @@ class RealEnvironment:
         depth = self.current_obs['depth_raw']
         segmap = self.current_obs['segmentation_raw']
 
+        # Grasp Offset according to the Object Category 
+        class_id = self.current_obs['class_id'][target_object-1]
+        object_class = self.current_classes[class_id]
+        if object_class.lower() in ['cup']:
+            delta_z = -0.05
+        elif object_class.lower() in ['bowl']:
+            delta_z = -0.03
+        elif object_class.lower() in ['clock', 'teapot']:
+            delta_z = -0.015
+        else:
+            delta_z = 0.
+
         # 1. Pick up the target object.
         grasps, scores = self.CGN.get_grasps(rgb, depth, segmap, target_object, num_K=1, show_result=False) #True
         #print('grasp:', grasps[0])
@@ -129,7 +141,7 @@ class RealEnvironment:
         #print("Delta Center:", delta_center)
 
         #grasp_4dof = project_grasp_4dof(grasp)
-        self.pick(grasp, stop=stop, back_to_init=False)
+        self.pick(grasp, stop=stop, back_to_init=False, delta_z=delta_z)
 
         # 2. Place down at the target position with rotation.
         target_pose = inverse_projection(depth, np.array(target_position), self.RS.K_rs, self.RS.D_rs)
@@ -139,7 +151,7 @@ class RealEnvironment:
         target_pose[:2] -= np.dot(rot_center, delta_center)
 
         roll, pitch, yaw = mat2euler(grasp[:3, :3])
-        yaw += rot_angle
+        yaw += rot_angle - np.pi/2
         yaw %= 2*np.pi
         quat = euler2quat([roll, pitch, yaw])
         placement = form_T(quat2mat(quat), target_pose)
@@ -216,7 +228,7 @@ class RealEnvironment:
         return
         #return self.reset(self.current_classes)
 
-    def pick(self, grasp, stop=True, back_to_init=True): #, grasp_4dof
+    def pick(self, grasp, stop=True, back_to_init=True, delta_z=0.): #, grasp_4dof
         if stop:
             check_go = self.check_go
         else:
@@ -227,12 +239,12 @@ class RealEnvironment:
         target_rot = grasp[:3,:3]
         #print('grasp:', grasp)
 
-        delta_t = np.dot(target_rot, np.array([[0, 0, -0.1]]).T).T[0]
+        delta_t = np.dot(target_rot, np.array([[0, 0, -0.1+delta_z]]).T).T[0]
         pre_grasp1 = form_T(target_rot, target_pose+delta_t)
         pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1, self.init_eef_P)
         #print('pose 1:', pre_grasp1)
 
-        delta_t = np.dot(target_rot, np.array([[0, 0, -0.05]]).T).T[0]
+        delta_t = np.dot(target_rot, np.array([[0, 0, -0.05+delta_z]]).T).T[0]
         pre_grasp2 = form_T(target_rot, target_pose+delta_t)
         pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2, self.init_eef_P)
         #print('pose 2:', pre_grasp2)
@@ -252,7 +264,8 @@ class RealEnvironment:
             self.UR5.get_view(self.UR5.ROBOT_INIT_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
         else:
             check_go()
-            self.UR5.get_view(self.UR5.PRE_PLACE_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
+            self.UR5.get_view(self.UR5.PRE_PLACE_POS, [1,0,0,0], grasp=1.0)
+            #self.UR5.get_view(self.UR5.PRE_PLACE_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
 
 
     def place(self, placement, stop=True):
