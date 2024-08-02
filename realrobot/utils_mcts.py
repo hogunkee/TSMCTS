@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from igraph import Graph, EdgeSeq
 from ellipse import LsqEllipse
 from contextlib import contextmanager
+from matplotlib import pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -392,32 +393,35 @@ class Renderer(object):
             if len(X) < 5:
                 # can be a rectangle
                 rect = cv2.minAreaRect(X)
-                phi = rect[2]
-                print("Rectangle phi:", phi)
+                phi = rect[2] + 90
+                #print("Rectangle phi:", phi)
             else:
                 try:
                     reg = LsqEllipse().fit(X)
                     center, width, height, phi = reg.as_parameters()
-                    print("Ellipse phi:", phi)
+                    #print("Ellipse phi:", phi)
                     phi = phi * 180 / np.pi
-                    print("Modifed phi:", phi)
+                    #print("Modifed phi:", phi)
                     if np.abs(width-height) < 6:
                         # can be a rectangle
                         rect = cv2.minAreaRect(X)
-                        phi = rect[2]
-                        print("Rectangle phi:", phi)
+                        phi = rect[2] + 90
+                        #print("Rectangle phi:", phi)
                 except:
                     rect = cv2.minAreaRect(X)
-                    phi = rect[2]
-                    print("Rectangle phi:", phi)
+                    phi = rect[2] + 90
+                    #print("Rectangle phi:", phi)
             for r in range(numRotations):
                 angle = phi + r * 180 / numRotations
                 #angle = phi / np.pi * 180 + r * 90
                 height, width = mask.shape[:2]
                 matrix = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
-                patch_rotated = cv2.warpAffine(patch, matrix, (width, height))
-                mask_rotated = cv2.warpAffine(mask, matrix, (width, height))
+                patch_rotated = cv2.warpAffine(patch.copy(), matrix, (width, height))
+                mask_rotated = cv2.warpAffine(mask.copy(), matrix, (width, height))
                 rotatedObjPatches[r].append(patch_rotated)
+                #plt.imshow(patch_rotated/255.)
+                #plt.show()
+                #print(angle)
                 rotatedObjMasks[r].append(mask_rotated)
                 rotatedAngles[r].append(angle)
 

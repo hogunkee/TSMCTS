@@ -392,7 +392,7 @@ class Renderer(object):
             if len(X) < 5:
                 # can be a rectangle
                 rect = cv2.minAreaRect(X)
-                phi = rect[2]
+                phi = rect[2] + 90
             else:
                 try:
                     reg = LsqEllipse().fit(X)
@@ -401,17 +401,17 @@ class Renderer(object):
                     if np.abs(width-height) < 6:
                         # can be a rectangle
                         rect = cv2.minAreaRect(X)
-                        phi = rect[2]
+                        phi = rect[2] + 90
                 except:
                     rect = cv2.minAreaRect(X)
-                    phi = rect[2]
+                    phi = rect[2] + 90
             for r in range(numRotations):
                 angle = phi + r * 180 / numRotations
                 #angle = phi / np.pi * 180 + r * 90
                 height, width = mask.shape[:2]
                 matrix = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
-                patch_rotated = cv2.warpAffine(patch, matrix, (width, height))
-                mask_rotated = cv2.warpAffine(mask, matrix, (width, height))
+                patch_rotated = cv2.warpAffine(patch.copy(), matrix, (width, height))
+                mask_rotated = cv2.warpAffine(mask.copy(), matrix, (width, height))
                 rotatedObjPatches[r].append(patch_rotated)
                 rotatedObjMasks[r].append(mask_rotated)
                 rotatedAngles[r].append(angle)
