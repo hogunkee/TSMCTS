@@ -22,7 +22,13 @@ class GroundedSAM:
     SAM_ENCODER_VERSION = "vit_h"
     SAM_CHECKPOINT_PATH = os.path.join(GSAM_PATH, "./sam_vit_h_4b8939.pth")
 
-    def __init__(self):
+    def __init__(self, gsam_path=None):
+        if gsam_path is not None:
+            self.GSAM_PATH = gsam_path
+            self.GROUNDING_DINO_CONFIG_PATH = os.path.join(gsam_path, "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py")
+            self.GROUNDING_DINO_CHECKPOINT_PATH = os.path.join(gsam_path, "./groundingdino_swint_ogc.pth")
+            self.SAM_CHECKPOINT_PATH = os.path.join(gsam_path, "./sam_vit_h_4b8939.pth")
+
         # Building GroundingDINO inference model
         self.grounding_dino_model = Model(
                 model_config_path=self.GROUNDING_DINO_CONFIG_PATH, 
