@@ -104,6 +104,9 @@ class ContactGraspNet:
                                         self.sess, pc_full, pc_segments=pc_segments, 
                                         local_regions=local_regions, filter_grasps=filter_grasps,
                                         forward_passes=forward_passes)
+        if segmap_id not in pred_grasps_cam:
+            print('# grasps: 0')
+            return [], []
         grasps = pred_grasps_cam[segmap_id]
         scores = pred_scores[segmap_id]
         print('# grasps:', len(grasps))
@@ -116,7 +119,10 @@ class ContactGraspNet:
             grasp_over03 = [(g, s) for g, s in zip(grasps, scores) if get_theta(g) > 0.3]
             if len(grasp_over03)==0:
                 grasp_over0 = [(g, s) for g, s in zip(grasps, scores) if get_theta(g) > 0.0]
-                grasps, scores = zip(*grasp_over0)
+                if len(grasp_over0)==0:
+                    return [], []
+                else:
+                    grasps, scores = zip(*grasp_over0)
             else:
                 grasps, scores = zip(*grasp_over03)
         else:

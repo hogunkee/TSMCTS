@@ -46,6 +46,7 @@ class GroundedSAM:
         #NMS_THRESHOLD = 0.8
 
         # detect objects
+        image = cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR)
         detections = self.grounding_dino_model.predict_with_classes(
             image=image,
             classes=classes,
@@ -54,6 +55,7 @@ class GroundedSAM:
         )
 
         if save_image:
+            print("Save images...")
             # annotate image with detections
             box_annotator = sv.BoxAnnotator()
             labels = [
@@ -63,6 +65,7 @@ class GroundedSAM:
             annotated_frame = box_annotator.annotate(scene=image.copy(), detections=detections, labels=labels)
 
             # save the annotated grounding dino image
+            cv2.imwrite("outputs/input_image.jpg", image)
             cv2.imwrite("outputs/groundingdino_annotated_image.jpg", annotated_frame)
 
 

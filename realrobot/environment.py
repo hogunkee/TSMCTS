@@ -1,5 +1,6 @@
 from utils_ur5 import *
 from utils_sim2real import inverse_projection
+from ellipse import LsqEllipse
 
 class RealEnvironment:
     def __init__(self, args):
@@ -42,7 +43,7 @@ class RealEnvironment:
         #    self.default_depth = np.load('default_depth.npy')
 
         rgb, depth = self.get_observation(move_ur5)
-        detections = self.GSAM.get_masks(rgb, classes)
+        detections = self.GSAM.get_masks(rgb, classes, save_image=True)
         class_id = detections.class_id
         segmap = np.zeros(depth.shape)
         for i, m in enumerate(detections.mask):
@@ -182,23 +183,91 @@ class RealEnvironment:
             delta_z = 0
 
         # 1. Find the target object.
+        use_rulebased_grasp = False 
         grasps, scores = self.CGN.get_grasps(rgb, depth, segmap, target_object, num_K=1, show_result=False)
-        grasp = grasps[0]
+        if len(grasps)==0:
+            print('Rule-based grasp:')
+            py, px = np.where(segmap==target_object)
+            X = np.array(list(zip(py, px)))
+            #X = np.array(list(zip(*np.where(segmap==target_object))))
+            reg = LsqEllipse().fit(X)
+            center, width, height, phi = reg.as_parameters()
+
+            print('width:', width)
+            print('height:', height)
+            if max(width, height)<7:
+                grasp_type = 'wrong'
+                return
+            elif width>2*height or height>2*width:
+                #elif min(width, height)<7:
+                # marker, fork, knife, banana, etc.
+                grasp_type = 'center'
+            else:
+                # plate
+                grasp_type = 'boundary'
+            if height > width:
+                phi += np.pi/2
+            print('Type:', grasp_type)
+
+            if grasp_type=='center':
+                center = np.array([np.mean(px), (4*py.min() + py.max())/5]).astype(int)
+                #center = np.array([np.mean(px), np.mean(py)]).astype(int)
+                translation = inverse_projection(depth, center, self.RS.K_rs, self.RS.D_rs)
+            elif grasp_type=='boundary':
+                cx = px[py==py.mean().astype(int)].max()
+                cy = (5*py.min() + py.max())/6
+                #cx = px.mean().astype(int)
+                #cy = py[px==px.mean().astype(int)].max()
+                #cx = px[py==py.mean().astype(int)].max()
+                #cy = py.mean().astype(int)
+                point = np.array([cx, cy]).astype(int)
+                print('point:', point)
+                translation = inverse_projection(depth, point, self.RS.K_rs, self.RS.D_rs)
+
+            rot = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
+            if grasp_type=='center':
+                rot = np.dot(quat2mat(euler2quat([0, 0, -phi])), rot)
+            elif grasp_type=='boundary':
+                pass
+            grasp = form_T(rot, translation)
+            use_rulebased_grasp = True
+        else:
+            print('GCN grasp:')
+            grasp = grasps[0]
+            use_rulebased_grasp = False 
+        print('grasp:', grasp)
 
         # 2. Pick
         target_pose = grasp[:3, 3]
         target_rot = grasp[:3,:3]
         #print('grasp:', grasp)
 
-        delta_t = np.dot(target_rot, np.array([[0, 0, -0.1+delta_z]]).T).T[0]
-        pre_grasp1 = form_T(target_rot, target_pose+delta_t)
-        pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1, self.init_eef_P)
-        #print('pose 1:', pre_grasp1)
+        if use_rulebased_grasp:
+            delta_z = -0.12
+            delta_t = np.dot(target_rot, np.array([[0, 0, -0.1+delta_z]]).T).T[0]
+            pre_grasp1 = form_T(target_rot, target_pose+delta_t)
+            pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1, self.init_eef_P)
+            if use_rulebased_grasp:
+                quat1 = euler2quat([np.pi, 0, mat2euler(quat2mat(quat1))[2]])
+            #print('pose 1:', pre_grasp1)
 
-        delta_t = np.dot(target_rot, np.array([[0, 0, -0.05+delta_z]]).T).T[0]
-        pre_grasp2 = form_T(target_rot, target_pose+delta_t)
-        pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2, self.init_eef_P)
-        #print('pose 2:', pre_grasp2)
+            delta_t = np.dot(target_rot, np.array([[0, 0, -0.05+delta_z]]).T).T[0]
+            pre_grasp2 = form_T(target_rot, target_pose+delta_t)
+            pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2, self.init_eef_P)
+            if use_rulebased_grasp:
+                quat2 = euler2quat([np.pi, 0, mat2euler(quat2mat(quat2))[2]])
+            #print('pose 2:', pre_grasp2)
+
+        else:
+            delta_t = np.dot(target_rot, np.array([[0, 0, -0.1+delta_z]]).T).T[0]
+            pre_grasp1 = form_T(target_rot, target_pose+delta_t)
+            pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1, self.init_eef_P)
+            #print('pose 1:', pre_grasp1)
+
+            delta_t = np.dot(target_rot, np.array([[0, 0, -0.05+delta_z]]).T).T[0]
+            pre_grasp2 = form_T(target_rot, target_pose+delta_t)
+            pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2, self.init_eef_P)
+            #print('pose 2:', pre_grasp2)
 
         check_go()
         self.UR5.get_view(pos1, quat1)
