@@ -41,7 +41,7 @@ class UR5Robot:
         self.rs = realsense
 
         theta = np.pi/8
-        self.PRE_PLACE_POS = np.array([0.0, -0.3, 0.6])
+        self.PRE_PLACE_POS = np.array([0.2, -0.3, 0.6])
         self.ROBOT_INIT_POS = np.array([0.0, -0.2, 0.7])
         #self.ROBOT_INIT_POS = np.array([0.0, -0.3, 0.6])
         #self.ROBOT_INIT_POS = np.array([0.0, -0.4, 0.6])
@@ -74,49 +74,52 @@ class UR5Robot:
         self.ur5_kin = ikfastpy.PyKinematics()
         self.n_joints = 6
 
-    def solve_ik(self, ee_pose):
+    def solve_ik(self, ee_pose, num_solve=1):
         # ee_pose: 3x4 rigid transform matrix
-        if ee_pose.shape[0]==4 and ee_pose.shape[1]==4:
-            ee_pose = ee_pose[:3]
-        ee_pose = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]).dot(ee_pose)
-        #print(ee_pose)
-        joint_configs = self.ur5_kin.inverse(ee_pose.reshape(-1).tolist())
-        n_solutions = int(len(joint_configs) / self.n_joints)
-        joint_configs = np.asarray(joint_configs).reshape(n_solutions, self.n_joints)
+        for n in range(num_solve):
+            if ee_pose.shape[0]==4 and ee_pose.shape[1]==4:
+                ee_pose = ee_pose[:3]
+            if n>0:
+                ee_pose[-1][-1] += 0.001
+            ee_pose = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]).dot(ee_pose)
+            #print(ee_pose)
+            joint_configs = self.ur5_kin.inverse(ee_pose.reshape(-1).tolist())
+            n_solutions = int(len(joint_configs) / self.n_joints)
+            joint_configs = np.asarray(joint_configs).reshape(n_solutions, self.n_joints)
 
-        # find the cloest solution
-        current_joint = self.get_joint_states()
-        #print('current:', current_joint)
-        current_yaw = current_joint[-1]
-        diffs = []
-        joint_candidates = []
-        for joint in joint_configs:
-            # joint constraints
-            if not (joint[0] < 0 and joint[0] > -np.pi):
-                continue
-            if not (joint[2] > 0):
-                continue
-            if not (joint[3] > -1.5 * np.pi and joint[3] < 0.2):
-                continue
-            if not (joint[4] > -np.pi and joint[4] < 0):
-                continue
+            # find the cloest solution
+            current_joint = self.get_joint_states()
+            #print('current:', current_joint)
+            current_yaw = current_joint[-1]
+            diffs = []
+            joint_candidates = []
+            for joint in joint_configs:
+                # joint constraints
+                if not (joint[0] < 0 and joint[0] > -np.pi):
+                    continue
+                if not (joint[2] > 0):
+                    continue
+                if not (joint[3] > -1.5 * np.pi and joint[3] < 0.2):
+                    continue
+                if not (joint[4] > -np.pi and joint[4] < 0):
+                    continue
 
-            #print(joint)
-            yaw = joint[-1]
-            yaw_candidates = np.array([yaw - 2*np.pi, yaw, yaw + 2*np.pi])
-            yaw_nearest = yaw_candidates[np.argmin((current_yaw - yaw_candidates)**2)]
-            joint[-1] = yaw_nearest
-            priority = np.array([1, 1, 1, 1, 10, 1])
-            diff = np.linalg.norm(priority * (current_joint - joint))
-            diffs.append(diff)
-            joint_candidates.append(joint)
-        if len(diffs)==0:
-            return []
-        idx = diffs.index(min(diffs))
-        final_joint_config = joint_candidates[idx]
-        #final_joint_config = joint_configs[idx]
-        print("Find solutions:", final_joint_config)
-        return final_joint_config
+                #print(joint)
+                yaw = joint[-1]
+                yaw_candidates = np.array([yaw - 2*np.pi, yaw, yaw + 2*np.pi])
+                yaw_nearest = yaw_candidates[np.argmin((current_yaw - yaw_candidates)**2)]
+                joint[-1] = yaw_nearest
+                priority = np.array([1, 1, 1, 1, 10, 1])
+                diff = np.linalg.norm(priority * (current_joint - joint))
+                diffs.append(diff)
+                joint_candidates.append(joint)
+            if len(diffs)==0:
+                return []
+            idx = diffs.index(min(diffs))
+            final_joint_config = joint_candidates[idx]
+            #final_joint_config = joint_configs[idx]
+            print("Find solutions:", final_joint_config)
+            return final_joint_config
 
     def set_rs_bias(self, bias):
         print("Add bias:", bias)
@@ -142,12 +145,12 @@ class UR5Robot:
             # move to the view
             self.move_group.execute(res[1], wait=True)
 
-    def get_view(self, goal_pos=None, quat=[1, 0, 0, 0], grasp=0.0, show_img=False):
+    def get_view(self, goal_pos=None, quat=[1, 0, 0, 0], grasp=0.0, show_img=False, num_solve=1):
         # quat: xyzw
         if goal_pos is not None:
             goal_pos[2] = np.clip(goal_pos[2], 0.21, 0.7) #0.22
             goal_P = form_T(quat2mat(quat), goal_pos)
-            joints = self.solve_ik(goal_P)
+            joints = self.solve_ik(goal_P, num_solve)
             if len(joints)==0:
                 pose_goal = geometry_msgs.msg.Pose()
                 pose_goal.orientation.x = quat[0]

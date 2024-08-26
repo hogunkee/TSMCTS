@@ -392,13 +392,13 @@ class MCTS(object):
         if len(probMap.shape)==3:
             probMap[:, :3, :] = 0
             probMap[:, -3:, :] = 0
-            probMap[:, :, :3] = 0
-            probMap[:, :, -3:] = 0
+            probMap[:, :, :4] = 0 #3
+            probMap[:, :, -4:] = 0 #3
         else:
             probMap[:, :, :3, :] = 0
             probMap[:, :, -3:, :] = 0
-            probMap[:, :, :, :3] = 0
-            probMap[:, :, :, -3:] = 0
+            probMap[:, :, :, :4] = 0 #3
+            probMap[:, :, :, -4:] = 0 #3
         return probMap
     
     def getPossibleActions(self, node, policy='random'):
