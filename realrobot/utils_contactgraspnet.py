@@ -13,14 +13,11 @@ class RealSense:
     def __init__(self):
         self.pipeline = rs.pipeline()
         self.config = rs.config()
-        self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-        self.config.enable_stream(rs.stream.color, 640, 480, rs.format.rgb8, 30)
-
-        # Start streaming
-        self.cfg = self.pipeline.start(self.config)
+        self.config_pipe()
         self.align = rs.align(rs.stream.color)
 
         # Get camera instrinsics
+        self.cfg = self.pipeline.start(self.config)
         color_profile = self.cfg.get_stream(rs.stream.color, 0)
         intr = color_profile.as_video_stream_profile().get_intrinsics()
         fx, fy, height, width = intr.fx, intr.fy, intr.height, intr.width
@@ -29,11 +26,24 @@ class RealSense:
                            [0, fy, cy],
                            [0, 0, 1]])
         self.D_rs = 0
+        self.stop()
+
         rospy.sleep(2.0)
 
-    def get_frames(self):
-        frames = self.pipeline.wait_for_frames()
-        frames = self.align.process(frames)
+    def config_pipe(self):
+        self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+        self.config.enable_stream(rs.stream.color, 640, 480, rs.format.rgb8, 30)
+
+    def get_frames(self, stop_pipe=False):
+        if not self._running:
+            self.start()
+        try:
+            frames = self.pipeline.wait_for_frames()
+            frames = self.align.process(frames)
+        except:
+            print("Failed to get frames..")
+            self.stop()
+            return None, None
         depth_frame = frames.get_depth_frame()
         color_frame = frames.get_color_frame()
         if not depth_frame or not color_frame:
@@ -42,7 +52,33 @@ class RealSense:
         # Convert images to numpy arrays
         depth_image = np.asanyarray(depth_frame.get_data()) * 0.001
         color_image = np.asanyarray(color_frame.get_data())
+        if stop_pipe:
+            if self._running:
+                self.stop()
         return color_image, depth_image
+
+    def start(self):
+        self.config_pipe()
+        self.pipeline.start(self.config)
+        rospy.sleep(1.0)
+        try:
+            for i in range(2):
+                #print(i)
+                self.pipeline.wait_for_frames()
+        except:
+            print('Failed to start the pipeline..')
+            self.pipeline.stop()
+            self._running = False
+            return
+        self._running = True
+        return
+
+    def stop(self):
+        try:
+            self.pipeline.stop()
+        except:
+            pass
+        self._running = False
 
 import sys
 import tensorflow.compat.v1 as tf

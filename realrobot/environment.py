@@ -8,6 +8,7 @@ class RealEnvironment:
         self.CGN = ContactGraspNet(K=self.RS.K_rs)
         self.UR5 = UR5Robot(self.RS)
         self.GSAM = GroundedSAM()
+        self.depth_bg = np.load('depth_init.npy')
 
         self.INIT_JOINTS = None
         self.current_classes = None
@@ -129,8 +130,17 @@ class RealEnvironment:
         else:
             delta_z = 0.
 
+        # Rule-based grasp for low-height objects. #
+        depth_delta = (self.depth_bg - depth) * (segmap==target_object)
+        depth_delta = depth_delta[depth_delta<0.3]
+        if depth_delta.max() < 0.05:
+            use_rulebased_grasp = True
+            grasps, score = [], []
+        else:
+            use_rulebased_grasp = False
+            grasps, scores = self.CGN.get_grasps(rgb, depth, segmap, target_object, num_K=1, show_result=False) #True
+
         # 1. Pick up the target object.
-        grasps, scores = self.CGN.get_grasps(rgb, depth, segmap, target_object, num_K=1, show_result=False) #True
         if len(grasps)==0:
             print('Rule-based grasp:')
             py, px = np.where(segmap==target_object)
@@ -164,12 +174,15 @@ class RealEnvironment:
             print('Type:', grasp_type)
 
             if grasp_type=='center':
-                center = np.array([np.mean(px), (4*py.min() + py.max())/5]).astype(int)
+                #center = np.array([np.mean(px), (4*py.min() + py.max())/5]).astype(int)
+                center = np.array([np.mean(px), np.mean(py)-40]).astype(int)
                 #center = np.array([np.mean(px), np.mean(py)]).astype(int)
                 translation = inverse_projection(depth, center, self.RS.K_rs, self.RS.D_rs)
             elif grasp_type=='boundary':
                 cx = px[py==py.mean().astype(int)].max()
-                cy = (5*py.min() + py.max())/6
+                #cy = (5*py.min() + py.max())/6
+                cy = py.mean()-40
+                #cx = px.mean().astype(int)
                 #cx = px.mean().astype(int)
                 #cy = py[px==px.mean().astype(int)].max()
                 #cx = px[py==py.mean().astype(int)].max()
@@ -382,10 +395,20 @@ class RealEnvironment:
             quat2 = euler2quat([np.pi, 0, mat2euler(quat2mat(quat2))[2]])
         #print('pose 2:', pre_grasp2)
 
+        #check_go()
+        #self.UR5.get_view(self.UR5.PRE_PLACE_POS, self.UR5.ROBOT_INIT_QUAT) #[1,0,0,0])
         check_go()
-        self.UR5.get_view(self.UR5.PRE_PLACE_POS, self.UR5.ROBOT_INIT_QUAT) #[1,0,0,0])
-        check_go()
-        self.UR5.get_view(pos1, quat1, num_solve=10)
+        if pos1[0] > 0:
+            self.UR5.get_view(self.UR5.PRE_GRASP_POS_1, self.UR5.ROBOT_INIT_QUAT) #[1,0,0,0])
+        else:
+            self.UR5.get_view(self.UR5.PRE_GRASP_POS_2, self.UR5.ROBOT_INIT_QUAT) #[1,0,0,0])
+
+        if rulebased:
+            check_go()
+            self.UR5.get_view(pos2+np.array([0, 0, 0.1]), quat2, num_solve=10)
+        else:
+            check_go()
+            self.UR5.get_view(pos1, quat1, num_solve=10)
         check_go()
         self.UR5.get_view(pos2, quat2)
         check_go()

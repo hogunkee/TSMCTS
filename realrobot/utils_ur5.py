@@ -41,6 +41,8 @@ class UR5Robot:
         self.rs = realsense
 
         theta = np.pi/8
+        self.PRE_GRASP_POS_1 = np.array([0.2, -0.3, 0.55])
+        self.PRE_GRASP_POS_2 = np.array([0., -0.35, 0.55])
         self.PRE_PLACE_POS = np.array([0.2, -0.3, 0.6])
         self.ROBOT_INIT_POS = np.array([0.0, -0.2, 0.7])
         #self.ROBOT_INIT_POS = np.array([0.0, -0.3, 0.6])
