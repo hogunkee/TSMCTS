@@ -18,18 +18,20 @@ import datetime
 import random
 import pybullet as p
 from matplotlib import pyplot as plt
-from pc_utils import get_raw_data, setupEnvironment
+from utils_pc import depth2pointcloud, get_raw_data #, setupEnvironment
 from transform_utils import mat2quat
 
+from environment import RealEnvironment
+
 # tabletop environment
-import sys
-FILE_PATH = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
-from custom_env import get_contact_objects, quaternion_multiply
-sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
-from collect_template_list import scene_list
-sys.path.append(os.path.join(FILE_PATH, '..', 'mcts'))
-from utils import suppress_stdout
+#import sys
+#FILE_PATH = os.path.dirname(os.path.abspath(__file__))
+#sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
+#from custom_env import get_contact_objects, quaternion_multiply
+#sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
+#from collect_template_list import scene_list
+#sys.path.append(os.path.join(FILE_PATH, '..', 'mcts'))
+#from utils import suppress_stdout
 
 
 def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config, args):
@@ -40,7 +42,6 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
     # Logger
     now = datetime.datetime.now()
     log_name = now.strftime("%m%d_%H%M")
-    log_name += '-' + args.view
     # logname = 'SF-' + log_name
 
     # Random seed
@@ -51,47 +52,7 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
         np.random.seed(seed)
 
     # Environment setup
-    with suppress_stdout():
-        env = setupEnvironment(args)
-    scenes = sorted(list(scene_list.keys()))
-    if args.scenes=='':
-        if args.scene_split=='unseen':
-            scenes = [s for s in scenes if s in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-        elif args.scene_split=='seen':
-            scenes = [s for s in scenes if s not in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-    else:
-        scenes = args.scenes.split(',')
-    if args.inorder:
-        selected_scene = scenes[0]
-        metrics = {}
-        for s in scenes:
-            metrics[s] = {}
-    else:
-        selected_scene = random.choice(scenes)
-    print('Selected scene: %s' %selected_scene)
-
-    objects = scene_list[selected_scene]
-    #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
-    sizes = []
-    for i in range(len(objects)):
-        if 'small' in objects[i]:
-            sizes.append('small')
-            objects[i] = objects[i].replace('small_', '')
-        elif 'large' in objects[i]:
-            sizes.append('large')
-            objects[i] = objects[i].replace('large_', '')
-        else:
-            sizes.append('medium')
-    objects = [[objects[i], sizes[i]] for i in range(len(objects))]
-    if args.num_objects==0: # use the template
-        selected_objects = objects
-    else: # random sampling
-        if len(objects) < args.num_objects:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
-        else:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
-    env.spawn_objects(selected_objects)
-    env.arrange_objects(random=True)
+    env = RealEnvironment(None)
 
     object_selection_inference = ObjectSelectionInference(object_selection_model_dir, dirs_cfg)
     pose_generation_inference = PriorInference(pose_generation_model_dir, dirs_cfg)
@@ -115,64 +76,33 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
             np.random.seed(seed + sidx)
         
         # Initial state
-        with suppress_stdout():
-            obs = env.reset()
-        if args.use_template:
-            if args.inorder:
-                selected_scene = scenes[sidx%len(scenes)]
-            else:
-                selected_scene = random.choice(scenes)
-            print('Selected scene: %s' %selected_scene)
+        classes = args.classes.replace(" ", "").replace(",", ".").split(".")
 
-            objects = scene_list[selected_scene]
-            #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
-            sizes = []
-            for i in range(len(objects)):
-                if 'small' in objects[i]:
-                    sizes.append('small')
-                    objects[i] = objects[i].replace('small_', '')
-                elif 'large' in objects[i]:
-                    sizes.append('large')
-                    objects[i] = objects[i].replace('large_', '')
-                else:
-                    sizes.append('medium')
-            objects = [[objects[i], sizes[i]] for i in range(len(objects))]
-            
-        if args.num_objects==0:
-            selected_objects = objects
-        else:
-            if len(objects) < args.num_objects:
-                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
-            else:
-                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
-        env.spawn_objects(selected_objects)
+        obs = None
+        count = 1
         while True:
-            is_occluded = False
-            is_collision = False
-            env.arrange_objects(random=True)
-            obs = env.get_observation()
-            initRgb = obs['top']['rgb']
-            initSeg = obs['top']['segmentation']
-            # Check occlusions
-            for o in range(len(selected_objects)):
-                # get the segmentation mask of each object #
-                mask = (initSeg==o+4).astype(float)
-                if mask.sum()==0:
-                    print("Object %d is occluded."%o)
-                    is_occluded = True
-                    break
-            # Check collision
-            contact_objects = get_contact_objects()
-            contact_objects = [c for c in list(get_contact_objects()) if 1 not in c and 2 not in c]
-            if len(contact_objects) > 0:
-                print("Collision detected.")
-                print(contact_objects)
-                is_collision = True
-            if is_occluded or is_collision:
-                continue
-            else:
+            if count > 10:
+                exit()
+            if obs is not None:
                 break
-        print('Objects: %s' %[o for o,s in selected_objects])
+            try:
+                obs = env.reset(classes)
+                T_rs = env.UR5.get_T_robot_to_rs()
+            except:
+                print('count:', count)
+                count += 1
+                try:
+                    env.RS.config_pipe()
+                    env.RS.pipeline.start(env.RS.config)
+                    env.RS.pipeline.wait_for_frames()
+                    env.RS.pipeline.stop()
+                except:
+                    pass
+        initRgb = obs['rgb_raw']
+        initDepth = obs['depth_raw']
+        initSeg = obs['segmentation_raw']
+        plt.imshow(initSeg)
+        plt.show()
 
         if args.logging:
             plt.imshow(initRgb)
@@ -180,39 +110,28 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
         
         structure_param = {'length': np.random.uniform(0.25, 0.4),
                            'position': np.random.uniform(0.35, 0.65)}
+
         print("--------------------------------")
         step = 0
+        rgb, depth, seg = initRgb, initDepth, initSeg
         while step<10:
             # from dataset
-            if False:
-                init_datum = object_selection_inference.dataset.get_raw_data(step)
-                goal_specification = init_datum["goal_specification"]
-                xyzs = init_datum["xyzs"]
-                rgbs = init_datum["rgbs"]
-                show_pcs(xyzs, rgbs, side_view=True, add_table=True)
-                object_selection_structured_sentence = init_datum["sentence"][5:]
-                structure_specification_structured_sentence = init_datum["sentence"][:5]
-                init_datum["sentence"] = object_selection_structured_sentence + structure_specification_structured_sentence
-            # from pybullet env
-            else:
-                try:
-                    init_datum = get_raw_data(env.get_observation(), env, structure_param, view=args.view)
-                except:
-                    break
-                # test_datum = test_dataset.get_raw_data(idx)
-                # goal_specification = init_datum["goal_specification"]
-                # xyzs = init_datum["xyzs"] + test_datum["xyzs"]
-                # rgbs = init_datum["rgbs"] + test_datum["rgbs"]
-                # show_pcs(xyzs, rgbs, side_view=True, add_table=True)
-                object_selection_structured_sentence = [('dinner', 'scene'), ('PAD',), ('PAD',), ('PAD',)]
-                structure_specification_structured_sentence = [('dinner', 'shape'),
-                                                            (0.0, 'rotation'),
-                                                            (structure_param['position'], 'position_x'),
-                                                            (0.0, 'position_y'),
-                                                            ('PAD',)]
-                # object_selection_structured_sentence = init_datum["sentence"][5:]
-                # structure_specification_structured_sentence = init_datum["sentence"][:5]
-                # init_datum["sentence"] = object_selection_structured_sentence + structure_specification_structured_sentence
+            xyz, rgb = depth2pointcloud(depth, rgb, env.RS.K_rs, T_rs)
+            init_datum = get_raw_data(rgb, xyz, depth, seg, structure_param, max_num_objects=10)
+
+            # test_datum = test_dataset.get_raw_data(idx)
+            # goal_specification = init_datum["goal_specification"]
+            # xyzs = init_datum["xyzs"] + test_datum["xyzs"]
+            # rgbs = init_datum["rgbs"] + test_datum["rgbs"]
+            # show_pcs(xyzs, rgbs, side_view=True, add_table=True)
+            object_selection_structured_sentence = [('dinner', 'scene'), ('PAD',), ('PAD',), ('PAD',)]
+            structure_specification_structured_sentence = [
+                                                ('dinner', 'shape'),
+                                                (0.0, 'rotation'),
+                                                (structure_param['position'], 'position_x'),
+                                                (0.0, 'position_y'),
+                                                ('PAD',)]
+
             object_selection_natural_sentence = object_selection_inference.tokenizer.convert_to_natural_sentence(object_selection_structured_sentence)
             structure_specification_natural_sentence = object_selection_inference.tokenizer.convert_structure_params_to_natural_language(structure_specification_structured_sentence)
 
@@ -223,6 +142,8 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
                 gts = np.ones(num_obj)
             else:
                 predictions, gts = object_selection_inference.predict_target_objects(init_datum)
+
+            print('Predictions:', predictions)
 
             all_obj_xyzs = init_datum["xyzs"][:len(predictions)]
             all_obj_rgbs = init_datum["rgbs"][:len(predictions)]
@@ -237,10 +158,12 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
 
             print("\nSelect objects to rearrange...")
             print("Instruction:", object_selection_natural_sentence)
-            if not args.gui_off:
+            if args.visualize:
                 print("Visualize groundtruth (dot color) and prediction (ring color)")
-                show_pcs_with_predictions(init_datum["xyzs"][:len(predictions)], init_datum["rgbs"][:len(predictions)],
-                                        gts, predictions, add_table=True, side_view=True)
+                show_pcs_with_predictions(
+                        init_datum["xyzs"][:len(predictions)], 
+                        init_datum["rgbs"][:len(predictions)], 
+                        gts, predictions, add_table=True, side_view=True)
                 print("Visualize object to rearrange")
                 show_pcs(obj_xyzs, obj_rgbs, side_view=True, add_table=True)
 
@@ -256,17 +179,17 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
                 other_obj_xyzs = other_obj_xyzs[:max_num_other_objects]
                 other_obj_rgbs = other_obj_rgbs[:max_num_other_objects]
 
-            pose_generation_datum = pose_generation_inference.dataset.prepare_test_data(obj_xyzs, obj_rgbs,
-                                                                                        other_obj_xyzs, other_obj_rgbs,
-                                                                                        {'length': structure_param['length'],
-                                                                                        'length_increment': 0.05, 
-                                                                                        'max_length': 1.0, 
-                                                                                        'min_length': 0.0, 
-                                                                                        'place_at_once': 'False', 
-                                                                                        'position': [structure_param['position'], 0.0, 0.0], 
-                                                                                        'rotation': [0.0, -0.0, 0.0], 
-                                                                                        'type': 'dinner', 
-                                                                                        'uniform_space': 'False'})
+            pose_generation_datum = pose_generation_inference.dataset.prepare_test_data(
+                                        obj_xyzs, obj_rgbs, other_obj_xyzs, other_obj_rgbs,
+                                        {'length': structure_param['length'],
+                                        'length_increment': 0.05, 
+                                        'max_length': 1.0, 
+                                        'min_length': 0.0, 
+                                        'place_at_once': 'False', 
+                                        'position': [structure_param['position'], 0.0, 0.0], 
+                                        'rotation': [0.0, -0.0, 0.0], 
+                                        'type': 'dinner', 
+                                        'uniform_space': 'False'})
             datum = copy.deepcopy(pose_generation_datum)
             beam_pc_rearrangement = PointCloudRearrangement(datum)
 
@@ -303,7 +226,7 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
             print("\nRearrange \"query\" objects...")
             print("Instruction:", structure_specification_natural_sentence)
             
-            if not args.gui_off:
+            if args.visualize:
                 print("Visualize rearranged scene sample")
                 beam_pc_rearrangement.visualize("goal", add_other_objects=True, add_table=True, side_view=True)
 
@@ -320,22 +243,27 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
                 translation = translation * ratio
                 # translation[2] = 0
 
-                pid = env.pre_selected_objects[init_datum["shuffle_indices"][obj_idxs[obj_idx]]]
-                orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
+                if False:
+                    pid = env.pre_selected_objects[init_datum["shuffle_indices"][obj_idxs[obj_idx]]]
+                    orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
 
-                rot = mat2quat(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
-                new_rot = quaternion_multiply(rot, orig_rot)
+                    rot = mat2quat(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
+                    new_rot = quaternion_multiply(rot, orig_rot)
 
-                # print(orig_pos)
-                p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
-                p.stepSimulation()
+                    # print(orig_pos)
+                    p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
+                    p.stepSimulation()
+
+                    if args.logging:
+                        obs = env.get_observation()
+
+                        obs = env.step(target_object, target_position, rot_angle, stop=True)#False)
+                        currentRgb = obs['rgb_raw']
+                        currentDepth = obs['depth_raw']
+                        currentSeg = obs['segmentation_raw']
+                        plt.imshow(currentRgb)
+                        plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
                 step += 1
-
-                if args.logging:
-                    obs = env.get_observation()
-                    currentRgb = obs['top']['rgb']
-                    plt.imshow(currentRgb)
-                    plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
                 if step >= 10:
                     break
 
@@ -344,18 +272,18 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run a simple model")
-    parser.add_argument("--dataset_base_dir", help='location of the dataset', type=str, 
-                            default='/home/gun/ssd/disk/StructFormer/data_new_objects_test_split')
+    parser.add_argument("--dataset_base_dir", help='location of the dataset', type=str,
+                            default='/home/ur-plusle/Desktop/StructFormer/data_new_objects_test_split')
+
     parser.add_argument("--object_selection_model_dir", help='location for the saved object selection model', type=str,
-                            default='/home/gun/Desktop/StructFormer/models/object_selection_network/best_model')
+                            default='/home/ur-plusle/Desktop/StructFormer/models/object_selection_network/best_model')
     parser.add_argument("--pose_generation_model_dir", help='location for the saved pose generation model', type=str,
-                            default='/home/gun/Desktop/StructFormer/models/structformer_dinner/best_model')
+                            default='/home/ur-plusle/Desktop/StructFormer/models/structformer_dinner/best_model')
     parser.add_argument("--dirs_config", help='config yaml file for directories', type=str,
-                            default='/home/gun/Desktop/StructFormer/configs/data/dinner_dirs.yaml')
+                            default='/home/ur-plusle/Desktop/StructFormer/configs/data/dinner_dirs.yaml')
     # Environment settings
     parser.add_argument('--data-dir', type=str, default='/ssd/disk')
     parser.add_argument("--seed", default=None, type=int)
-    parser.add_argument('--view', type=str, default='front') # 'front' / 'top'
     parser.add_argument('--use-template', action="store_true")
     parser.add_argument('--scenes', type=str, default='D1,D2,D3,D4,D5')
     parser.add_argument('--inorder', action="store_true")
@@ -364,18 +292,23 @@ if __name__ == "__main__":
     parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=16)
-    parser.add_argument('--gui-off', action="store_true")
+    parser.add_argument('--visualize', action="store_true")
     parser.add_argument('--logging', action="store_true")
+    parser.add_argument('--classes', type=str, default="Apple. Lemon. Orange. Fruit.")
     args = parser.parse_args()
 
+    #classes = args.classes.replace(" ", "").replace(",", ".").split(".")
+    args.classes = "Spoon.Fork.Knife.Glass.Cup.Bowl.Basket.Plate.Teapot.Shampoo.Clock.Toothpaste.Tube.Box.Marker.Stapler.Vaseline.Pen.Apple.Orange.Scissors.Box"
+
     os.environ["DATETIME"] = time.strftime("%Y%m%d-%H%M%S")
-    os.environ["STRUCTFORMER"] = "/home/gun/Desktop/StructFormer"
+    os.environ["STRUCTFORMER"] = "/home/ur-plusle/Desktop/StructFormer"
     # # debug only
     # args.dataset_base_dir = "/home/weiyu/data_drive/data_new_objects_test_split"
     # args.object_selection_model_dir = "/home/weiyu/Research/intern/StructFormer/models/object_selection_network/best_model"
     # args.pose_generation_model_dir = "/home/weiyu/Research/intern/StructFormer/models/structformer_circle/best_model"
     # args.dirs_config = "/home/weiyu/Research/intern/StructFormer/configs/data/circle_dirs.yaml"
 
+    #dirs_cfg = None
     if args.dirs_config:
         assert os.path.exists(args.dirs_config), "Cannot find config yaml file at {}".format(args.dirs_config)
         dirs_cfg = OmegaConf.load(args.dirs_config)

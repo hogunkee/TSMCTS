@@ -212,6 +212,12 @@ class UR5Robot:
         #print(quat)
         #return self.get_view(pos, quat, show_img=True)
 
+    def get_T_robot_to_rs(self):
+        eef_pose, eef_quat = self.get_eef_pose()
+        T_robot_to_eef = form_T(quat2mat(eef_quat), eef_pose)
+        T_robot_to_rs = np.dot(T_robot_to_eef, self.T_eef_to_rs)
+        return T_robot_to_rs
+
 
 def project_grasp_4dof(grasp):
     grasp = grasp.copy()
