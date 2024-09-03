@@ -243,12 +243,13 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
                 translation = translation * ratio
                 # translation[2] = 0
 
+                rot = mat2quat(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
+                new_rot = quaternion_multiply(rot, orig_rot)
+
                 if False:
                     pid = env.pre_selected_objects[init_datum["shuffle_indices"][obj_idxs[obj_idx]]]
                     orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
 
-                    rot = mat2quat(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
-                    new_rot = quaternion_multiply(rot, orig_rot)
 
                     # print(orig_pos)
                     p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
@@ -262,7 +263,7 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
                         currentDepth = obs['depth_raw']
                         currentSeg = obs['segmentation_raw']
                         plt.imshow(currentRgb)
-                        plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
+                        plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step)) 
                 step += 1
                 if step >= 10:
                     break
@@ -282,7 +283,7 @@ if __name__ == "__main__":
     parser.add_argument("--dirs_config", help='config yaml file for directories', type=str,
                             default='/home/ur-plusle/Desktop/StructFormer/configs/data/dinner_dirs.yaml')
     # Environment settings
-    parser.add_argument('--data-dir', type=str, default='/ssd/disk')
+    #parser.add_argument('--data-dir', type=str, default='/ssd/disk')
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--use-template', action="store_true")
     parser.add_argument('--scenes', type=str, default='D1,D2,D3,D4,D5')
