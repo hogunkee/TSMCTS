@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import os
 import argparse
+import pyrealsense2 as rs
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 

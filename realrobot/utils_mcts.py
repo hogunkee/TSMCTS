@@ -390,42 +390,77 @@ class Renderer(object):
             py, px = np.where(mask)
             cy, cx = np.round([np.mean(py), np.mean(px)])
             X = np.array(list(zip(px, py)))
+
             if len(X) < 5:
                 # can be a rectangle
                 rect = cv2.minAreaRect(X)
                 width = rect[0][1] - rect[0][0]
                 height = rect[1][1] - rect[1][0]
-                phi = rect[2] + 90
+                phi = rect[2]
                 if height < width:
                     phi += 90
-                #print("Rectangle phi:", phi)
+                # modifying PHI #
+                phi_prime = np.arctan(np.tan(phi*np.pi/180) / np.cos(np.pi/8))
+                if phi > np.pi/2:
+                    phi = phi_prime + np.pi
+                elif phi < -np.pi/2:
+                    phi = phi_prime - np.pi
+                else:
+                    phi = phi_prime
+                phi = phi * 180 / np.pi
+                print("Rectangle phi:", phi)
             else:
                 try:
                     reg = LsqEllipse().fit(X)
                     center, width, height, phi = reg.as_parameters()
-                    if height < width:
-                        phi += np.pi/2
+                    phi += np.pi/2
+                    # modifying PHI #
+                    phi_prime = np.arctan(np.tan(phi) / np.cos(np.pi/8))
+                    if phi > np.pi/2:
+                        phi = phi_prime + np.pi
+                    elif phi < -np.pi/2:
+                        phi = phi_prime - np.pi
+                    else:
+                        phi = phi_prime
                     #print("Ellipse phi:", phi)
                     phi = phi * 180 / np.pi
-                    #print("Modifed phi:", phi)
+                    print("Ellipse phi:", phi)
 
                     # Can be a rectangle
                     if np.abs(width-height) < 6:
                         rect = cv2.minAreaRect(X)
                         width = rect[0][1] - rect[0][0]
                         height = rect[1][1] - rect[1][0]
-                        phi = rect[2] + 90
+                        phi = rect[2]
                         if height < width:
                             phi += 90
-                        #print("Rectangle phi:", phi)
+                        # modifying PHI #
+                        phi_prime = np.arctan(np.tan(phi*np.pi/180) / np.cos(np.pi/8))
+                        if phi > np.pi/2:
+                            phi = phi_prime + np.pi
+                        elif phi < -np.pi/2:
+                            phi = phi_prime - np.pi
+                        else:
+                            phi = phi_prime
+                        phi = phi * 180 / np.pi
+                        print("Rectangle phi:", phi)
                 except:
                     rect = cv2.minAreaRect(X)
                     width = rect[0][1] - rect[0][0]
                     height = rect[1][1] - rect[1][0]
-                    phi = rect[2] + 90
+                    phi = rect[2]
                     if height < width:
                         phi += 90
-                    #print("Rectangle phi:", phi)
+                    # modifying PHI #
+                    phi_prime = np.arctan(np.tan(phi*np.pi/180) / np.cos(np.pi/8))
+                    if phi > np.pi/2:
+                        phi = phi_prime + np.pi
+                    elif phi < -np.pi/2:
+                        phi = phi_prime - np.pi
+                    else:
+                        phi = phi_prime
+                    phi = phi * 180 / np.pi
+                    print("Rectangle phi:", phi)
             for r in range(numRotations):
                 angle = phi + r * 180 / numRotations
                 #angle = phi / np.pi * 180 + r * 90

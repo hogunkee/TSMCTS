@@ -711,7 +711,7 @@ if __name__=='__main__':
     # Inference
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--num-objects', type=int, default=5)
-    parser.add_argument('--num-scenes', type=int, default=10)
+    parser.add_argument('--num-scenes', type=int, default=1)
     parser.add_argument('--H', type=int, default=12)
     parser.add_argument('--W', type=int, default=15)
     parser.add_argument('--crop-size', type=int, default=128) #96
@@ -836,13 +836,15 @@ if __name__=='__main__':
             else:
                 bar.set_postfix(success_rate="0.0% (0/0)", eplen="0.0")
             
-            os.makedirs('%s-%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
+            os.makedirs('%s-%s/'%(log_dir, log_name), exist_ok=True)
+            #os.makedirs('%s-%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
             with open('%s-%s/config.json'%(log_dir, log_name), 'w') as f:
                 json.dump(args.__dict__, f, indent=2)
 
             logger.handlers.clear()
             formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
-            file_handler = logging.FileHandler('%s-%s/scene-%d/%s.log'%(log_dir, log_name, sidx, args.algorithm))
+            file_handler = logging.FileHandler('%s-%s/%s.log'%(log_dir, log_name, args.algorithm))
+            #file_handler = logging.FileHandler('%s-%s/scene-%d/%s.log'%(log_dir, log_name, sidx, args.algorithm))
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
 
@@ -854,13 +856,31 @@ if __name__=='__main__':
         #classes = ["Apple. Lemon. Orange. Fruit."]
         #classes = ["Apple", "Lemon", "Orange", "Fruit"]
         classes = args.classes.replace(" ", "").replace(",", ".").split(".")
-        obs = env.reset(classes)
+        env.get_observation(move_ur5=True)
+        obs = env.reset(classes, move_ur5=False)
         initRgb = obs['rgb']
         initSeg = obs['segmentation']
 
+        remove_indices = []
+        NB = np.max(obs['segmentation']).astype(int)
+        for i in range(1, NB+1):
+            num_pixels = (env.current_obs['segmentation']==i).sum()
+            if num_pixels < 300 or num_pixels > 20000:
+                remove_indices.append(i)
+        offset = 0
+        for idx in remove_indices:
+            env.current_obs['segmentation_raw'][env.current_obs['segmentation_raw']==idx-offset] = 0
+            env.current_obs['segmentation_raw'][env.current_obs['segmentation_raw']>idx-offset] -= 1
+
+            env.current_obs['segmentation'][env.current_obs['segmentation']==idx-offset] = 0
+            env.current_obs['segmentation'][env.current_obs['segmentation']>idx-offset] -= 1
+
+            env.current_obs['class_id'] = np.concatenate([env.current_obs['class_id'][:idx-offset-1], env.current_obs['class_id'][idx-offset:]])
+            offset += 1
+
         if args.logging:
             plt.imshow(initRgb)
-            plt.savefig('%s-%s/scene-%d/initial.png'%(log_dir, log_name, sidx))
+            plt.savefig('%s-%s/initial.png'%(log_dir, log_name))
         initTable = searcher.reset(initRgb, initSeg)
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
@@ -897,7 +917,7 @@ if __name__=='__main__':
                     plt.imshow(np.mean(actionProb, axis=0))
                 elif len(actionProb.shape)==4:
                     plt.imshow(np.mean(actionProb, axis=(0, 1)))
-                plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
+                plt.savefig('%s-%s/actionprob_%d.png'%(log_dir, log_name, step))
 
             # expected result in mcts #
             nextTable = searcher.root.takeAction(action)
@@ -908,12 +928,14 @@ if __name__=='__main__':
             
             nextCollision = renderer.checkCollision(nextTable)
             print_fn("Collision: %s"%nextCollision)
-            print_fn("Save fig: scene-%d/expect_%d.png"%(sidx, step))
+            print_fn("Save fig: expect_%d.png"%(step))
+            #print_fn("Save fig: scene-%d/expect_%d.png"%(sidx, step))
 
             tableRgb = renderer.getRGB(nextTable)
             if args.logging:
                 plt.imshow(tableRgb)
-                plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
+                plt.savefig('%s-%s/expect_%d.png'%(log_dir, log_name, step))
+                #plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
 
             # simulation step in pybullet #
             print()
@@ -922,12 +944,30 @@ if __name__=='__main__':
             print('target_object:', target_object)
             print('target_position:', target_position)
             print()
-            obs = env.step(target_object, target_position, rot_angle, stop=True)#False)
+            obs = env.step(target_object, target_position, rot_angle, stop=False, object_angles=renderer.objectAngles[1])
+            #==================================#
+            ## remove background segmentation ##
+            remove_indices = []
+            NB = np.max(obs['segmentation']).astype(int)
+            for i in range(1, NB+1):
+                num_pixels = (obs['segmentation']==i).sum()
+                if num_pixels < 300 or num_pixels > 20000:
+                    remove_indices.append(i)
+            offset = 0
+            for idx in remove_indices:
+                obs['segmentation_raw'][obs['segmentation_raw']==idx-offset] = 0
+                obs['segmentation_raw'][obs['segmentation_raw']>idx-offset] -= 1
+                obs['segmentation'][obs['segmentation']==idx-offset] = 0
+                obs['segmentation'][obs['segmentation']>idx-offset] -= 1
+                obs['class_id'] = np.concatenate([obs['class_id'][:idx-offset-1], obs['class_id'][idx-offset:]])
+                offset += 1
+            #==================================#
             currentRgb = obs['rgb']
             currentSeg = obs['segmentation']
             if args.logging:
                 plt.imshow(currentRgb)
-                plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
+                plt.savefig('%s-%s/real_%d.png'%(log_dir, log_name, step))
+                #plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
 
             table = searcher.reset(currentRgb, currentSeg)
             if table is None:
@@ -961,12 +1001,14 @@ if __name__=='__main__':
                 print_fn("--------------------------------")
                 if args.logging:
                     plt.imshow(currentRgb)
-                    plt.savefig('%s-%s/scene-%d/final.png'%(log_dir, log_name, sidx))
+                    plt.savefig('%s-%s/final.png'%(log_dir, log_name))
+                    #plt.savefig('%s-%s/scene-%d/final.png'%(log_dir, log_name, sidx))
                 break
         best_scores.append(best_score)
         if args.logging and bestRgb is not None:
             plt.imshow(bestRgb)
-            plt.savefig('%s-%s/scene-%d/best.png'%(log_dir, log_name, sidx))
+            plt.savefig('%s-%s/best.png'%(log_dir, log_name))
+            #plt.savefig('%s-%s/scene-%d/best.png'%(log_dir, log_name, sidx))
 
     print_fn("Average scores: %.2f"%np.mean(best_scores))
     print_fn("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))

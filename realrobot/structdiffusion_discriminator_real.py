@@ -3,6 +3,7 @@ import argparse
 import torch
 import numpy as np
 import pytorch_lightning as pl
+import rospy
 from omegaconf import OmegaConf
 
 from StructDiffusion.data.semantic_arrangement import SemanticArrangementDataset
@@ -63,7 +64,7 @@ def main(args, cfg):
     cfg.DATASET.ignore_rgb = False
     dataset = SemanticArrangementDataset(split="test", tokenizer=tokenizer, **cfg.DATASET)
 
-    sampler = Sampler(ConditionalPoseDiffusionModel, diffusion_checkpoint_path, 
+    sampler = SamplerV2(ConditionalPoseDiffusionModel, diffusion_checkpoint_path, 
                       PairwiseCollisionModel, collision_checkpoint_path, device)
     #sampler = Sampler(ConditionalPoseDiffusionModel, checkpoint_path, device)
     
@@ -202,7 +203,7 @@ if __name__ == "__main__":
                         default='/home/ur-plusle/Desktop/StructDiffusion/configs/conditional_pose_diffusion.yaml',
                         type=str)
     parser.add_argument("--testing_data_config_file", help='config yaml file',
-                        default='/home/ur-plusle/Dekstop/StructDiffusion/configs/testing_data.yaml',
+                        default='/home/ur-plusle/Desktop/StructDiffusion/configs/testing_data.yaml',
                         type=str)
     parser.add_argument("--diffusion-checkpoint_id",
                         default="ConditionalPoseDiffusion",

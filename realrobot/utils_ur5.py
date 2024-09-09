@@ -150,7 +150,7 @@ class UR5Robot:
     def get_view(self, goal_pos=None, quat=[1, 0, 0, 0], grasp=0.0, show_img=False, num_solve=1):
         # quat: xyzw
         if goal_pos is not None:
-            goal_pos[2] = np.clip(goal_pos[2], 0.21, 0.7) #0.22
+            goal_pos[2] = np.clip(goal_pos[2], 0.206, 0.7) #0.21
             goal_P = form_T(quat2mat(quat), goal_pos)
             joints = self.solve_ik(goal_P, num_solve)
             if len(joints)==0:

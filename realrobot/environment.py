@@ -1,10 +1,12 @@
 from utils_ur5 import *
 from utils_sim2real import inverse_projection
 from ellipse import LsqEllipse
+from PIL import Image, ImageEnhance
 
 class RealEnvironment:
     def __init__(self, args):
         self.RS = RealSense()
+        rospy.sleep(1.0)
         self.CGN = ContactGraspNet(K=self.RS.K_rs)
         self.UR5 = UR5Robot(self.RS)
         self.GSAM = GroundedSAM()
@@ -31,18 +33,33 @@ class RealEnvironment:
 
     def get_observation(self, move_ur5=True):
         rospy.sleep(1.0)
-        if move_ur5:
-            rgb, depth = self.UR5.get_view(self.UR5.ROBOT_INIT_POS, self.UR5.ROBOT_INIT_QUAT,
-                                            grasp=0.0, show_img=True)
-        else:
-            rgb, depth = self.RS.get_frames()
+        num_count = 0
+        rgb, depth = None, None
+        while True:
+            num_count += 1
+            if move_ur5:
+                rgb, depth = self.UR5.get_view(self.UR5.ROBOT_INIT_POS, self.UR5.ROBOT_INIT_QUAT,
+                                                grasp=0.0, show_img=True)
+            else:
+                rgb, depth = self.RS.get_frames()
+            if rgb is not None:
+                break
+            if num_count >= 10:
+                break
         self.init_eef_P = self.UR5.get_eef_pose()
+
+        im = Image.fromarray(rgb)
+        im = ImageEnhance.Brightness(im).enhance(1.5)
+        im = ImageEnhance.Color(im).enhance(1.2)
+        im = ImageEnhance.Contrast(im).enhance(0.9)
+        rgb = np.array(im)
         return rgb, depth
 
     def reset(self, classes, move_ur5=True):
         #if self.default_depth is None:
         #    self.default_depth = np.load('default_depth.npy')
 
+        rospy.sleep(1.0)
         rgb, depth = self.get_observation(move_ur5)
         detections = self.GSAM.get_masks(rgb, classes) #, save_image=True)
         class_id = detections.class_id
@@ -113,7 +130,6 @@ class RealEnvironment:
         return self.get_observation()
 
     def step(self, target_object, target_position, rot_angle, stop=True, object_angles=None):
-        self.check_go()
         rgb = self.current_obs['rgb_raw']
         depth = self.current_obs['depth_raw']
         segmap = self.current_obs['segmentation_raw']
@@ -133,7 +149,7 @@ class RealEnvironment:
         # Rule-based grasp for low-height objects. #
         depth_delta = (self.depth_bg - depth) * (segmap==target_object)
         depth_delta = depth_delta[depth_delta<0.3]
-        if depth_delta.max() < 0.05:
+        if depth_delta.max() < 0.06:
             use_rulebased_grasp = True
             grasps, score = [], []
         else:
@@ -150,8 +166,9 @@ class RealEnvironment:
             center, width, height, phi = reg.as_parameters()
             print('width:', width)
             print('height:', height)
-            if height < width:
-                phi += np.pi/2
+            phi += np.pi/2
+            #if height < width:
+            #    phi += np.pi/2
             print('Phi-new:', phi)
 
             if object_angles is not None:
@@ -175,13 +192,19 @@ class RealEnvironment:
 
             if grasp_type=='center':
                 #center = np.array([np.mean(px), (4*py.min() + py.max())/5]).astype(int)
-                center = np.array([np.mean(px), np.mean(py)-40]).astype(int)
+                if depth_delta.max() < 0.04:
+                    center = np.array([np.mean(px), np.mean(py)-30]).astype(int)
+                else:
+                    center = np.array([np.mean(px), np.mean(py)-40]).astype(int)
                 #center = np.array([np.mean(px), np.mean(py)]).astype(int)
                 translation = inverse_projection(depth, center, self.RS.K_rs, self.RS.D_rs)
             elif grasp_type=='boundary':
                 cx = px[py==py.mean().astype(int)].max()
                 #cy = (5*py.min() + py.max())/6
-                cy = py.mean()-40
+                if depth_delta.max() < 0.03:
+                    cy = py.mean()-20
+                else:
+                    cy = py.mean()-40
                 #cx = px.mean().astype(int)
                 #cx = px.mean().astype(int)
                 #cy = py[px==px.mean().astype(int)].max()
@@ -193,7 +216,8 @@ class RealEnvironment:
 
             rot = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
             if grasp_type=='center':
-                rot = np.dot(quat2mat(euler2quat([0, 0, -phi+np.pi/2])), rot)
+                rot = np.dot(quat2mat(euler2quat([0, 0, phi+np.pi])), rot)
+                #rot = np.dot(quat2mat(euler2quat([0, 0, -phi+np.pi/2])), rot)
             elif grasp_type=='boundary':
                 pass
             grasp = form_T(rot, translation)
@@ -222,7 +246,8 @@ class RealEnvironment:
         target_pose[:2] -= np.dot(rot_center, delta_center)
 
         roll, pitch, yaw = mat2euler(grasp[:3, :3])
-        yaw += rot_angle - np.pi/2
+        yaw += -rot_angle # - np.pi/2
+        #yaw += rot_angle - np.pi/2
         yaw %= 2*np.pi
         quat = euler2quat([roll, pitch, yaw])
         placement = form_T(quat2mat(quat), target_pose)
@@ -413,8 +438,15 @@ class RealEnvironment:
         self.UR5.get_view(pos2, quat2)
         check_go()
         self.UR5.get_view(grasp=1.0)
+        if rulebased:
+            check_go()
+            self.UR5.get_view(pos2+np.array([0, 0, 0.1]), quat2, grasp=1.0)
+        else:
+            check_go()
+            self.UR5.get_view(pos1, quat1, grasp=1.0)
         check_go()
-        self.UR5.get_view(pos1, quat1, grasp=1.0)
+        self.UR5.get_view(self.UR5.PRE_GRASP_POS_2, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
+
         if back_to_init:
             check_go()
             self.UR5.move_to_joints(self.INIT_JOINTS)
@@ -449,13 +481,15 @@ class RealEnvironment:
         #pos3, quat3 = self.UR5.get_goal_from_grasp(pre_place3, self.init_eef_P)
 
         check_go()
-        self.UR5.get_view(pos1, quat1, grasp=1.0)
+        #self.UR5.get_view(pos1, quat1, grasp=1.0)
+        self.UR5.get_view(pos2 + np.array([0, 0, 0.1]), quat2, grasp=1.0)
         check_go()
         self.UR5.get_view(pos2, quat2, grasp=1.0)
         check_go()
         self.UR5.get_view(grasp=0.0)
         check_go()
-        self.UR5.get_view(pos1, quat1, grasp=0.0)
+        self.UR5.get_view(pos2 + np.array([0, 0, 0.1]), quat2, grasp=0.0)
+        #self.UR5.get_view(pos1, quat1, grasp=0.0)
         #check_go()
         #self.UR5.get_view(pos3, quat3, grasp=0.0)
         check_go()
