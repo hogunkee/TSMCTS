@@ -12,7 +12,7 @@ import sys
 import pybullet as p
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
-from custom_env import TableTopTidyingUpEnv
+from custom_nvisii_env import TableTopTidyingUpEnv
 from utilities import Camera, Camera_front_top
 
 def depth2pc(depth, K, rgb=None):
@@ -40,7 +40,7 @@ def depth2pc(depth, K, rgb=None):
     return (pc, rgb)
 
 
-def setupEnvironment(args):
+def setupEnvironment(args, logname=''):
     camera_top = Camera((0, 0, 1.45), 0.02, 2, (480, 360), 60)
     camera_front_top = Camera_front_top((0.5, 0, 1.3), 0.02, 2, (480, 360), 60)
     
@@ -54,12 +54,12 @@ def setupEnvironment(args):
     }
     
     gui_on = not args.gui_off
-    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85')
+    env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85', logname=logname)
     p.resetDebugVisualizerCamera(2.0, -270., -60., (0., 0., 0.))
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
     p.addUserDebugLine([0, -0.5, 0], [0, -0.5, 1.1], [0, 1, 0])
 
-    env.reset()
+    #env.reset()
     return env
 
 
