@@ -1,0 +1,5 @@
+python mcts_real.py --iteration-limit 5000 --logging --tree-policy random --classes Glass.Cup.Bowl.Basket.Plate.Teapot.Shampoo.Clock.Toothpaste.Tube.Box.Marker.Stapler.Vaseline.Pen.Apple.Oragne.Scissors.Box
+
+
+
+python mcts_real.py --iteration-limit 5000 --logging --tree-policy random --classes Fork.Knife.Spoon.Plate.Bowl

@@ -20,14 +20,15 @@ import random
 import pybullet as p
 from matplotlib import pyplot as plt
 from utils_pc import depth2pointcloud, get_raw_data #, setupEnvironment
-from transform_utils import mat2quat
+from transform_utils import mat2quat, quat2mat, mat2euler, euler2quat
 
 from environment import RealEnvironment
 
 # tabletop environment
-#import sys
-#FILE_PATH = os.path.dirname(os.path.abspath(__file__))
-#sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
+import sys
+FILE_PATH = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/'))#pybullet_ur5_robotiq'))
+from scene_utils import quaternion_multiply
 #from custom_env import get_contact_objects, quaternion_multiply
 #sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
 #from collect_template_list import scene_list
@@ -229,7 +230,9 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
             
             if args.visualize:
                 print("Visualize rearranged scene sample")
-                beam_pc_rearrangement.visualize("goal", add_other_objects=True, add_table=True, side_view=True)
+                count = len([f for f in os.listdir('outputs/') if f.startswith('sample_')])
+                beam_pc_rearrangement.visualize("goal", add_other_objects=True, add_table=True, side_view=False, show_vis=False, save_vis=True, save_filename='outputs/sample_%d.png'%count)
+                #beam_pc_rearrangement.visualize("goal", add_other_objects=True, add_table=True, side_view=True)
 
             # then iteratively predict pose of each object
             # struct_preds, target_object_preds = pose_generation_inference.limited_batch_inference(beam_data)
@@ -244,8 +247,12 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
                 translation = translation * ratio
                 # translation[2] = 0
 
-                rot = mat2quat(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
-                new_rot = quaternion_multiply(rot, orig_rot)
+                rot_euler = mat2euler(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
+                roll, pitch, yaw = rot_euler
+                x,y,z,w = euler2quat([0, 0, yaw])
+                rot_4dof = quat2mat([x,y,z,w])
+                print('rot:')
+                print(rot_euler)
 
                 if False:
                     pid = env.pre_selected_objects[init_datum["shuffle_indices"][obj_idxs[obj_idx]]]

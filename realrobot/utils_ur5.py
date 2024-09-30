@@ -40,13 +40,22 @@ class UR5Robot:
     def __init__(self, realsense):
         self.rs = realsense
 
-        theta = np.pi/8
-        self.PRE_GRASP_POS_1 = np.array([0.2, -0.3, 0.55])
-        self.PRE_GRASP_POS_2 = np.array([0., -0.35, 0.55])
-        self.PRE_PLACE_POS = np.array([0.2, -0.3, 0.6])
-        self.ROBOT_INIT_POS = np.array([0.0, -0.2, 0.7])
-        #self.ROBOT_INIT_POS = np.array([0.0, -0.3, 0.6])
-        #self.ROBOT_INIT_POS = np.array([0.0, -0.4, 0.6])
+        if True:
+            theta = np.pi/16
+            self.PRE_GRASP_POS_1 = np.array([0.1, -0.3, 0.55])
+            self.PRE_GRASP_POS_2 = np.array([0., -0.35, 0.55])
+            self.PRE_PLACE_POS = np.array([0., -0.3, 0.6])
+            self.ROBOT_INIT_POS = np.array([0.0, -0.35, 0.72])
+        elif False:
+            theta = np.pi/8
+            self.PRE_GRASP_POS_1 = np.array([0.1, -0.3, 0.55])
+            #self.PRE_GRASP_POS_1 = np.array([0.2, -0.3, 0.55])
+            self.PRE_GRASP_POS_2 = np.array([0., -0.35, 0.55])
+            self.PRE_PLACE_POS = np.array([0., -0.3, 0.6])
+            #self.PRE_PLACE_POS = np.array([0.2, -0.3, 0.6])
+            self.ROBOT_INIT_POS = np.array([0.0, -0.2, 0.7])
+            #self.ROBOT_INIT_POS = np.array([0.0, -0.3, 0.6])
+            #self.ROBOT_INIT_POS = np.array([0.0, -0.4, 0.6])
         self.ROBOT_INIT_ROTATION = np.array([[1., 0., 0.], 
             [0., -np.cos(theta), -np.sin(theta)], 
             [0., np.sin(theta), -np.cos(theta)]])
@@ -147,7 +156,60 @@ class UR5Robot:
             # move to the view
             self.move_group.execute(res[1], wait=True)
 
+
     def get_view(self, goal_pos=None, quat=[1, 0, 0, 0], grasp=0.0, show_img=False, num_solve=1):
+        # quat: xyzw
+        if goal_pos is not None:
+            is_feasible = False
+            while not is_feasible:
+                goal_pos[2] = np.clip(goal_pos[2], 0.206, 0.7) #0.21
+                goal_P = form_T(quat2mat(quat), goal_pos)
+                joints = self.solve_ik(goal_P, num_solve)
+                if len(joints)==0:
+                    pose_goal = geometry_msgs.msg.Pose()
+                    pose_goal.orientation.x = quat[0]
+                    pose_goal.orientation.y = quat[1]
+                    pose_goal.orientation.z = quat[2]
+                    pose_goal.orientation.w = quat[3]
+                    pose_goal.position.x = goal_pos[0]
+                    pose_goal.position.y = goal_pos[1]
+                    pose_goal.position.z = goal_pos[2]
+                    self.move_group.set_pose_target(pose_goal)
+                else:
+                    print(goal_pos)
+                    print(quat)
+                    self.move_group.set_joint_value_target(joints)
+                res = self.move_group.plan()
+                traj_length = len(res[1].joint_trajectory.points)
+                print("Trajectory:", traj_length)
+                # check success
+                if res[0] is False:
+                    print("Failed planning to the goal.")
+                elif traj_length > 10:
+                    print("A wrong path is obtained.")
+                else:
+                    print("Find a feasible trajectory.")
+                    is_feasible = True
+            # move to the view
+            self.move_group.execute(res[1], wait=True)
+
+        # gripper control
+        if grasp > 0.0:
+            self.gripper_controller.close(force=100)
+            # suction gripper grasping
+            # gripper_controller.grasp()
+        else:
+            self.gripper_controller.open(force=100)
+        
+        rospy.sleep(0.5)
+        if show_img:
+            color, depth = self.rs.get_frames()
+            # plt.imshow(color)
+            # plt.show()
+            return color, depth
+        return None, None
+
+    def get_plan(self, goal_pos=None, quat=[1, 0, 0, 0], grasp=0.0, show_img=False, num_solve=1):
         # quat: xyzw
         if goal_pos is not None:
             goal_pos[2] = np.clip(goal_pos[2], 0.206, 0.7) #0.21
@@ -169,29 +231,7 @@ class UR5Robot:
                 print(quat)
                 self.move_group.set_joint_value_target(joints)
                 res = self.move_group.plan()
-            # check success
-            if res[0] is False:
-                print("Failed planning to the goal")
-                return None, None
-            else:
-                # move to the view
-                self.move_group.execute(res[1], wait=True)
-
-        # gripper control
-        if grasp > 0.0:
-            self.gripper_controller.close(force=100)
-            # suction gripper grasping
-            # gripper_controller.grasp()
-        else:
-            self.gripper_controller.open(force=100)
-        
-        rospy.sleep(0.5)
-        if show_img:
-            color, depth = self.rs.get_frames()
-            # plt.imshow(color)
-            # plt.show()
-            return color, depth
-        return None, None
+            return res
     
     def get_goal_from_grasp(self, grasp, eef_P=None):
         T_eef_to_grasp = np.dot(self.T_eef_to_rs, grasp)
