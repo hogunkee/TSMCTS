@@ -42,7 +42,7 @@ class UR5Robot:
 
         if True:
             theta = np.pi/16
-            self.PRE_GRASP_POS_1 = np.array([0.1, -0.3, 0.55])
+            self.PRE_GRASP_POS_1 = np.array([0.15, -0.3, 0.55])
             self.PRE_GRASP_POS_2 = np.array([0., -0.35, 0.55])
             self.PRE_PLACE_POS = np.array([0., -0.3, 0.6])
             self.ROBOT_INIT_POS = np.array([0.0, -0.35, 0.72])

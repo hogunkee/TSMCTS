@@ -861,6 +861,9 @@ if __name__=='__main__':
         initRgb = obs['rgb']
         initSeg = obs['segmentation']
 
+        plt.imshow(initSeg)
+        plt.show()
+
         remove_indices = []
         NB = np.max(obs['segmentation']).astype(int)
         for i in range(1, NB+1):
