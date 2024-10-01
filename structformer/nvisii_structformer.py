@@ -128,8 +128,6 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
     cmap = np.array([cmap(i) for i in range(20)])
     cmap = (255*cmap).astype(np.uint8)
 
-    success = 0
-    success_eplen = []
     best_scores = []
     log_dir = 'data/SF'
     bar = range(args.num_scenes)
@@ -410,13 +408,14 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
 
                 if step >= 10:
                     break
+
         best_scores.append(best_score)
         if args.logging and bestRgb is not None:
             cv2.imwrite('%s-%s/scene-%d/top_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgb, cv2.COLOR_RGB2BGR))
             cv2.imwrite('%s-%s/scene-%d/front_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgbFront, cv2.COLOR_RGB2BGR))
 
             logger.info("-------------------------------")
-            logger.info("Best Score: %f" %reward)
+            logger.info("Best Score: %f" %best_score)
 
     print("Done.")
 

@@ -139,7 +139,7 @@ def main(args, cfg):
     cmap = (255*cmap).astype(np.uint8)
     
     best_scores = []
-    log_dir = 'data/SD'
+    log_dir = 'data/SDO'
     bar = range(args.num_scenes)
     for sidx in bar:
         best_score = 0.0
@@ -238,105 +238,60 @@ def main(args, cfg):
                         'position': np.random.uniform(0.35, 0.65)}
         
         print("--------------------------------")
-        step = 0
-        while step<10:
-            # from dataset
-            if False:
-                init_datum = dataset.get_raw_data(step)
-                # for i in range(len(init_datum["goal_poses"])):
-                #     init_datum["goal_poses"][i] = np.eye(4)
-                # init_datum["t"] = 200
-                print(tokenizer.convert_structure_params_to_natural_language(init_datum["sentence"]))
-                datum = dataset.convert_to_tensors(init_datum, tokenizer)
-                batch = dataset.single_datum_to_batch(datum, args.num_samples, device, inference_mode=True)
-                num_poses = datum["goal_poses"].shape[0]
-                #xs = sampler.sample(batch, num_poses) 
-            # from pybullet env
-            else:
-                try:
-                    init_datum = get_diffusion_data(env.get_observation(), env, structure_param, view=args.view, inference_mode=True)
-                except:
-                    break
-                print(tokenizer.convert_structure_params_to_natural_language(init_datum["sentence"]))
-                obj_ids = init_datum["ids"]
-                target_objects = init_datum["target_objs"]
+        init_datum = get_diffusion_data(env.get_observation(), env, structure_param, view=args.view, inference_mode=True)
 
-                datum = dataset.convert_to_tensors(init_datum, tokenizer)
-                batch = dataset.single_datum_to_batch(datum, args.num_samples, device, inference_mode=True)
-                batch_copy = batch.copy()
-                num_poses = datum["goal_poses"].shape[0]
-                #xs = sampler.sample(batch, num_poses)
+        print(tokenizer.convert_structure_params_to_natural_language(init_datum["sentence"]))
+        obj_ids = init_datum["ids"]
+        target_objects = init_datum["target_objs"]
 
-            struct_pose, pc_poses_in_struct = sampler.sample(batch, num_poses)
-            #struct_pose, pc_poses_in_struct = get_struct_objs_poses(xs[0])
-            # struct_pose : 10, 1, 4, 4
-            # pc_poses_in_struct : 10, 7, 4, 4
-            # dataset: [0.3891, 0.0556, 0.0293]
-            # pybullet: [0.4332, 0.2187, 0.1527]
-            new_obj_xyzs = move_pc_and_create_scene_simple(batch["pcs"], struct_pose, pc_poses_in_struct)
-            if not args.gui_off:
-                visualize_batch_pcs(torch.cat(init_datum["pcs"]).reshape(1, 7, 1024, 6), args.num_samples)
-                visualize_batch_pcs(new_obj_xyzs, args.num_samples, limit_B=10, trimesh=True)
+        datum = dataset.convert_to_tensors(init_datum, tokenizer)
+        batch = dataset.single_datum_to_batch(datum, args.num_samples, device, inference_mode=True)
+        batch_copy = batch.copy()
+        num_poses = datum["goal_poses"].shape[0]
 
-            struct_rot = struct_pose[0][0][:3, :3]
-            
-            # num_objects = num_poses - 1
-            for obj_idx, tobj_name in enumerate(target_objects):
-                pid = obj_ids[tobj_name]
-                # pid = env.pre_selected_objects[obj_ids[tobj_name]]
-                # pid = env.pre_selected_objects[obj_idx] #init_datum["shuffle_indices"][obj_idxs[obj_idx]]]
-                orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
+        struct_pose, pc_poses_in_struct = sampler.sample(batch, num_poses)
+        new_obj_xyzs = move_pc_and_create_scene_simple(batch["pcs"], struct_pose, pc_poses_in_struct)
+        if not args.gui_off:
+            visualize_batch_pcs(torch.cat(init_datum["pcs"]).reshape(1, 7, 1024, 6), args.num_samples)
+            visualize_batch_pcs(new_obj_xyzs, args.num_samples, limit_B=10, trimesh=True)
 
-                translation = new_obj_xyzs[0][obj_idx].mean(0)[:3].cpu().numpy() - init_datum["pcs"][obj_idx].mean(0)[:3].numpy()
-                object_rot = pc_poses_in_struct[0][obj_idx][:3, :3]
-                rot = mat2quat(struct_rot.cpu().numpy() @ object_rot.cpu().numpy())
-                new_rot = quaternion_multiply(rot, orig_rot)
+        struct_rot = struct_pose[0][0][:3, :3]
+        
+        for obj_idx, tobj_name in enumerate(target_objects):
+            pid = obj_ids[tobj_name]
+            orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
 
-                p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
-                p.stepSimulation()
-                env.nvisii_update()
-                step += 1
+            translation = new_obj_xyzs[0][obj_idx].mean(0)[:3].cpu().numpy() - init_datum["pcs"][obj_idx].mean(0)[:3].numpy()
+            object_rot = pc_poses_in_struct[0][obj_idx][:3, :3]
+            rot = mat2quat(struct_rot.cpu().numpy() @ object_rot.cpu().numpy())
+            new_rot = quaternion_multiply(rot, orig_rot)
 
-                obs = env.get_observation()
-                currentRgb = obs[args.view]['rgb']
-                currentSeg = obs[args.view]['segmentation']
-                currentRgbFront = obs['front']['rgb']
-                currentRgbNV = obs['nv-'+args.view]['rgb']
-                currentSegNV = obs['nv-'+args.view]['segmentation']
-                currentRgbFrontNV = obs['nv-front']['rgb']
-                rgb_nobg = currentRgbNV[:, :, :3] * (currentSegNV!=1)[:, :, None]
+            p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
+            p.stepSimulation()
+            env.nvisii_update()
 
-                if args.get_reward:
-                    reward = getReward(rgb_nobg, rewardNet, preprocess)
-                    print("Current Score: %f" %reward)
-                    print("--------------------------------")
-                    if reward > best_score:
-                        best_score = reward
-                        bestRgb = currentRgbNV
-                        bestRgbFront = currentRgbFrontNV
+            obs = env.get_observation()
+            currentRgb = obs[args.view]['rgb']
+            currentSeg = obs[args.view]['segmentation']
+            currentRgbFront = obs['front']['rgb']
+            currentRgbNV = obs['nv-'+args.view]['rgb']
+            currentSegNV = obs['nv-'+args.view]['segmentation']
+            currentRgbFrontNV = obs['nv-front']['rgb']
+            rgb_nobg = currentRgbNV[:, :, :3] * (currentSegNV!=1)[:, :, None]
 
-                if args.logging:
-                    cv2.imwrite('%s-%s/scene-%d/top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgb, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFront, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/nv_top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/nv_front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/top_seg_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/top_seg_%d_nv.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
+            if args.get_reward:
+                reward = getReward(rgb_nobg, rewardNet, preprocess)
+                print("Current Score: %f" %reward)
+                print("--------------------------------")
 
-                    logger.info("%d-step."%step)
-                    if args.get_reward:
-                        logger.info("Current Score: %f" %reward)
-
-                if step >= 10:
-                    break
-
-        best_scores.append(best_score)
-        if args.logging and bestRgb is not None:
-            cv2.imwrite('%s-%s/scene-%d/top_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgb, cv2.COLOR_RGB2BGR))
-            cv2.imwrite('%s-%s/scene-%d/front_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgbFront, cv2.COLOR_RGB2BGR))
+        if args.logging:
+            cv2.imwrite('%s-%s/scene-%d/top_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s-%s/scene-%d/front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
 
             logger.info("-------------------------------")
-            logger.info("Best Score: %f" %best_score)
+            if args.get_reward:
+                logger.info("Score: %f" %reward)
+
             
         print("Done.")
 

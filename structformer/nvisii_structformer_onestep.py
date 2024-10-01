@@ -60,8 +60,9 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
         logger.setLevel(logging.INFO)
 
     # load reward networks
-    model_path = args.reward_model_path
-    rewardNet, preprocess = loadRewardFunction(model_path)
+    if args.get_reward:
+        model_path = args.reward_model_path
+        rewardNet, preprocess = loadRewardFunction(model_path)
 
     # Random seed
     seed = args.seed
@@ -130,13 +131,9 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
 
     success = 0
     success_eplen = []
-    best_scores = []
-    log_dir = 'data/SF'
+    log_dir = 'data/SFO'
     bar = range(args.num_scenes)
     for sidx in bar:
-        best_score = 0.0
-        bestRgb = None
-        bestRgbFront = None
         if args.logging: 
             # bar.set_description("Episode %d/%d"%(sidx, args.num_scenes))
             os.makedirs('%s-%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
@@ -229,194 +226,153 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
         structure_param = {'length': np.random.uniform(0.25, 0.4),
                            'position': np.random.uniform(0.35, 0.65)}
         print("--------------------------------")
-        step = 0
-        while step<10:
-            # from dataset
-            if False:
-                init_datum = object_selection_inference.dataset.get_raw_data(step)
-                goal_specification = init_datum["goal_specification"]
-                xyzs = init_datum["xyzs"]
-                rgbs = init_datum["rgbs"]
-                show_pcs(xyzs, rgbs, side_view=True, add_table=True)
-                object_selection_structured_sentence = init_datum["sentence"][5:]
-                structure_specification_structured_sentence = init_datum["sentence"][:5]
-                init_datum["sentence"] = object_selection_structured_sentence + structure_specification_structured_sentence
-            # from pybullet env
-            else:
-                try:
-                    init_datum = get_raw_data(env.get_observation(), env, structure_param, view=args.view)
-                except:
-                    break
-                # test_datum = test_dataset.get_raw_data(idx)
-                # goal_specification = init_datum["goal_specification"]
-                # xyzs = init_datum["xyzs"] + test_datum["xyzs"]
-                # rgbs = init_datum["rgbs"] + test_datum["rgbs"]
-                # show_pcs(xyzs, rgbs, side_view=True, add_table=True)
-                object_selection_structured_sentence = [('dinner', 'scene'), ('PAD',), ('PAD',), ('PAD',)]
-                structure_specification_structured_sentence = [('dinner', 'shape'),
-                                                            (0.0, 'rotation'),
-                                                            (structure_param['position'], 'position_x'),
-                                                            (0.0, 'position_y'),
-                                                            ('PAD',)]
-                # object_selection_structured_sentence = init_datum["sentence"][5:]
-                # structure_specification_structured_sentence = init_datum["sentence"][:5]
-                # init_datum["sentence"] = object_selection_structured_sentence + structure_specification_structured_sentence
-            object_selection_natural_sentence = object_selection_inference.tokenizer.convert_to_natural_sentence(object_selection_structured_sentence)
-            structure_specification_natural_sentence = object_selection_inference.tokenizer.convert_structure_params_to_natural_language(structure_specification_structured_sentence)
 
-            # object selection
-            if args.random_select:
-                num_obj = len(init_datum["object_pad_mask"]) - np.sum(init_datum["object_pad_mask"])
-                predictions = np.random.choice([0, 1], num_obj)
-                gts = np.ones(num_obj)
-            else:
-                predictions, gts = object_selection_inference.predict_target_objects(init_datum)
+        init_datum = get_raw_data(env.get_observation(), env, structure_param, view=args.view)
 
-            all_obj_xyzs = init_datum["xyzs"][:len(predictions)]
-            all_obj_rgbs = init_datum["rgbs"][:len(predictions)]
-            obj_idxs = [i for i, l in enumerate(predictions) if l == 1.0]
-            if len(obj_idxs) == 0:
-                continue
-            other_obj_idxs = [i for i, l in enumerate(predictions) if l == 0.0]
-            obj_xyzs = [all_obj_xyzs[i] for i in obj_idxs]
-            obj_rgbs = [all_obj_rgbs[i] for i in obj_idxs]
-            other_obj_xyzs = [all_obj_xyzs[i] for i in other_obj_idxs]
-            other_obj_rgbs = [all_obj_rgbs[i] for i in other_obj_idxs]
+        object_selection_structured_sentence = [('dinner', 'scene'), ('PAD',), ('PAD',), ('PAD',)]
+        structure_specification_structured_sentence = [('dinner', 'shape'),
+                                                    (0.0, 'rotation'),
+                                                    (structure_param['position'], 'position_x'),
+                                                    (0.0, 'position_y'),
+                                                    ('PAD',)]
+        object_selection_natural_sentence = object_selection_inference.tokenizer.convert_to_natural_sentence(object_selection_structured_sentence)
+        structure_specification_natural_sentence = object_selection_inference.tokenizer.convert_structure_params_to_natural_language(structure_specification_structured_sentence)
 
-            print("\nSelect objects to rearrange...")
-            print("Instruction:", object_selection_natural_sentence)
-            if not args.gui_off:
-                print("Visualize groundtruth (dot color) and prediction (ring color)")
-                show_pcs_with_predictions(init_datum["xyzs"][:len(predictions)], init_datum["rgbs"][:len(predictions)],
-                                        gts, predictions, add_table=True, side_view=True)
-                print("Visualize object to rearrange")
-                show_pcs(obj_xyzs, obj_rgbs, side_view=True, add_table=True)
+        # object selection
+        if args.random_select:
+            num_obj = len(init_datum["object_pad_mask"]) - np.sum(init_datum["object_pad_mask"])
+            predictions = np.random.choice([0, 1], num_obj)
+            gts = np.ones(num_obj)
+        else:
+            predictions, gts = object_selection_inference.predict_target_objects(init_datum)
 
-            # pose generation
-            max_num_objects = pose_generation_inference.cfg.dataset.max_num_objects
-            max_num_other_objects = pose_generation_inference.cfg.dataset.max_num_other_objects
-            if len(obj_xyzs) > max_num_objects:
-                print("WARNING: reducing the number of \"query\" objects because this model is trained with a maximum of {} \"query\" objects. Train a new model if a larger number is needed.".format(max_num_objects))
-                obj_xyzs = obj_xyzs[:max_num_objects]
-                obj_rgbs = obj_rgbs[:max_num_objects]
-            if len(other_obj_xyzs) > max_num_other_objects:
-                print("WARNING: reducing the number of \"distractor\" objects because this model is trained with a maximum of {} \"distractor\" objects. Train a new model if a larger number is needed.".format(max_num_other_objects))
-                other_obj_xyzs = other_obj_xyzs[:max_num_other_objects]
-                other_obj_rgbs = other_obj_rgbs[:max_num_other_objects]
+        all_obj_xyzs = init_datum["xyzs"][:len(predictions)]
+        all_obj_rgbs = init_datum["rgbs"][:len(predictions)]
+        obj_idxs = [i for i, l in enumerate(predictions) if l == 1.0]
+        if len(obj_idxs) == 0:
+            continue
+        other_obj_idxs = [i for i, l in enumerate(predictions) if l == 0.0]
+        obj_xyzs = [all_obj_xyzs[i] for i in obj_idxs]
+        obj_rgbs = [all_obj_rgbs[i] for i in obj_idxs]
+        other_obj_xyzs = [all_obj_xyzs[i] for i in other_obj_idxs]
+        other_obj_rgbs = [all_obj_rgbs[i] for i in other_obj_idxs]
 
-            pose_generation_datum = pose_generation_inference.dataset.prepare_test_data(obj_xyzs, obj_rgbs,
-                                                                                        other_obj_xyzs, other_obj_rgbs,
-                                                                                        {'length': structure_param['length'],
-                                                                                        'length_increment': 0.05, 
-                                                                                        'max_length': 1.0, 
-                                                                                        'min_length': 0.0, 
-                                                                                        'place_at_once': 'False', 
-                                                                                        'position': [structure_param['position'], 0.0, 0.0], 
-                                                                                        'rotation': [0.0, -0.0, 0.0], 
-                                                                                        'type': 'dinner', 
-                                                                                        'uniform_space': 'False'})
-            datum = copy.deepcopy(pose_generation_datum)
-            beam_pc_rearrangement = PointCloudRearrangement(datum)
+        print("\nSelect objects to rearrange...")
+        print("Instruction:", object_selection_natural_sentence)
+        if not args.gui_off:
+            print("Visualize groundtruth (dot color) and prediction (ring color)")
+            show_pcs_with_predictions(init_datum["xyzs"][:len(predictions)], init_datum["rgbs"][:len(predictions)],
+                                    gts, predictions, add_table=True, side_view=True)
+            print("Visualize object to rearrange")
+            show_pcs(obj_xyzs, obj_rgbs, side_view=True, add_table=True)
 
-            # autoregressive decoding
-            num_target_objects = beam_pc_rearrangement.num_target_objects
+        # pose generation
+        max_num_objects = pose_generation_inference.cfg.dataset.max_num_objects
+        max_num_other_objects = pose_generation_inference.cfg.dataset.max_num_other_objects
+        if len(obj_xyzs) > max_num_objects:
+            print("WARNING: reducing the number of \"query\" objects because this model is trained with a maximum of {} \"query\" objects. Train a new model if a larger number is needed.".format(max_num_objects))
+            obj_xyzs = obj_xyzs[:max_num_objects]
+            obj_rgbs = obj_rgbs[:max_num_objects]
+        if len(other_obj_xyzs) > max_num_other_objects:
+            print("WARNING: reducing the number of \"distractor\" objects because this model is trained with a maximum of {} \"distractor\" objects. Train a new model if a larger number is needed.".format(max_num_other_objects))
+            other_obj_xyzs = other_obj_xyzs[:max_num_other_objects]
+            other_obj_rgbs = other_obj_rgbs[:max_num_other_objects]
 
-            # first predict structure pose
-            beam_goal_struct_pose, target_object_preds = pose_generation_inference.limited_batch_inference([datum])
-            
-            datum["struct_x_inputs"] = [beam_goal_struct_pose[0][0]]
-            datum["struct_y_inputs"] = [beam_goal_struct_pose[0][1]]
-            datum["struct_z_inputs"] = [beam_goal_struct_pose[0][2]]
-            datum["struct_theta_inputs"] = [beam_goal_struct_pose[0][3:]]
+        pose_generation_datum = pose_generation_inference.dataset.prepare_test_data(obj_xyzs, obj_rgbs,
+                                                                                    other_obj_xyzs, other_obj_rgbs,
+                                                                                    {'length': structure_param['length'],
+                                                                                    'length_increment': 0.05, 
+                                                                                    'max_length': 1.0, 
+                                                                                    'min_length': 0.0, 
+                                                                                    'place_at_once': 'False', 
+                                                                                    'position': [structure_param['position'], 0.0, 0.0], 
+                                                                                    'rotation': [0.0, -0.0, 0.0], 
+                                                                                    'type': 'dinner', 
+                                                                                    'uniform_space': 'False'})
+        datum = copy.deepcopy(pose_generation_datum)
+        beam_pc_rearrangement = PointCloudRearrangement(datum)
 
-            
-            # then iteratively predict pose of each object
-            struct_preds, target_object_preds = pose_generation_inference.limited_batch_inference([datum])
-            # goal_obj_poses = []
-            for obj_idx in range(num_target_objects):
-                # goal_obj_poses.append(target_object_preds[0, obj_idx])
-                datum["obj_x_inputs"][obj_idx] = target_object_preds[0][obj_idx][0]
-                datum["obj_y_inputs"][obj_idx] = target_object_preds[0][obj_idx][1]
-                datum["obj_z_inputs"][obj_idx] = target_object_preds[0][obj_idx][2]
-                datum["obj_theta_inputs"][obj_idx] = target_object_preds[0][obj_idx][3:]
-            # # concat in the object dim
-            # beam_goal_obj_poses = np.stack(beam_goal_obj_poses, axis=0)
-            # # swap axis
-            # beam_goal_obj_poses = np.swapaxes(beam_goal_obj_poses, 1, 0)  # batch size, number of target objects, pose dim
+        # autoregressive decoding
+        num_target_objects = beam_pc_rearrangement.num_target_objects
 
-            # move pc
-            beam_pc_rearrangement.set_goal_poses(beam_goal_struct_pose[0], target_object_preds[0])
-            beam_pc_rearrangement.rearrange()
+        # first predict structure pose
+        beam_goal_struct_pose, target_object_preds = pose_generation_inference.limited_batch_inference([datum])
+        
+        datum["struct_x_inputs"] = [beam_goal_struct_pose[0][0]]
+        datum["struct_y_inputs"] = [beam_goal_struct_pose[0][1]]
+        datum["struct_z_inputs"] = [beam_goal_struct_pose[0][2]]
+        datum["struct_theta_inputs"] = [beam_goal_struct_pose[0][3:]]
 
-            print("\nRearrange \"query\" objects...")
-            print("Instruction:", structure_specification_natural_sentence)
-            
-            if not args.gui_off:
-                print("Visualize rearranged scene sample")
-                beam_pc_rearrangement.visualize("goal", add_other_objects=True, add_table=True, side_view=True)
+        # then iteratively predict pose of each object
+        struct_preds, target_object_preds = pose_generation_inference.limited_batch_inference([datum])
+        # goal_obj_poses = []
+        for obj_idx in range(num_target_objects):
+            # goal_obj_poses.append(target_object_preds[0, obj_idx])
+            datum["obj_x_inputs"][obj_idx] = target_object_preds[0][obj_idx][0]
+            datum["obj_y_inputs"][obj_idx] = target_object_preds[0][obj_idx][1]
+            datum["obj_z_inputs"][obj_idx] = target_object_preds[0][obj_idx][2]
+            datum["obj_theta_inputs"][obj_idx] = target_object_preds[0][obj_idx][3:]
+        # # concat in the object dim
+        # beam_goal_obj_poses = np.stack(beam_goal_obj_poses, axis=0)
+        # # swap axis
+        # beam_goal_obj_poses = np.swapaxes(beam_goal_obj_poses, 1, 0)  # batch size, number of target objects, pose dim
 
-            # then iteratively predict pose of each object
-            # struct_preds, target_object_preds = pose_generation_inference.limited_batch_inference(beam_data)
-            for obj_idx in range(num_target_objects):
-                # target_pose = target_object_preds[0][obj_idx]
-                # initial_pose = beam_pc_rearrangements[0].initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
-                # translation = target_pose[:3] - initial_pose
-                translation = beam_pc_rearrangement.goal_xyzs["xyzs"][obj_idx].mean(0).numpy()\
-                            - beam_pc_rearrangement.initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
+        # move pc
+        beam_pc_rearrangement.set_goal_poses(beam_goal_struct_pose[0], target_object_preds[0])
+        beam_pc_rearrangement.rearrange()
 
-                ratio = 1.0 #init_datum["depth"].max() / env.camera.origin_depth.max()
-                translation = translation * ratio
-                # translation[2] = 0
+        print("\nRearrange \"query\" objects...")
+        print("Instruction:", structure_specification_natural_sentence)
+        
+        if not args.gui_off:
+            print("Visualize rearranged scene sample")
+            beam_pc_rearrangement.visualize("goal", add_other_objects=True, add_table=True, side_view=True)
 
-                pid = env.pre_selected_objects[init_datum["shuffle_indices"][obj_idxs[obj_idx]]]
-                orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
+        # then iteratively predict pose of each object
+        # struct_preds, target_object_preds = pose_generation_inference.limited_batch_inference(beam_data)
+        for obj_idx in range(num_target_objects):
+            # target_pose = target_object_preds[0][obj_idx]
+            # initial_pose = beam_pc_rearrangements[0].initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
+            # translation = target_pose[:3] - initial_pose
+            translation = beam_pc_rearrangement.goal_xyzs["xyzs"][obj_idx].mean(0).numpy()\
+                        - beam_pc_rearrangement.initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
 
-                rot = mat2quat(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
-                new_rot = quaternion_multiply(rot, orig_rot)
+            ratio = 1.0 #init_datum["depth"].max() / env.camera.origin_depth.max()
+            translation = translation * ratio
+            # translation[2] = 0
 
-                # print(orig_pos)
-                p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
-                p.stepSimulation()
-                env.nvisii_update()
-                step += 1
+            pid = env.pre_selected_objects[init_datum["shuffle_indices"][obj_idxs[obj_idx]]]
+            orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
 
-                obs = env.get_observation()
-                currentRgb = obs[args.view]['rgb']
-                currentSeg = obs[args.view]['segmentation']
-                currentRgbFront = obs['front']['rgb']
-                currentRgbNV = obs['nv-'+args.view]['rgb']
-                currentSegNV = obs['nv-'+args.view]['segmentation']
-                currentRgbFrontNV = obs['nv-front']['rgb']
-                rgb_nobg = currentRgbNV[:, :, :3] * (currentSegNV!=1)[:, :, None]
+            rot = mat2quat(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
+            new_rot = quaternion_multiply(rot, orig_rot)
 
+            # print(orig_pos)
+            p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
+            p.stepSimulation()
+            env.nvisii_update()
+
+            obs = env.get_observation()
+            currentRgb = obs[args.view]['rgb']
+            currentSeg = obs[args.view]['segmentation']
+            currentRgbFront = obs['front']['rgb']
+            currentRgbNV = obs['nv-'+args.view]['rgb']
+            currentSegNV = obs['nv-'+args.view]['segmentation']
+            currentRgbFrontNV = obs['nv-front']['rgb']
+            rgb_nobg = currentRgbNV[:, :, :3] * (currentSegNV!=1)[:, :, None]
+
+            if args.get_reward:
                 reward = getReward(rgb_nobg, rewardNet, preprocess)
                 print("Current Score: %f" %reward)
                 print("--------------------------------")
-                if reward > best_score:
-                    best_score = reward
-                    bestRgb = currentRgbNV
-                    bestRgbFront = currentRgbFrontNV
 
-                if args.logging:
-                    cv2.imwrite('%s-%s/scene-%d/top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgb, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFront, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/nv_top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/nv_front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/top_seg_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/top_seg_%d_nv.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
-
-                    logger.info("%d-step."%step)
-                    logger.info("Current Score: %f" %reward)
-
-                if step >= 10:
-                    break
-        best_scores.append(best_score)
-        if args.logging and bestRgb is not None:
-            cv2.imwrite('%s-%s/scene-%d/top_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgb, cv2.COLOR_RGB2BGR))
-            cv2.imwrite('%s-%s/scene-%d/front_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgbFront, cv2.COLOR_RGB2BGR))
+        if args.logging:
+            cv2.imwrite('%s-%s/scene-%d/top_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s-%s/scene-%d/front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
 
             logger.info("-------------------------------")
-            logger.info("Best Score: %f" %reward)
+            if args.get_reward:
+                logger.info("Score: %f" %reward)
 
     print("Done.")
 
