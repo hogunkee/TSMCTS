@@ -535,10 +535,15 @@ class Renderer(object):
             yMax = int(ty + self.cropSize[0] / 2)
             xMin = int(tx - self.cropSize[1] / 2)
             xMax = int(tx + self.cropSize[1] / 2)
+
+            objmask = self.objectMasks[rot][o]
+            kernel = np.ones((5, 5), np.uint8)
+            objmask_dilated = cv2.dilate(objmask, kernel)
+
             collisionMask[
                 max(0, yMin): min(self.imageSize[0], yMax),
                 max(0, xMin): min(self.imageSize[1], xMax)
-            ] += self.objectMasks[rot][o][
+            ] += objmask_dilated[
                     max(0, -yMin): max(0, -yMin) + (min(self.imageSize[0], yMax) - max(0, yMin)),
                     max(0, -xMin): max(0, -xMin) + (min(self.imageSize[1], xMax) - max(0, xMin)),
                 ]

@@ -714,7 +714,7 @@ if __name__=='__main__':
     parser.add_argument('--num-scenes', type=int, default=1)
     parser.add_argument('--H', type=int, default=12)
     parser.add_argument('--W', type=int, default=15)
-    parser.add_argument('--crop-size', type=int, default=128) #96
+    parser.add_argument('--crop-size', type=int, default=192) #96 #128
     parser.add_argument('--gui-off', action="store_true")
     parser.add_argument('--visualize-graph', action="store_true")
     parser.add_argument('--logging', action="store_true")
@@ -861,7 +861,7 @@ if __name__=='__main__':
         initRgb = obs['rgb']
         initSeg = obs['segmentation']
 
-        plt.imshow(initSeg)
+        plt.imshow(initRgb)
         plt.show()
 
         remove_indices = []

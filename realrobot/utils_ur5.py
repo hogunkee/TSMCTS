@@ -42,7 +42,7 @@ class UR5Robot:
 
         if True:
             theta = np.pi/16
-            self.PRE_GRASP_POS_1 = np.array([0.15, -0.3, 0.55])
+            self.PRE_GRASP_POS_1 = np.array([0.2, -0.3, 0.55])
             self.PRE_GRASP_POS_2 = np.array([0., -0.35, 0.55])
             self.PRE_PLACE_POS = np.array([0., -0.3, 0.6])
             self.ROBOT_INIT_POS = np.array([0.0, -0.35, 0.72])
@@ -160,8 +160,14 @@ class UR5Robot:
     def get_view(self, goal_pos=None, quat=[1, 0, 0, 0], grasp=0.0, show_img=False, num_solve=1):
         # quat: xyzw
         if goal_pos is not None:
+            count_failure = 0
             is_feasible = False
             while not is_feasible:
+                if count_failure > 2:
+                    pos_current, quat_current = self.get_eef_pose()
+                    #pos_near = pos_current + 0.01*(np.random.random(3)-0.5)
+                    pos_subgoal = 3/4 * np.array(pos_current) + 1/4 * np.array(goal_pos)
+                    self.get_view(pos_subgoal, quat_current, grasp)
                 goal_pos[2] = np.clip(goal_pos[2], 0.206, 0.7) #0.21
                 goal_P = form_T(quat2mat(quat), goal_pos)
                 joints = self.solve_ik(goal_P, num_solve)
@@ -185,8 +191,10 @@ class UR5Robot:
                 # check success
                 if res[0] is False:
                     print("Failed planning to the goal.")
+                    count_failure += 1
                 elif traj_length > 10:
                     print("A wrong path is obtained.")
+                    count_failure += 1
                 else:
                     print("Find a feasible trajectory.")
                     is_feasible = True
