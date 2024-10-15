@@ -288,12 +288,13 @@ class Renderer(object):
         self.cropSize = np.array(cropSize)
         self.rgb = None
 
-    def setup(self, rgbImage, segmentation, numRotations=2):
+    def setup(self, rgbImage, segmentation, numRotations=2, classes=None):
         # segmentation info
         # 1: background (table) -> 0
         # 2: None
         # 3: robot arm
         # 4~N: objects -> 1~N
+        self.classes = classes
         self.numObjects = int(np.max(segmentation))
         self.ratio, self.offset = self.getRatio()
         self.masks, self.centers = self.getMasks(segmentation)
@@ -301,7 +302,7 @@ class Renderer(object):
             return None
         self.rgb = np.copy(rgbImage)
         oPatches, oMasks = self.getObjectPatches()
-        self.objectPatches, self.objectMasks, self.objectAngles = self.getRotatedPatches(oPatches, oMasks)
+        self.objectPatches, self.objectMasks, self.objectAngles = self.getRotatedPatches(oPatches, oMasks, numRotations)
         self.segmap = np.copy(segmentation)
         posMap = self.getTable(segmentation)
         rotMap = np.zeros_like(posMap)
@@ -464,8 +465,8 @@ class Renderer(object):
                     phi = phi * 180 / np.pi
                     print("Rectangle phi:", phi)
             for r in range(numRotations):
-                angle = phi + r * 180 / numRotations
-                #angle = phi / np.pi * 180 + r * 90
+                #angle = phi + r * 180 / numRotations
+                angle = phi + r * 90
                 height, width = mask.shape[:2]
                 matrix = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
                 patch_rotated = cv2.warpAffine(patch.copy(), matrix, (width, height))

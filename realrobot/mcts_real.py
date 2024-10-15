@@ -112,6 +112,7 @@ class MCTS(object):
             self.searchLimit = iterationLimit
             self.limitType = 'iterations'
         
+        self.numRotations = args.num_rotations
         self.renderer = renderer
         if self.renderer is None:
             self.domain = 'grid'
@@ -143,8 +144,8 @@ class MCTS(object):
         self.inferenceCount = 0
         self.blurring = args.blurring
     
-    def reset(self, rgbImage, segmentation):
-        table = self.renderer.setup(rgbImage, segmentation)
+    def reset(self, rgbImage, segmentation, classes=None):
+        table = self.renderer.setup(rgbImage, segmentation, numRotations=self.numRotations, classes=classes)
         self.searchCount = 0
         self.inferenceCount = 0
         return table
@@ -212,10 +213,17 @@ class MCTS(object):
             nbs, ys, xs = np.where(prob>0.)
             idx = np.random.choice(len(nbs), p=prob[nbs, ys, xs])
             nb, y, x = nbs[idx], ys[idx], xs[idx]
-            rot = np.random.choice([1,2])
+            if self.renderer.classes[nb] in ['knife', 'fork', 'spoon']:
+                rot = np.random.choice([1, 3])
+            else:
+                rot = np.random.choice(np.arange(self.numRotations)+1)
+            #rot = np.random.choice([1,2])
             action = (nb+1, y, x, rot)
             p = prob[nb, y, x]
         else:
+            if self.renderer.classes[nb] in ['knife', 'fork', 'spoon']:
+                prob[1, :] = 0
+                prob[3, :] = 0
             rs, nbs, ys, xs = np.where(prob>0.)
             idx = np.random.choice(len(rs), p=prob[rs, nbs, ys, xs])
             rot, nb, y, x = rs[idx], nbs[idx], ys[idx], xs[idx]
@@ -391,12 +399,12 @@ class MCTS(object):
     def removeBoundaryActions(self, probMap):
         if len(probMap.shape)==3:
             probMap[:, :3, :] = 0
-            probMap[:, -3:, :] = 0
+            probMap[:, -2:, :] = 0
             probMap[:, :, :4] = 0 #3
             probMap[:, :, -4:] = 0 #3
         else:
             probMap[:, :, :3, :] = 0
-            probMap[:, :, -3:, :] = 0
+            probMap[:, :, -2:, :] = 0
             probMap[:, :, :, :4] = 0 #3
             probMap[:, :, :, -4:] = 0 #3
         return probMap
@@ -425,7 +433,8 @@ class MCTS(object):
             elif policy.startswith('iql'):
                 states = []
                 objectPatches = []
-                for r in range(1,3):
+                #for r in range(1,3):
+                for r in range(1, self.numRotations+1):
                     for o in range(self.renderer.numObjects):
                         rgbWoTarget = self.renderer.getRGB(node.table, remove=o)
                         objPatch = self.renderer.objectPatches[r][o]
@@ -449,7 +458,8 @@ class MCTS(object):
                     probMap = newProbMap
                 
                 # shape: r x n x h x w
-                probMap = probMap.reshape(2, self.renderer.numObjects, self.renderer.tableSize[0], self.renderer.tableSize[1])
+                probMap = probMap.reshape(self.numRotations, self.renderer.numObjects, self.renderer.tableSize[0], self.renderer.tableSize[1])
+                #probMap = probMap.reshape(2, self.renderer.numObjects, self.renderer.tableSize[0], self.renderer.tableSize[1])
                 pys, pxs = np.where(node.table[0]!=0)
                 for py, px in zip(pys, pxs):
                     obj = node.table[0][py, px]
@@ -734,6 +744,7 @@ if __name__=='__main__':
     parser.add_argument('--exploration', type=float, default=20) # 5 for alphago / 0.5 for mcts
     parser.add_argument('--gamma', type=float, default=1)
     parser.add_argument('--classes', type=str, default="Apple. Lemon. Orange. Fruit.")
+    parser.add_argument('--num-rotations', type=int, default=4) #2
     # Reward model
     parser.add_argument('--normalize-reward', action="store_true")
     parser.add_argument('--reward-type', type=str, default='gt') # 'gt' / 'iql'
@@ -860,6 +871,7 @@ if __name__=='__main__':
         obs = env.reset(classes, move_ur5=False)
         initRgb = obs['rgb']
         initSeg = obs['segmentation']
+        initClasses = [classes[cid].lower() for cid in obs['class_id']]
 
         plt.imshow(initRgb)
         plt.show()
@@ -884,7 +896,7 @@ if __name__=='__main__':
         if args.logging:
             plt.imshow(initRgb)
             plt.savefig('%s-%s/initial.png'%(log_dir, log_name))
-        initTable = searcher.reset(initRgb, initSeg)
+        initTable = searcher.reset(initRgb, initSeg, initClasses)
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
 
@@ -967,12 +979,13 @@ if __name__=='__main__':
             #==================================#
             currentRgb = obs['rgb']
             currentSeg = obs['segmentation']
+            currentClasses = [classes[cid].lower() for cid in obs['class_id']]
             if args.logging:
                 plt.imshow(currentRgb)
                 plt.savefig('%s-%s/real_%d.png'%(log_dir, log_name, step))
                 #plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
 
-            table = searcher.reset(currentRgb, currentSeg)
+            table = searcher.reset(currentRgb, currentSeg, currentClasses)
             if table is None:
                 print_fn("Scenario ended.")
                 break

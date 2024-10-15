@@ -3,3 +3,11 @@ python mcts_real.py --iteration-limit 5000 --logging --tree-policy random --clas
 
 
 python mcts_real.py --iteration-limit 5000 --logging --tree-policy random --classes Fork.Knife.Spoon.Plate.Bowl
+
+
+python mcts_real.py --iteration-limit 5000 --logging --tree-policy random --classes Fork.Knife.Spoon.Plate
+
+
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0420_1905/iql_final.pth --iteration-limit 5000 --logging --tree-policy random --classes Fork.Knife.Spoon.Plate
+
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --iteration-limit 5000 --logging --tree-policy random --classes Fork.Knife.Spoon.Plate
