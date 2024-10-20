@@ -1,3 +1,59 @@
+---------------------------------WS's part---------------------------------------
+Woring directory: /home/ur-plusle/Desktop/PreferenceDiffusion/realrobot
+Results directory: /home/ur-plusle/Desktop/PreferenceDiffusion/realrobot/data
+
+## Initial scene images are in the data/Exp2 folder.
+### Arguments ###
+S1: 
+--classes Fork.Plate.Knife.Cup --num-objects 4
+S2: 
+--classes Fork.Plate.Knife.Bowl --num-objects 4
+S3: 
+--classes Fork.Plate.Knife.Spoon.Banana --num-objects 5
+S4: 
+--classes Fork.Plate.Knife.Apple.Banana --num-objects 5
+S5: 
+--classes Fork.Plate.Knife.Apple --num-objects 4
+
+
+1. StructFormer
+python structformer_real.py --visualize --logging --classes {objects} --num-objects {numobj}
+
+
+2. StructDiffusion
+python structdiffusion_real.py --visualize --logging --classes {objects} --num-objects {numobj}
+
+
+## Output results will be saved in data/ folder.
+## Collect successful results into data/Exp2 folder.
+
+
+
+
+
+---------------------------------HG's---------------------------------------
+
+Dining Scene
+# 1. Fork.Knife.Plate.Cup
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Fork.Knife.Plate.Cup
+
+# 2. Fork.Knife.Plate.Bowl
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Fork.Knife.Plate.Bowl
+
+# 3. Fork.Knife.Spoon.Plate.Banana
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Fork.Knife.Spoon.Plate.Banana
+
+# 4. Fork.Knife.Plate.Apple.Banana
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Fork.Knife.Plate.Apple.Banana
+
+# 5. Fork.Knife.Plate.Apple
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Fork.Knife.Plate.Apple
+
+
+
+
+
+
 python mcts_real.py --iteration-limit 5000 --logging --tree-policy random --classes Glass.Cup.Bowl.Basket.Plate.Teapot.Shampoo.Clock.Toothpaste.Tube.Box.Marker.Stapler.Vaseline.Pen.Apple.Oragne.Scissors.Box
 
 
@@ -8,6 +64,4 @@ python mcts_real.py --iteration-limit 5000 --logging --tree-policy random --clas
 python mcts_real.py --iteration-limit 5000 --logging --tree-policy random --classes Fork.Knife.Spoon.Plate
 
 
-python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0420_1905/iql_final.pth --iteration-limit 5000 --logging --tree-policy random --classes Fork.Knife.Spoon.Plate
-
-python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --iteration-limit 5000 --logging --tree-policy random --classes Fork.Knife.Spoon.Plate
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0420_1905/iql_final.pth --iteration-limit 5000 --logging --classes Fork.Knife.Spoon.Plate

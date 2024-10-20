@@ -221,10 +221,18 @@ class MCTS(object):
             action = (nb+1, y, x, rot)
             p = prob[nb, y, x]
         else:
-            if self.renderer.classes[nb] in ['knife', 'fork', 'spoon']:
-                prob[1, :] = 0
-                prob[3, :] = 0
+            if False:
+                for nb in range(prob.shape[1]):
+                    if self.renderer.classes[nb] in ['knife', 'fork', 'spoon']:
+                        prob[1, nb, :, :] = 0
+                        prob[3, nb, :, :] = 0
+
+            if prob.sum()==0:
+                prob = np.ones_like(prob)
+                prob = self.removeBoundaryActions(prob)
+            prob = prob/prob.sum()
             rs, nbs, ys, xs = np.where(prob>0.)
+
             idx = np.random.choice(len(rs), p=prob[rs, nbs, ys, xs])
             rot, nb, y, x = rs[idx], nbs[idx], ys[idx], xs[idx]
             action = (nb+1, y, x, rot+1)
@@ -736,7 +744,7 @@ if __name__=='__main__':
     parser.add_argument('--rollout-policy', type=str, default='nostep') # 'nostep' / 'policy' / 'iql-policy'
     parser.add_argument('--tree-policy', type=str, default='random') # 'random' / 'policy' / 'iql-policy'
     parser.add_argument('--puct-lambda', type=float, default=0.5)
-    parser.add_argument('--threshold-success', type=float, default=0.85) #0.85
+    parser.add_argument('--threshold-success', type=float, default=0.95) #0.85
     parser.add_argument('--threshold-prob', type=float, default=1e-5)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--binary-reward', action="store_true")
@@ -867,14 +875,20 @@ if __name__=='__main__':
         #classes = ["Apple. Lemon. Orange. Fruit."]
         #classes = ["Apple", "Lemon", "Orange", "Fruit"]
         classes = args.classes.replace(" ", "").replace(",", ".").split(".")
-        env.get_observation(move_ur5=True)
-        obs = env.reset(classes, move_ur5=False)
-        initRgb = obs['rgb']
-        initSeg = obs['segmentation']
-        initClasses = [classes[cid].lower() for cid in obs['class_id']]
 
-        plt.imshow(initRgb)
-        plt.show()
+        while True:
+            env.get_observation(move_ur5=True)
+            obs = env.reset(classes, move_ur5=False)
+            initRgb = obs['rgb']
+            initSeg = obs['segmentation']
+            initClasses = [classes[cid].lower() for cid in obs['class_id']]
+
+            plt.imshow(initRgb)
+            plt.show()
+            x = input("Press 'r' for reset the table and get a new initial state.")
+            #x = input("Press 'y' for start. 'r' for reset and get a new initial state.")
+            if x.lower()!='r':
+                break
 
         remove_indices = []
         NB = np.max(obs['segmentation']).astype(int)
@@ -992,7 +1006,12 @@ if __name__=='__main__':
             #table = copy.deepcopy(nextTable)
             print_fn("Current state: \n %s"%table[0])
 
-            terminal, reward, _ = searcher.isTerminal(None, table, checkReward=True, groundTruth=True)
+            _, reward, _ = searcher.isTerminal(None, table, checkReward=True, groundTruth=True)
+            #terminal, reward, _ = searcher.isTerminal(None, table, checkReward=True, groundTruth=True)
+            if reward > args.threshold_success:
+                terminal = True
+            else:
+                terminal = False
             print_fn("Current Score: %f" %reward)
             print_fn("--------------------------------")
             if reward > best_score:

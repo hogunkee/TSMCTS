@@ -3,12 +3,14 @@ import argparse
 import torch
 import numpy as np
 import pytorch_lightning as pl
+import rospy
+import logging
 from omegaconf import OmegaConf
 
 from StructDiffusion.data.semantic_arrangement import SemanticArrangementDataset
 from StructDiffusion.language.tokenizer import Tokenizer
-from StructDiffusion.models.pl_models import ConditionalPoseDiffusionModel
-from StructDiffusion.diffusion.sampler import Sampler
+from StructDiffusion.models.pl_models import ConditionalPoseDiffusionModel, PairwiseCollisionModel
+from StructDiffusion.diffusion.sampler import SamplerV2
 from StructDiffusion.diffusion.pose_conversion import get_struct_objs_poses
 from StructDiffusion.utils.files import get_checkpoint_path_from_dir, replace_config_for_testing_data
 from StructDiffusion.utils.batch_inference import move_pc_and_create_scene_simple, visualize_batch_pcs
@@ -18,25 +20,30 @@ import datetime
 import random
 import pybullet as p
 from matplotlib import pyplot as plt
-from pc_utils import get_diffusion_data, setupEnvironment
-from transform_utils import mat2quat
+from utils_pc import depth2pointcloud, get_diffusion_data, rotate_around_point
+from transform_utils import mat2quat, quat2mat, mat2euler, euler2quat
+
+from environment import RealEnvironment
 
 # tabletop environment
 import sys
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/pybullet_ur5_robotiq'))
-from custom_env import get_contact_objects, quaternion_multiply
-sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
-from collect_template_list import scene_list
-sys.path.append(os.path.join(FILE_PATH, '..', 'mcts'))
-from utils import suppress_stdout
+sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp/'))#pybullet_ur5_robotiq'))
+from scene_utils import quaternion_multiply
+#from custom_env import get_contact_objects, quaternion_multiply
+#sys.path.append(os.path.join(FILE_PATH, '../..', 'TabletopTidyingUp'))
+#from collect_template_list import scene_list
+#sys.path.append(os.path.join(FILE_PATH, '..', 'mcts'))
+#from utils import suppress_stdout
+
+from mcts_real import Renderer, loadRewardFunction
+from structformer_real import Discriminator
 
 
 def main(args, cfg):
     # Logger
     now = datetime.datetime.now()
     log_name = now.strftime("%m%d_%H%M")
-    log_name += '-' + args.view
     # logname = 'SF-' + log_name
 
     # Random seed
@@ -48,60 +55,32 @@ def main(args, cfg):
         pl.seed_everything(args.seed)
 
     # Environment setup
-    with suppress_stdout():
-        env = setupEnvironment(args)
-    scenes = sorted(list(scene_list.keys()))
-    if args.scenes=='':
-        if args.scene_split=='unseen':
-            scenes = [s for s in scenes if s in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-        elif args.scene_split=='seen':
-            scenes = [s for s in scenes if s not in ['B2', 'B5', 'C4', 'C6', 'C12', 'D5', 'D8', 'D11', 'O3', 'O7']]
-    else:
-        scenes = args.scenes.split(',')
-    if args.inorder:
-        selected_scene = scenes[0]
-        metrics = {}
-        for s in scenes:
-            metrics[s] = {}
-    else:
-        selected_scene = random.choice(scenes)
-    print('Selected scene: %s' %selected_scene)
+    env = RealEnvironment(None)
 
-    objects = scene_list[selected_scene]
-    #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
-    sizes = []
-    for i in range(len(objects)):
-        if 'small' in objects[i]:
-            sizes.append('small')
-            objects[i] = objects[i].replace('small_', '')
-        elif 'large' in objects[i]:
-            sizes.append('large')
-            objects[i] = objects[i].replace('large_', '')
-        else:
-            sizes.append('medium')
-    objects = [[objects[i], sizes[i]] for i in range(len(objects))]
-    if args.num_objects==0: # use the template
-        selected_objects = objects
-    else: # random sampling
-        if len(objects) < args.num_objects:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
-        else:
-            selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
-    env.spawn_objects(selected_objects)
-    env.arrange_objects(random=True)
-
+    # MCTS renderer 
+    renderer = Renderer(tableSize=(args.H, args.W), imageSize=(360, 480), cropSize=(args.crop_size, args.crop_size))
+    searcher = Discriminator(renderer, args) #1/np.sqrt(2)
+    # Network setup
+    model_path = args.reward_model_path
+    gtRewardNet, preprocess = loadRewardFunction(model_path)
+    searcher.setGTRewardNet(gtRewardNet)
+    searcher.setPreProcess(preprocess)
 
     device = (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
 
-    checkpoint_dir = os.path.join(cfg.WANDB.save_dir, cfg.WANDB.project, args.checkpoint_id, "checkpoints")
-    checkpoint_path = get_checkpoint_path_from_dir(checkpoint_dir)
+    diffusion_checkpoint_dir = os.path.join(cfg.WANDB.save_dir, cfg.WANDB.project, args.diffusion_checkpoint_id, "checkpoints")
+    diffusion_checkpoint_path = get_checkpoint_path_from_dir(diffusion_checkpoint_dir)
+    collision_checkpoint_dir = os.path.join(cfg.WANDB.save_dir, cfg.WANDB.project, args.collision_checkpoint_id, "checkpoints")
+    collision_checkpoint_path = get_checkpoint_path_from_dir(collision_checkpoint_dir)
 
     tokenizer = Tokenizer(cfg.DATASET.vocab_dir)
     # override ignore_rgb for visualization
     cfg.DATASET.ignore_rgb = False
     dataset = SemanticArrangementDataset(split="test", tokenizer=tokenizer, **cfg.DATASET)
 
-    sampler = Sampler(ConditionalPoseDiffusionModel, checkpoint_path, device)
+    sampler = SamplerV2(ConditionalPoseDiffusionModel, diffusion_checkpoint_path, 
+                      PairwiseCollisionModel, collision_checkpoint_path, device)
+    #sampler = Sampler(ConditionalPoseDiffusionModel, checkpoint_path, device)
     
     log_dir = 'data/SD'
     bar = range(args.num_scenes)
@@ -111,73 +90,49 @@ def main(args, cfg):
             os.makedirs('%s-%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
             with open('%s-%s/config.json'%(log_dir, log_name), 'w') as f:
                 json.dump(args.__dict__, f, indent=2)
+            logger.handlers.clear()
+            formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
+            file_handler = logging.FileHandler('%s-%s/scene-%d/sdlog.log'%(log_dir, log_name, sidx))
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
 
         if seed is not None: 
             random.seed(seed + sidx)
             np.random.seed(seed + sidx)
 
         # Initial state
-        with suppress_stdout():
-            obs = env.reset()
-        if args.use_template:
-            if args.inorder:
-                selected_scene = scenes[sidx%len(scenes)]
-            else:
-                selected_scene = random.choice(scenes)
-            print('Selected scene: %s' %selected_scene)
+        classes = args.classes.replace(" ", "").replace(",", ".").split(".")
+        #classes = ['fork', 'knife', 'plate', 'cup']
+        #classes = ['fork', 'plate', 'knife', 'cup']
 
-            objects = scene_list[selected_scene]
-            #sizes = [random.choice(['small', 'medium', 'large']) for o in objects]
-            sizes = []
-            for i in range(len(objects)):
-                if 'small' in objects[i]:
-                    sizes.append('small')
-                    objects[i] = objects[i].replace('small_', '')
-                elif 'large' in objects[i]:
-                    sizes.append('large')
-                    objects[i] = objects[i].replace('large_', '')
-                else:
-                    sizes.append('medium')
-            objects = [[objects[i], sizes[i]] for i in range(len(objects))]
-            
-        if args.num_objects==0:
-            selected_objects = objects
-        else:
-            if len(objects) < args.num_objects:
-                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=True)]
-            else:
-                selected_objects = [objects[i] for i in np.random.choice(len(objects), args.num_objects, replace=False)]
-        env.spawn_objects(selected_objects)
         while True:
-            is_occluded = False
-            is_collision = False
-            env.arrange_objects(random=True)
-            obs = env.get_observation()
-            initRgb = obs['top']['rgb']
-            initSeg = obs['top']['segmentation']
-            # Check occlusions
-            for o in range(len(selected_objects)):
-                # get the segmentation mask of each object #
-                mask = (initSeg==o+4).astype(float)
-                if mask.sum()==0:
-                    print("Object %d is occluded."%o)
-                    is_occluded = True
-                    break
-            # Check collision
-            contact_objects = get_contact_objects()
-            contact_objects = [c for c in list(get_contact_objects()) if 1 not in c and 2 not in c]
-            if len(contact_objects) > 0:
-                print("Collision detected.")
-                print(contact_objects)
-                is_collision = True
-            if is_occluded or is_collision:
-                continue
-            else:
+            env.get_observation(move_ur5=True)
+            obs = env.reset(classes, move_ur5=False, sort=True)
+            T_rs = env.UR5.get_T_robot_to_rs()
+
+            initRgb = obs['rgb_raw']
+            initDepth = obs['depth_raw']
+            initSeg = obs['segmentation_raw']
+            initClasses = [classes[cid].lower() for cid in obs['class_id']]
+
+            initDepth[initDepth==0] = np.mean(initDepth)
+
+            plt.imshow(initRgb)
+            plt.show()
+            plt.imshow(initSeg)
+            plt.show()
+            plt.imshow(initDepth)
+            plt.show()
+            x = input("Press 'r' for reset the table and get a new initial state.")
+            if x.lower()!='r':
                 break
-        print('Objects: %s' %[o for o,s in selected_objects])
+
+        table = searcher.reset(obs['rgb'], obs['segmentation'], initClasses)
+        _, reward, _ = searcher.isTerminal(None, table, checkReward=True, groundTruth=True)
+        print_fn("Score: %f"%reward)
 
         if args.logging:
-            plt.imshow(initRgb)
+            plt.imshow(obs['rgb'])
             plt.savefig('%s-%s/scene-%d/initial.png'%(log_dir, log_name, sidx))
         
         structure_param = {'length': np.random.uniform(0.25, 0.4),
@@ -185,103 +140,95 @@ def main(args, cfg):
         
         print("--------------------------------")
         step = 0
+        rgb, depth, seg = initRgb, initDepth, initSeg
+        env.mapping_objs = env.data['object_names']
+        print('mapping objs:')
+        print(env.mapping_objs)
+        print('-------------------------------')
         while step<10:
-            # from dataset
-            if False:
-                init_datum = dataset.get_raw_data(step)
-                # for i in range(len(init_datum["goal_poses"])):
-                #     init_datum["goal_poses"][i] = np.eye(4)
-                # init_datum["t"] = 200
-                print(tokenizer.convert_structure_params_to_natural_language(init_datum["sentence"]))
-                datum = dataset.convert_to_tensors(init_datum, tokenizer)
-                batch = dataset.single_datum_to_batch(datum, args.num_samples, device, inference_mode=True)
-                num_poses = datum["goal_poses"].shape[0]
-                xs = sampler.sample(batch, num_poses) 
-            # from pybullet env
-            else:
-                try:
-                    init_datum = get_diffusion_data(env.get_observation(), env, structure_param, view=args.view, inference_mode=True)
-                except:
-                    break
-                print(tokenizer.convert_structure_params_to_natural_language(init_datum["sentence"]))
-                obj_ids = init_datum["ids"]
-                target_objects = init_datum["target_objs"]
+            xyz, rgb = depth2pointcloud(depth, rgb, env.RS.K_rs, T_rs)
+            init_datum = get_diffusion_data(rgb, xyz, depth, seg, structure_param, inference_mode=True)
+            print(tokenizer.convert_structure_params_to_natural_language(init_datum["sentence"]))
+            target_objects = init_datum["target_objs"]
 
-                datum = dataset.convert_to_tensors(init_datum, tokenizer)
-                batch = dataset.single_datum_to_batch(datum, args.num_samples, device, inference_mode=True)
-                batch_copy = batch.copy()
-                num_poses = datum["goal_poses"].shape[0]
-                xs = sampler.sample(batch, num_poses)
+            datum = dataset.convert_to_tensors(init_datum, tokenizer)
+            batch = dataset.single_datum_to_batch(datum, args.num_samples, device, inference_mode=True)
+            batch_copy = batch.copy()
+            num_poses = datum["goal_poses"].shape[0]
 
-            struct_pose, pc_poses_in_struct = get_struct_objs_poses(xs[0])
-            # struct_pose : 10, 1, 4, 4
-            # pc_poses_in_struct : 10, 7, 4, 4
-            # dataset: [0.3891, 0.0556, 0.0293]
-            # pybullet: [0.4332, 0.2187, 0.1527]
+            struct_pose, pc_poses_in_struct = sampler.sample(batch, num_poses)
             new_obj_xyzs = move_pc_and_create_scene_simple(batch["pcs"], struct_pose, pc_poses_in_struct)
-            if not args.gui_off:
+            if args.visualize:
                 visualize_batch_pcs(torch.cat(init_datum["pcs"]).reshape(1, 7, 1024, 6), args.num_samples)
-                visualize_batch_pcs(new_obj_xyzs, args.num_samples, limit_B=10, trimesh=True)
+                visualize_batch_pcs(new_obj_xyzs[:1], args.num_samples, limit_B=10, trimesh=True)
+                #visualize_batch_pcs(new_obj_xyzs, args.num_samples, limit_B=10, trimesh=True)
 
             struct_rot = struct_pose[0][0][:3, :3]
             
             # num_objects = num_poses - 1
             for obj_idx, tobj_name in enumerate(target_objects):
-                pid = obj_ids[tobj_name]
-                # pid = env.pre_selected_objects[obj_ids[tobj_name]]
-                # pid = env.pre_selected_objects[obj_idx] #init_datum["shuffle_indices"][obj_idxs[obj_idx]]]
-                orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
-
                 translation = new_obj_xyzs[0][obj_idx].mean(0)[:3].cpu().numpy() - init_datum["pcs"][obj_idx].mean(0)[:3].numpy()
-                object_rot = pc_poses_in_struct[0][obj_idx][:3, :3]
-                rot = mat2quat(struct_rot.cpu().numpy() @ object_rot.cpu().numpy())
-                new_rot = quaternion_multiply(rot, orig_rot)
 
-                p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
-                p.stepSimulation()
-                step += 1
+                object_rot = pc_poses_in_struct[0][obj_idx][:3, :3]
+                rot_euler = mat2euler(struct_rot.cpu().numpy() @ object_rot.cpu().numpy())
+                roll, pitch, yaw = rot_euler
+                print(init_datum['shuffle_indices'][obj_idx] + 1)
+                #print('initial sf xyzs : ', beam_pc_rearrangement.initial_xyzs["xyzs"][obj_idx].mean(0).numpy())
+                print('translation: ', translation)
+                print('rot:')
+                print(rot_euler)
+
+                ## Rotate ##
+                angle_delta = np.pi/2
+                translation = rotate_around_point(translation.reshape(1, 3), angle_delta, (0, 0))[0]
+                #yaw += angle_delta
+                print('rotated translation:', translation)
+                obs = env.step_3d(init_datum['shuffle_indices'][obj_idx] + 1 , translation, yaw, stop=False)
+
 
                 if args.logging:
-                    obs = env.get_observation()
-                    currentRgb = obs['top']['rgb']
+                    currentRgb = obs['rgb']
+                    currentSeg = obs['segmentation']
+                    currentClasses = [classes[cid].lower() for cid in obs['class_id']]
+
+                    table = searcher.reset(currentRgb, currentSeg, currentClasses)
+                    if table is None:
+                        score = 0.
+                    else:
+                        _, reward, _ = searcher.isTerminal(None, table, checkReward=True, groundTruth=True)
+                    print_fn("Score: %f"%reward)
                     plt.imshow(currentRgb)
                     plt.savefig('%s-%s/scene-%d/real_%d.png'%(log_dir, log_name, sidx, step))
+
+                step += 1
                 if step >= 10:
                     break
             
-        print("Done.")
-        # # from dataset
-        # raw_datum = dataset.get_raw_data(di)
-        # print(tokenizer.convert_structure_params_to_natural_language(raw_datum["sentence"]))
-        # datum = dataset.convert_to_tensors(raw_datum, tokenizer)
-        # batch = dataset.single_datum_to_batch(datum, args.num_samples, device, inference_mode=True)
-        # num_poses = datum["goal_poses"].shape[0]
-        # xs = sampler.sample(batch, num_poses) 
-        
-        # struct_pose, pc_poses_in_struct = get_struct_objs_poses(xs[0])
-        # new_obj_xyzs = move_pc_and_create_scene_simple(batch["pcs"], struct_pose, pc_poses_in_struct)
-        # visualize_batch_pcs(new_obj_xyzs, args.num_samples, limit_B=10, trimesh=True)
+        print_fn("Done.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="infer")
     parser.add_argument("--base_config_file", help='base config yaml file',
-                        default='../../StructDiffusion/configs/base.yaml',
+                        default='/home/ur-plusle/Desktop/StructDiffusion/configs/base.yaml',
                         type=str)
     parser.add_argument("--config_file", help='config yaml file',
-                        default='../../StructDiffusion/configs/conditional_pose_diffusion.yaml',
+                        default='/home/ur-plusle/Desktop/StructDiffusion/configs/conditional_pose_diffusion.yaml',
                         type=str)
     parser.add_argument("--testing_data_config_file", help='config yaml file',
-                        default='../../StructDiffusion/configs/testing_data.yaml',
+                        default='/home/ur-plusle/Desktop/StructDiffusion/configs/testing_data.yaml',
                         type=str)
-    parser.add_argument("--checkpoint_id",
+    parser.add_argument("--diffusion-checkpoint_id",
                         default="ConditionalPoseDiffusion",
                         type=str)
+    parser.add_argument("--collision-checkpoint_id",
+                        default="CollisionDiscriminator",
+                        type=str)
     parser.add_argument("--num_samples",
-                        default=1, #10,
+                        default=10, #10,
                         type=int)
     # Environment settings
-    parser.add_argument('--data-dir', type=str, default='/ssd/disk')
+    #parser.add_argument('--data-dir', type=str, default='/ssd/disk')
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--view', type=str, default='front') # 'front' / 'top'
     parser.add_argument('--use-template', action="store_true")
@@ -292,9 +239,30 @@ if __name__ == "__main__":
     parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=16)
-    parser.add_argument('--gui-off', action="store_true")
+    parser.add_argument('--visualize', action="store_true")
     parser.add_argument('--logging', action="store_true")
+    parser.add_argument('--classes', type=str, default="Fork.Knife.Plate.Bowl")
+
+    parser.add_argument('--reward-model-path', type=str, default='../mcts/data/classification-best/top_nobg_linspace_mse-best.pth')
+    parser.add_argument('--H', type=int, default=12)
+    parser.add_argument('--W', type=int, default=15)
+    parser.add_argument('--crop-size', type=int, default=192) #96 #128
+    parser.add_argument('--threshold-success', type=float, default=0.95) #0.85
+    parser.add_argument('--batch-size', type=int, default=32)
     args = parser.parse_args()
+
+    if args.logging:
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+
+    def print_fn(s=''):
+        if args.logging: 
+            logger.info(s)
+            print(s)
+        else: 
+            print(s)
+
+    #args.classes = "Spoon.Fork.Knife.Glass.Cup.Bowl.Basket.Plate.Teapot.Shampoo.Clock.Toothpaste.Tube.Box.Marker.Stapler.Vaseline.Pen.Apple.Orange.Scissors.Box"
 
     base_cfg = OmegaConf.load(args.base_config_file)
     cfg = OmegaConf.load(args.config_file)

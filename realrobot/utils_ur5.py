@@ -169,6 +169,7 @@ class UR5Robot:
                     pos_subgoal = 3/4 * np.array(pos_current) + 1/4 * np.array(goal_pos)
                     self.get_view(pos_subgoal, quat_current, grasp)
                 goal_pos[2] = np.clip(goal_pos[2], 0.206, 0.7) #0.21
+                goal_pos[1] = np.clip(goal_pos[1], -0.7, -0.1)
                 goal_P = form_T(quat2mat(quat), goal_pos)
                 joints = self.solve_ik(goal_P, num_solve)
                 if len(joints)==0:

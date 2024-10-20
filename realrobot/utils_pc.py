@@ -63,6 +63,29 @@ def depth2pc(depth, K, rgb=None):
     pc = np.vstack((world_x, world_y, world_z)).T
     return (pc, rgb)
 
+def rotate_around_point(xyz, radians, origin=(0, 0)):
+    """Rotate a point around a given point.
+    
+    I call this the "high performance" version since we're caching some
+    values that are needed >1 time. It's less readable than the previous
+    function but it's faster.
+    """
+    x, y, z = zip(*xyz)
+    x, y, z = np.array(x), np.array(y), np.array(z)
+    #print('x:', x)
+    #print('y:', y)
+    #print('z:', z)
+    offset_x, offset_y = origin
+    adjusted_x = (x - offset_x)
+    adjusted_y = (y - offset_y)
+    cos_rad = np.cos(radians)
+    sin_rad = np.sin(radians)
+    qx = offset_x + cos_rad * adjusted_x + sin_rad * adjusted_y
+    qy = offset_y + -sin_rad * adjusted_x + cos_rad * adjusted_y
+    xyz_rot = np.concatenate([qx, qy, z]).reshape(3, -1).T
+    #xyz_rot = torch.Tensor(xyz_rot).to(torch.float32)
+    #print('xyz_rot:', xyz_rot)
+    return xyz_rot
 
 
 #def get_raw_data(obs, env, structure_param, view='top', max_num_objects=10, num_pts=1024):
@@ -93,7 +116,16 @@ def get_raw_data(rgb, xyz, depth, seg, structure_param, max_num_objects=10, num_
         if np.sum(obj_mask) <= 0:
             raise Exception
         ok, obj_xyz, obj_rgb, _ = get_pts(xyz, rgb, obj_mask, num_pts=num_pts)
-        obj_xyzs.append((obj_xyz + np.array([0.5, 0.5, 0.])).to(torch.float32))
+        #obj_xyzs.append((obj_xyz + np.array([0.5, 0.5, 0.])).to(torch.float32))
+        obj_xyz = (obj_xyz + np.array([0.5, 0.5, 0.])).to(torch.float32)
+        print('obj xyz:', obj_xyz.mean(0))
+        ## Rotate point clouds ##
+        if True:
+            obj_xyz = rotate_around_point(obj_xyz, -np.pi/2, (0.5, 0.))
+            obj_xyz = torch.Tensor(obj_xyz).to(torch.float32)
+        obj_xyzs.append(obj_xyz)
+        # point cloud center: 0.5, 0, 0.2
+        # obj_xyz
         #obj_xyz = (obj_xyz - np.array([-0.5, 0, 0.58])).to(torch.float32) # [-0.475, 0, 0.58], [-0.475, 0, 0.42]
         #obj_xyzs.append((obj_xyz - np.array([-0.5, 0, 0.62])).to(torch.float32))
         obj_rgbs.append(obj_rgb[:, :3]/255)
@@ -227,6 +259,7 @@ def get_diffusion_data(rgb, xyz, depth, seg, structure_param, inference_mode=Fal
     num_rearrange_objs = int(seg.max())
     target_objs = np.arange(num_rearrange_objs)
     other_objs = []
+    print('target objs:', target_objs)
 
     #ids = {'table': 1}
     #for id, tobj in env.table_objects_list.items():
@@ -255,11 +288,16 @@ def get_diffusion_data(rgb, xyz, depth, seg, structure_param, inference_mode=Fal
         if np.sum(obj_mask) <= 0:
             raise Exception
         ok, obj_xyz, obj_rgb, _ = get_pts(xyz, rgb, obj_mask, num_pts=num_pts)
-        obj_xyzs.append((obj_xyz + np.array([0.5, 0.5, 0.])).to(torch.float32))
+        obj_xyz = (obj_xyz + np.array([0.5, 0.5, 0.])).to(torch.float32) # [-0.475, 0, 0.58], [-0.475, 0, 0.42]
         #obj_xyz = (obj_xyz - np.array([-0.5, 0, 0.58])).to(torch.float32) # [-0.475, 0, 0.58], [-0.475, 0, 0.42]
+        ## Rotate point clouds ##
+        if True:
+            obj_xyz = rotate_around_point(obj_xyz, -np.pi/2, (0.5, 0))
+            obj_xyz = torch.Tensor(obj_xyz).to(torch.float32)
         if not ok:
             raise Exception
 
+        print('target objs:', target_objs)
         if i in target_objs:
             if ignore_rgb:
                 obj_pcs.append(obj_xyz)
@@ -291,6 +329,7 @@ def get_diffusion_data(rgb, xyz, depth, seg, structure_param, inference_mode=Fal
     goal_obj_poses = []
     current_obj_poses = []
     goal_pc_poses = []
+    print('target objs:', target_objs)
     for obj, current_pc_pose in zip(target_objs, current_pc_poses):
         goal_pose = np.eye(4)
         current_pose = np.eye(4)
@@ -306,6 +345,7 @@ def get_diffusion_data(rgb, xyz, depth, seg, structure_param, inference_mode=Fal
         goal_pc_poses.append(goal_pc_pose)
 
     # pad data
+    print('target objs:', target_objs)
     for i in range(max_num_objects - len(target_objs)):
         obj_pcs.append(torch.zeros_like(obj_pcs[0], dtype=torch.float32))
         obj_pad_mask.append(1)
@@ -331,21 +371,27 @@ def get_diffusion_data(rgb, xyz, depth, seg, structure_param, inference_mode=Fal
 
     ###################################
     # paddings
+    print('target objs:', target_objs)
     for i in range(max_num_objects - len(target_objs)):
         goal_pc_poses.append(np.eye(4))
 
     # shuffle the position of objects
+    print('target objs:', target_objs)
+    shuffle_target_object_indices = list(range(len(target_objs)))
+    print('shuffle indices:', shuffle_target_object_indices)
     if shuffle_object_index:
-        shuffle_target_object_indices = list(range(len(target_objs)))
         random.shuffle(shuffle_target_object_indices)
-        shuffle_object_indices = shuffle_target_object_indices + list(range(len(target_objs), max_num_objects))
-        obj_pcs = [obj_pcs[i] for i in shuffle_object_indices]
-        goal_pc_poses = [goal_pc_poses[i] for i in shuffle_object_indices]
-        if inference_mode:
-            goal_obj_poses = [goal_obj_poses[i] for i in shuffle_object_indices]
-            current_obj_poses = [current_obj_poses[i] for i in shuffle_object_indices]
-            target_objs = [target_objs[i] for i in shuffle_target_object_indices]
-            current_pc_poses = [current_pc_poses[i] for i in shuffle_object_indices]
+    shuffle_object_indices = shuffle_target_object_indices + list(range(len(target_objs), max_num_objects))
+    print('shuffle object indices:', shuffle_object_indices)
+    obj_pcs = [obj_pcs[i] for i in shuffle_object_indices]
+    goal_pc_poses = [goal_pc_poses[i] for i in shuffle_object_indices]
+    print('goal_obj_poses:', goal_obj_poses)
+    print(len(goal_obj_poses))
+    if inference_mode:
+        goal_obj_poses = [goal_obj_poses[i] for i in shuffle_target_object_indices]
+        current_obj_poses = [current_obj_poses[i] for i in shuffle_target_object_indices]
+        target_objs = [target_objs[i] for i in shuffle_target_object_indices]
+        current_pc_poses = [current_pc_poses[i] for i in shuffle_target_object_indices]
 
     ###################################
     if use_virtual_structure_frame:
@@ -388,7 +434,7 @@ def get_diffusion_data(rgb, xyz, depth, seg, structure_param, inference_mode=Fal
         "filename": "", #filename
     }
 
-    if shuffle_object_index:
+    if True: #shuffle_object_index:
         datum["shuffle_indices"] = shuffle_object_indices[:num_rearrange_objs]
 
     if inference_mode:
