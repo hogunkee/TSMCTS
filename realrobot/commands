@@ -49,8 +49,72 @@ python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final
 # 5. Fork.Knife.Plate.Apple
 python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Fork.Knife.Plate.Apple
 
+Coffee Table
+# 1. Box.Cup.Plate
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Box.Cup.Plate
+
+# 2. Cup.Plate.Box
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Cup.Plate.Box --num-objects 4
+
+# 3. Cup.Plate.Box
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Cup.Plate.Box --num-objects 5
+
+# 4. Cup.Plate
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Cup.Plate --num-objects 5
+
+# 5. Cup.Plate.Box
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Cup.Plate.Box --num-objects 6
 
 
+Office Desk
+# 1. Notebook.Pen
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Notebook.Pen --num-objects 3
+
+# 2. Clock.Stapler.Pen.Eraser
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Clock.Stapler.Pen.Eraser --num-objects 4
+
+# 3. Clock.Stapler.Pen.Notebook
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Clock.Stapler.Pen.Notebook --num-objects 4
+
+# 4. Notebook.Pen.Clock.Glue
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Notebook.Pen.Clock.Glue --num-objects 5
+
+# 5. Clock.Eraser.Pen.Stapler.Notebook.Scotch_tape
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Clock.Eraser.Pen.Stapler.Notebook.Scotch_tape --num-objects 6 --num-rotations 2 --threshold-success 1
+
+
+Bathroom
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 300 --logging --num-rotations 2 --threshold-success 1.2 --classes Brush.Toothpaste.Toothbrush.Razor --num-objects 4
+
+
+# 1. Brush.Toothpaste.Toothbrush.Razor
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 5000 --logging --num-rotations 2 --threshold-success 1.2 --classes Brush.Toothpaste.Toothbrush.Razor --num-objects 4
+
+# 2. Scrubber.Tube.Vaseline.Cup
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 5000 --logging --num-rotations 2 --threshold-success 1.2 --classes Scrubber.Tube.Vaseline.Cup --num-objects 4
+
+# 3. Scrubber.Soap.Box.Tissue
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 5000 --logging --num-rotations 2 --threshold-success 1.2 --classes Scrubber.Soap.Box.Tissue --num-objects 4
+
+# 4. Scrubber.Toothbrush.Toothpaste.Vaseline
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 5000 --logging --num-rotations 2 --threshold-success 1.2 --classes Scrubber.Toothbrush.Toothpaste.Vaseline --num-objects 5
+
+# 5. Brush.Vaseline.Cup.Razor.Tube
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 5000 --logging --num-rotations 2 --threshold-success 1.2 --classes Brush.Vaseline.Cup.Razor.Tube --num-objects 5
+
+
+
+Brush.Toothpaste.Toothbrush
+Razor.Scrubber.Tube.Vaseline
+
+
+Pen.Glue.Notebook.Scotch_tape
+Notebook.Stapler.Eraser.Clock.
+
+--threshold-success 1
+
+
+python mcts_real.py --tree-policy iql --iql-path ../iql/logs/0613_2319/iql_final.pth --policy-version 1 --iteration-limit 3000 --logging --classes Cup.Box
 
 
 

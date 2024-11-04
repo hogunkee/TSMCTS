@@ -408,13 +408,13 @@ class MCTS(object):
         if len(probMap.shape)==3:
             probMap[:, :3, :] = 0
             probMap[:, -2:, :] = 0
-            probMap[:, :, :4] = 0 #3
-            probMap[:, :, -4:] = 0 #3
+            probMap[:, :, :3] = 0 #3
+            probMap[:, :, -3:] = 0 #3
         else:
             probMap[:, :, :3, :] = 0
             probMap[:, :, -2:, :] = 0
-            probMap[:, :, :, :4] = 0 #3
-            probMap[:, :, :, -4:] = 0 #3
+            probMap[:, :, :, :3] = 0 #3
+            probMap[:, :, :, -3:] = 0 #3
         return probMap
     
     def getPossibleActions(self, node, policy='random'):
@@ -878,12 +878,14 @@ if __name__=='__main__':
 
         while True:
             env.get_observation(move_ur5=True)
-            obs = env.reset(classes, move_ur5=False)
+            obs = env.reset(classes, move_ur5=False, num_obj=args.num_objects)
             initRgb = obs['rgb']
             initSeg = obs['segmentation']
             initClasses = [classes[cid].lower() for cid in obs['class_id']]
 
             plt.imshow(initRgb)
+            plt.show()
+            plt.imshow(initSeg)
             plt.show()
             x = input("Press 'r' for reset the table and get a new initial state.")
             #x = input("Press 'y' for start. 'r' for reset and get a new initial state.")
@@ -917,54 +919,62 @@ if __name__=='__main__':
         print_fn("--------------------------------")
         for step in range(10):
             st = time.time()
-            countNode.clear()
-            resultDict = searcher.search(table=table, needDetails=True)
-            numInference = searcher.inferenceCount
-        
-            print_fn("Num Children: %d"%len(searcher.root.children))
-            #for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
-            #    print_fn(f"{i} {c} {str(searcher.root.children[c])}")
-            action = resultDict['action']
-            et = time.time()
-            print_fn(f'{et-st} seconds to search.')
-
-            summary = summaryGraph(searcher.root)
-            if args.visualize_graph:
-                graph = getGraph(searcher.root)
-                fig = visualizeGraph(graph, title=args.algorithm.upper())
-                fig.show()
-            print_fn(summary)
-            print_fn("Action coverage: %f"%np.mean(searcher.coverage))
+            while True:
+                countNode.clear()
+                resultDict = searcher.search(table=table, needDetails=True)
+                numInference = searcher.inferenceCount
             
-            # action probability
-            actionProb = searcher.root.actionProb
-            if args.logging and actionProb is not None:
-                actionProb[actionProb>args.threshold_prob] += 0.5
-                if len(actionProb.shape)==2:
-                    plt.imshow(actionProb)
-                elif len(actionProb.shape)==3:
-                    plt.imshow(np.mean(actionProb, axis=0))
-                elif len(actionProb.shape)==4:
-                    plt.imshow(np.mean(actionProb, axis=(0, 1)))
-                plt.savefig('%s-%s/actionprob_%d.png'%(log_dir, log_name, step))
+                print_fn("Num Children: %d"%len(searcher.root.children))
+                #for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
+                #    print_fn(f"{i} {c} {str(searcher.root.children[c])}")
+                action = resultDict['action']
+                et = time.time()
+                print_fn(f'{et-st} seconds to search.')
 
-            # expected result in mcts #
-            nextTable = searcher.root.takeAction(action)
-            print_fn("Best Action: %s"%str(action))
-            print_fn("Expected Q-mean: %f / Q-norm: %f"%(resultDict['expectedReward'][0], resultDict['expectedReward'][1]))
-            print_fn("Terminal: %s"%resultDict['terminal'])
-            print_fn("Best Child: \n %s"%nextTable[0])
-            
-            nextCollision = renderer.checkCollision(nextTable)
-            print_fn("Collision: %s"%nextCollision)
-            print_fn("Save fig: expect_%d.png"%(step))
-            #print_fn("Save fig: scene-%d/expect_%d.png"%(sidx, step))
+                summary = summaryGraph(searcher.root)
+                if args.visualize_graph:
+                    graph = getGraph(searcher.root)
+                    fig = visualizeGraph(graph, title=args.algorithm.upper())
+                    fig.show()
+                print_fn(summary)
+                print_fn("Action coverage: %f"%np.mean(searcher.coverage))
+                
+                # action probability
+                actionProb = searcher.root.actionProb
+                if args.logging and actionProb is not None:
+                    actionProb[actionProb>args.threshold_prob] += 0.5
+                    if len(actionProb.shape)==2:
+                        plt.imshow(actionProb)
+                    elif len(actionProb.shape)==3:
+                        plt.imshow(np.mean(actionProb, axis=0))
+                    elif len(actionProb.shape)==4:
+                        plt.imshow(np.mean(actionProb, axis=(0, 1)))
+                    plt.savefig('%s-%s/actionprob_%d.png'%(log_dir, log_name, step))
 
-            tableRgb = renderer.getRGB(nextTable)
-            if args.logging:
-                plt.imshow(tableRgb)
-                plt.savefig('%s-%s/expect_%d.png'%(log_dir, log_name, step))
-                #plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
+                # expected result in mcts #
+                nextTable = searcher.root.takeAction(action)
+                print_fn("Best Action: %s"%str(action))
+                print_fn("Expected Q-mean: %f / Q-norm: %f"%(resultDict['expectedReward'][0], resultDict['expectedReward'][1]))
+                print_fn("Terminal: %s"%resultDict['terminal'])
+                print_fn("Best Child: \n %s"%nextTable[0])
+                
+                nextCollision = renderer.checkCollision(nextTable)
+                print_fn("Collision: %s"%nextCollision)
+                print_fn("Save fig: expect_%d.png"%(step))
+                #print_fn("Save fig: scene-%d/expect_%d.png"%(sidx, step))
+
+                tableRgb = renderer.getRGB(nextTable)
+                if args.logging:
+                    plt.imshow(tableRgb)
+                    plt.savefig('%s-%s/expect_%d.png'%(log_dir, log_name, step))
+                    #plt.savefig('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step))
+                x = input("start?")
+                if x=='y':
+                    break
+                else:
+                    searcher.searchCount = 0
+                    searcher.inferenceCount = 0
+                    continue
 
             # simulation step in pybullet #
             print()
@@ -973,7 +983,7 @@ if __name__=='__main__':
             print('target_object:', target_object)
             print('target_position:', target_position)
             print()
-            obs = env.step(target_object, target_position, rot_angle, stop=False, object_angles=renderer.objectAngles[1])
+            obs = env.step(target_object, target_position, rot_angle, stop=False, object_angles=renderer.objectAngles[1], num_obj=args.num_objects)
             #==================================#
             ## remove background segmentation ##
             remove_indices = []
@@ -1006,8 +1016,9 @@ if __name__=='__main__':
             #table = copy.deepcopy(nextTable)
             print_fn("Current state: \n %s"%table[0])
 
-            _, reward, _ = searcher.isTerminal(None, table, checkReward=True, groundTruth=True)
-            #terminal, reward, _ = searcher.isTerminal(None, table, checkReward=True, groundTruth=True)
+            reward, _ = searcher.getReward([table], groundTruth=True)
+            #_, reward, _ = searcher.isTerminal(None, table, checkReward=True, groundTruth=True)
+
             if reward > args.threshold_success:
                 terminal = True
             else:

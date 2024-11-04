@@ -115,7 +115,7 @@ def main(args, cfg):
             initSeg = obs['segmentation_raw']
             initClasses = [classes[cid].lower() for cid in obs['class_id']]
 
-            initDepth[initDepth==0] = np.mean(initDepth)
+            initDepth[initDepth==0] = 0.6 #np.mean(initDepth)
 
             plt.imshow(initRgb)
             plt.show()
@@ -162,6 +162,10 @@ def main(args, cfg):
                 visualize_batch_pcs(torch.cat(init_datum["pcs"]).reshape(1, 7, 1024, 6), args.num_samples)
                 visualize_batch_pcs(new_obj_xyzs[:1], args.num_samples, limit_B=10, trimesh=True)
                 #visualize_batch_pcs(new_obj_xyzs, args.num_samples, limit_B=10, trimesh=True)
+
+            key = input('ok?')
+            if key != 'y':
+                continue
 
             struct_rot = struct_pose[0][0][:3, :3]
             

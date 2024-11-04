@@ -56,33 +56,40 @@ class RealEnvironment:
         rgb = np.array(im)
         return rgb, depth
 
-    def reset(self, classes, move_ur5=True, sort=False):
+    def reset(self, classes, move_ur5=True, sort=False, num_obj=-1):
         #if self.default_depth is None:
         #    self.default_depth = np.load('default_depth.npy')
 
-        rospy.sleep(1.0)
-        rgb, depth = self.get_observation(move_ur5)
-        detections = self.GSAM.get_masks(rgb, classes) #, save_image=True)
-        class_id = detections.class_id
-        segmap = np.zeros(depth.shape)
-        if sort:
-            idx = np.arange(len(class_id))
-            idx_sorted, class_id_sorted = zip(*sorted(list(zip(idx, class_id)), key=lambda x: x[1]))
-            _, seg_id = zip(*sorted(list(zip(idx_sorted, np.arange(5))), key=lambda y: y[0]))
-            for i, m in enumerate(detections.mask):
-                segmap[m] = seg_id[i] + 1
-            detections.class_id = class_id_sorted
+        rcount = 0
+        while True:
+            rospy.sleep(1.0)
+            rgb, depth = self.get_observation(move_ur5)
+            detections = self.GSAM.get_masks(rgb, classes) #, save_image=True)
             class_id = detections.class_id
+            segmap = np.zeros(depth.shape)
+            if sort:
+                idx = np.arange(len(class_id))
+                idx_sorted, class_id_sorted = zip(*sorted(list(zip(idx, class_id)), key=lambda x: x[1]))
+                _, seg_id = zip(*sorted(list(zip(idx_sorted, np.arange(5))), key=lambda y: y[0]))
+                for i, m in enumerate(detections.mask):
+                    segmap[m] = seg_id[i] + 1
+                detections.class_id = class_id_sorted
+                class_id = detections.class_id
 
-            #for i, m in enumerate(detections.mask):
-            #    segmap[m] = class_id[i]+1
-            #detections.class_id = sorted(detections.class_id)
-            #class_id = detections.class_id
-        else:
-            for i, m in enumerate(detections.mask):
-                segmap[m] = i+1
-        print('class id')
-        print(class_id)
+                #for i, m in enumerate(detections.mask):
+                #    segmap[m] = class_id[i]+1
+                #detections.class_id = sorted(detections.class_id)
+                #class_id = detections.class_id
+            else:
+                for i, m in enumerate(detections.mask):
+                    segmap[m] = i+1
+            print('class id')
+            print(class_id)
+            if len(class_id) == len(classes) or len(class_id)==num_obj:
+                break
+            rcount += 1
+            if rcount > 5:
+                break
 
         data = {}
 
@@ -168,42 +175,60 @@ class RealEnvironment:
         check_go()
         return self.get_observation()
 
-    def step(self, target_object, target_position, rot_angle, stop=True, object_angles=None):
+    def step(self, target_object, target_position, rot_angle, stop=True, object_angles=None, num_obj=-1):
         rgb = self.current_obs['rgb_raw']
         depth = self.current_obs['depth_raw']
         segmap = self.current_obs['segmentation_raw']
 
         # Grasp Offset according to the Object Category 
-        use_rulebased_grasp = False
+        use_rulebased_grasp = True
         class_id = self.current_obs['class_id'][target_object-1]
         object_class = self.current_classes[class_id]
-        if object_class.lower() in ['cup']:
-            delta_z = -0.05
+        print("="*40)
+        print("Target object:", object_class)
+        z_pick = None
+        if object_class.lower() in ['cup', 'can']:
+            delta_z = -0.12 #-0.05 #-0.03
             use_rulebased_grasp = True
-        elif object_class.lower() in ['plate']:
+            if object_class.lower()=='cup':
+                z_pick = 0.24
+            elif object_class.lower()=='can':
+                z_pick = 0.28
+        elif object_class.lower() in ['eraser', 'clock']:
+            delta_z = -0.1
+            z_pick = 0.215
+        elif object_class.lower() in ['box']:
+            delta_z = -0.1 #-0.02
+            use_rulebased_grasp = True
+        elif object_class.lower() in ['plate', 'coaster']:
             delta_z = -0.01
             use_rulebased_grasp = True
         elif object_class.lower() in ['bowl']:
-            delta_z = -0.03
+            delta_z = -0.1 #-0.03
             use_rulebased_grasp = True 
         elif object_class.lower() in ['clock', 'teapot']:
-            delta_z = -0.015
+            delta_z = -0.12 #-0.07
         else:
             delta_z = 0.
+        print("Use rule-based Grasping:", use_rulebased_grasp)
+        print("="*40)
 
         # Rule-based grasp for low-height objects. #
         depth_delta = (self.depth_bg - depth) * (segmap==target_object)
-        depth_delta = depth_delta[depth_delta<0.3]
+        depth_delta[depth_delta>0.3] = 0
+        #depth_delta = depth_delta[depth_delta<0.3]
         if depth_delta.max() < 0.06:
             use_rulebased_grasp = True
-        else:
-            use_rulebased_grasp = False
+            delta_z = -0.12
+            z_pick = None #0.203
 
         if not use_rulebased_grasp:
             grasps, scores = self.CGN.get_grasps(rgb, depth, segmap, target_object, num_K=1, show_result=False) #True
             if len(grasps)==0:
                 use_rulebased_grasp = True
+                delta_z = -0.12
 
+        go = check_go()
         if use_rulebased_grasp:
             print('Rule-based grasp:')
             py, px = np.where(segmap==target_object)
@@ -234,24 +259,46 @@ class RealEnvironment:
             else:
                 # plate, bowl
                 grasp_type = 'boundary'
+
             if object_class.lower() in ['cup', 'bowl', 'plate']:
                 grasp_type = 'boundary'
+            elif object_class.lower() in ['can',' box', 'marker', 'spoon', 'fork', 'knife',\
+                    'notebook', 'eraser', 'stapler', 'clock', 'bond', 'glue', 'pen', \
+                    'scrubber', 'tube', 'soap', 'tissue', 'toothpaste', 'toothbrush']:
+                grasp_type = 'center'
             print('Type:', grasp_type)
 
             if grasp_type=='center':
-                if depth_delta.max() < 0.04:
-                    center = np.array([np.mean(px), np.mean(py)-5]).astype(int)
-                    #center = np.array([np.mean(px), np.mean(py)-30]).astype(int)
+                if object_class.lower() in ['pen', 'marker', 'glue']:
+                    center = np.array([np.mean(px), np.mean(py)]).astype(int)
+                elif object_class.lower() in ['scotch_tape']:
+                    center = np.array([np.mean(px), np.mean(py)]).astype(int)
+                elif object_class.lower() in ['eraser', 'notebook']:
+                    center = np.array([np.mean(px), np.mean(py)]).astype(int)
+                elif object_class.lower() in ['toothbrush', 'brush', 'toothpaste', 'razor']:
+                    center = np.array([np.mean(px), np.mean(py)]).astype(int)
+                elif object_class.lower() in ['box', 'soap']:
+                    center = np.array([np.mean(px), np.mean(py)]).astype(int)
                 else:
-                    center = np.array([np.mean(px), np.mean(py)-10]).astype(int)
-                    #center = np.array([np.mean(px), np.mean(py)-40]).astype(int)
+                    if depth_delta.max() < 0.04:
+                        center = np.array([np.mean(px), np.mean(py)-5]).astype(int)
+                        #center = np.array([np.mean(px), np.mean(py)-30]).astype(int)
+                    else:
+                        py, px = np.where(depth_delta>0.05)
+                        center = np.array([np.mean(px), np.mean(py)-15]).astype(int)
+                        #center = np.array([np.mean(px), np.mean(py)-40]).astype(int)
                 translation = inverse_projection(depth, center, self.RS.K_rs, self.RS.D_rs)
             elif grasp_type=='boundary':
                 cx = px[py==py.mean().astype(int)].max()
                 if depth_delta.max() < 0.03:
                     cy = py.mean()-20
                 else:
-                    cy = py.mean()-40
+                    if object_class.lower() in ['cup']:
+                        cy = py.mean()-10 #15
+                    elif object_class.lower() in ['plate']:
+                        cy = py.mean()-10
+                    else:
+                        cy = py.mean()-40
                 point = np.array([cx, cy]).astype(int)
                 print('point:', point)
                 translation = inverse_projection(depth, point, self.RS.K_rs, self.RS.D_rs)
@@ -276,14 +323,18 @@ class RealEnvironment:
         #print("Delta Center:", delta_center)
 
         #grasp_4dof = project_grasp_4dof(grasp)
-        self.pick(grasp, stop=stop, back_to_init=False, delta_z=delta_z, rulebased=use_rulebased_grasp)
+        z_pick = self.pick(grasp, stop=stop, back_to_init=False, delta_z=delta_z, z_pick=z_pick, rulebased=use_rulebased_grasp)
+        print("z-pick:", z_pick)
 
         # 2. Place down at the target position with rotation.
+        go = check_go()
         target_pose = inverse_projection(depth, np.array(target_position), self.RS.K_rs, self.RS.D_rs)
         # get target placement with center offset
         rot_center = np.array([[np.cos(rot_angle), -np.sin(rot_angle)],
                                 [np.sin(rot_angle), np.cos(rot_angle)]])
-        target_pose[:2] += np.dot(rot_center, delta_center)
+        rotated_delta_center = np.dot(rot_center, delta_center)
+        target_pose[0] -= rotated_delta_center[0]
+        target_pose[1] += rotated_delta_center[1]
         #target_pose[:2] -= np.dot(rot_center, delta_center)
 
         roll, pitch, yaw = mat2euler(grasp[:3, :3])
@@ -297,9 +348,9 @@ class RealEnvironment:
         quat = euler2quat([roll, pitch, yaw])
         placement = form_T(quat2mat(quat), target_pose)
         #print('placement:', placement)
-        self.place(placement, delta_z=delta_z, stop=stop)
+        self.place(placement, delta_z=delta_z, z_pick=z_pick, stop=stop)
 
-        return self.reset(self.current_classes)
+        return self.reset(self.current_classes, num_obj=num_obj)
 
 
     def step_3d(self, target_object, goal_trans, rot_angle, stop=True, object_angles=None): # rot angle : rad
@@ -334,6 +385,8 @@ class RealEnvironment:
             use_rulebased_grasp = True
         else:
             use_rulebased_grasp = False
+        
+        use_rulebased_grasp = True
 
         if not use_rulebased_grasp:
             grasps, scores = self.CGN.get_grasps(rgb, depth, segmap, target_object, num_K=1, show_result=False) #True
@@ -398,9 +451,9 @@ class RealEnvironment:
 
             if grasp_type=='center':
                 if depth_delta.max() < 0.04:
-                    center = np.array([np.mean(px), np.mean(py)-5]).astype(int) #30
+                    center = np.array([np.mean(px), np.mean(py)]).astype(int) #30
                 else:
-                    center = np.array([np.mean(px), np.mean(py)-10]).astype(int)
+                    center = np.array([np.mean(px), np.mean(py)]).astype(int)
                     # print('test : ',np.mean(px), np.mean(py))
 
                     #dx = (np.mean(px) -320) // 15
@@ -434,8 +487,8 @@ class RealEnvironment:
             rot = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
             if grasp_type=='center':
                 #rot = np.dot(quat2mat(euler2quat([0, 0, phi+np.pi])), rot)
-                #rot = np.dot(quat2mat(euler2quat([0, 0, -phi+np.pi/2])), rot)
                 rot = np.dot(quat2mat(euler2quat([0, 0, -phi+np.pi/2])), rot)
+                #rot = np.dot(quat2mat(euler2quat([0, 0, -phi+np.pi/2])), rot)
             elif grasp_type=='boundary':
                 pass
             grasp = form_T(rot, translation)
@@ -452,7 +505,13 @@ class RealEnvironment:
         #print("Delta Center:", delta_center)
 
         #grasp_4dof = project_grasp_4dof(grasp)
-        self.pick(grasp, stop=stop, back_to_init=False, delta_z=delta_z, rulebased=use_rulebased_grasp)
+        if object_class.lower() in ['knife']:
+            grasp_ = grasp[:]
+            grasp_[2,3] -= 0.1
+        else:
+            grasp_ = grasp
+        self.pick(grasp_, stop=stop, back_to_init=False, delta_z=delta_z, rulebased=use_rulebased_grasp)
+
 
         # 2. Place down at the target position with rotation.
         print(f'*********************{obj_name}*****************')
@@ -464,7 +523,10 @@ class RealEnvironment:
         # get target placement with center offset
         rot_center = np.array([[np.cos(rot_angle), -np.sin(rot_angle)],
                                 [np.sin(rot_angle), np.cos(rot_angle)]])
-        target_pose[:2] += np.dot(rot_center, delta_center)
+        rotated_delta_center = np.dot(rot_center, delta_center)
+        target_pose[0] -= rotated_delta_center[0]
+        target_pose[1] += rotated_delta_center[1]
+        #target_pose[:2] -= np.dot(rot_center, delta_center)
 
         roll, pitch, yaw = mat2euler(grasp[:3, :3])
         yaw += -rot_angle # - np.pi/2
@@ -480,152 +542,15 @@ class RealEnvironment:
         return self.reset(self.current_classes)
 
 
-
-    def check_picknplace(self, target_object, stop=True):
-        if stop:
-            check_go = self.check_go
-        else:
-            def check_go():
-                return None
-        rgb = self.current_obs['rgb_raw']
-        depth = self.current_obs['depth_raw']
-        segmap = self.current_obs['segmentation_raw']
-
-        class_id = self.current_obs['class_id'][target_object-1]
-        object_class = self.current_classes[class_id]
-        if object_class.lower() in ['cup']:
-            delta_z = -0.05
-        elif object_class.lower() in ['bowl']:
-            delta_z = -0.03
-        elif object_class.lower() in ['clock', 'teapot']:
-            delta_z = -0.015
-        else:
-            delta_z = 0
-
-        # 1. Find the target object.
-        use_rulebased_grasp = False 
-        grasps, scores = self.CGN.get_grasps(rgb, depth, segmap, target_object, num_K=1, show_result=False)
-        if len(grasps)==0:
-            print('Rule-based grasp:')
-            py, px = np.where(segmap==target_object)
-            X = np.array(list(zip(py, px)))
-            #X = np.array(list(zip(*np.where(segmap==target_object))))
-            reg = LsqEllipse().fit(X)
-            center, width, height, phi = reg.as_parameters()
-
-            print('width:', width)
-            print('height:', height)
-            if max(width, height)<7:
-                grasp_type = 'wrong'
-                return
-            elif width>2*height or height>2*width:
-                #elif min(width, height)<7:
-                # marker, fork, knife, banana, etc.
-                grasp_type = 'center'
-            else:
-                # plate
-                grasp_type = 'boundary'
-            if height > width:
-                phi += np.pi/2
-            print('Type:', grasp_type)
-
-            if grasp_type=='center':
-                center = np.array([np.mean(px), (4*py.min() + py.max())/5]).astype(int)
-                #center = np.array([np.mean(px), np.mean(py)]).astype(int)
-                translation = inverse_projection(depth, center, self.RS.K_rs, self.RS.D_rs)
-            elif grasp_type=='boundary':
-                cx = px[py==py.mean().astype(int)].max()
-                cy = (5*py.min() + py.max())/6
-                #cx = px.mean().astype(int)
-                #cy = py[px==px.mean().astype(int)].max()
-                #cx = px[py==py.mean().astype(int)].max()
-                #cy = py.mean().astype(int)
-                point = np.array([cx, cy]).astype(int)
-                print('point:', point)
-                translation = inverse_projection(depth, point, self.RS.K_rs, self.RS.D_rs)
-
-            rot = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
-            if grasp_type=='center':
-                rot = np.dot(quat2mat(euler2quat([0, 0, -phi])), rot)
-            elif grasp_type=='boundary':
-                pass
-            grasp = form_T(rot, translation)
-            use_rulebased_grasp = True
-        else:
-            print('GCN grasp:')
-            grasp = grasps[0]
-            use_rulebased_grasp = False 
-        print('grasp:', grasp)
-
-        # 2. Pick
-        target_pose = grasp[:3, 3]
-        target_rot = grasp[:3,:3]
-        #print('grasp:', grasp)
-
-        if use_rulebased_grasp:
-            delta_z = -0.12
-            delta_t = np.dot(target_rot, np.array([[0, 0, -0.1+delta_z]]).T).T[0]
-            pre_grasp1 = form_T(target_rot, target_pose+delta_t)
-            pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1, self.init_eef_P)
-            if use_rulebased_grasp:
-                quat1 = euler2quat([np.pi, 0, mat2euler(quat2mat(quat1))[2]])
-            #print('pose 1:', pre_grasp1)
-
-            delta_t = np.dot(target_rot, np.array([[0, 0, -0.05+delta_z]]).T).T[0]
-            pre_grasp2 = form_T(target_rot, target_pose+delta_t)
-            pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2, self.init_eef_P)
-            if use_rulebased_grasp:
-                quat2 = euler2quat([np.pi, 0, mat2euler(quat2mat(quat2))[2]])
-            #print('pose 2:', pre_grasp2)
-
-        else:
-            delta_t = np.dot(target_rot, np.array([[0, 0, -0.1+delta_z]]).T).T[0]
-            pre_grasp1 = form_T(target_rot, target_pose+delta_t)
-            pos1, quat1 = self.UR5.get_goal_from_grasp(pre_grasp1, self.init_eef_P)
-            #print('pose 1:', pre_grasp1)
-
-            delta_t = np.dot(target_rot, np.array([[0, 0, -0.05+delta_z]]).T).T[0]
-            pre_grasp2 = form_T(target_rot, target_pose+delta_t)
-            pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2, self.init_eef_P)
-            #print('pose 2:', pre_grasp2)
-
-        check_go()
-        self.UR5.get_view(pos1, quat1)
-        check_go()
-        self.UR5.get_view(pos2, quat2)
-        check_go()
-        self.UR5.get_view(grasp=1.0)
-        check_go()
-        self.UR5.get_view(pos1, quat1, grasp=1.0)
-
-        check_go()
-        self.UR5.get_view(self.UR5.PRE_PLACE_POS, [1,0,0,0], grasp=1.0)
-        #self.UR5.get_view(self.UR5.PRE_PLACE_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
-
-        # 3. Place
-        check_go()
-        self.UR5.get_view(pos2, quat2, grasp=1.0)
-        check_go()
-        self.UR5.get_view(pos2, quat2, grasp=0.0)
-        check_go()
-        self.UR5.get_view(grasp=0.0)
-        check_go()
-        self.UR5.get_view(pos1, quat1, grasp=0.0)
-        check_go()
-        self.UR5.move_to_joints(self.INIT_JOINTS)
-
-        return
-        #return self.reset(self.current_classes)
-
-    def pick(self, grasp, stop=True, back_to_init=True, delta_z=0., rulebased=False):
+    def pick(self, grasp, stop=True, back_to_init=True, delta_z=0., z_pick=None, rulebased=False):
         if stop:
             check_go = self.check_go
         else:
             def check_go():
                 return None
 
-        if rulebased:
-            delta_z = -0.12
+        #if rulebased:
+        #    delta_z = -0.12
 
         target_pose = grasp[:3, 3]
         target_rot = grasp[:3,:3]
@@ -643,6 +568,8 @@ class RealEnvironment:
         pos2, quat2 = self.UR5.get_goal_from_grasp(pre_grasp2, self.init_eef_P)
         if rulebased:
             quat2 = euler2quat([np.pi, 0, mat2euler(quat2mat(quat2))[2]])
+        if z_pick is not None:
+            pos2[2] = np.clip(z_pick, 0.2, 0.35)
         #print('pose 2:', pre_grasp2)
 
         #check_go()
@@ -678,13 +605,14 @@ class RealEnvironment:
             check_go()
             self.UR5.get_view(self.UR5.ROBOT_INIT_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
         else:
-            return
-            check_go()
-            self.UR5.get_view(self.UR5.PRE_PLACE_POS, [1,0,0,0], grasp=1.0)
+            return pos2[2]
+            #check_go()
+            #self.UR5.get_view(self.UR5.PRE_PLACE_POS, [1,0,0,0], grasp=1.0)
             #self.UR5.get_view(self.UR5.PRE_PLACE_POS, self.UR5.ROBOT_INIT_QUAT, grasp=1.0)
+        return pos2[2]
 
 
-    def place(self, placement, delta_z=0., stop=True):
+    def place(self, placement, delta_z=0., z_pick=None, stop=True):
         if stop:
             check_go = self.check_go
         else:
@@ -706,11 +634,17 @@ class RealEnvironment:
         #pre_place3 = form_T(target_rot, target_pose+delta_t)
         #pos3, quat3 = self.UR5.get_goal_from_grasp(pre_place3, self.init_eef_P)
 
-        check_go()
-        #self.UR5.get_view(pos1, quat1, grasp=1.0)
-        self.UR5.get_view(pos2 + np.array([0, 0, 0.1]), quat2, grasp=1.0)
-        check_go()
-        self.UR5.get_view(pos2 + np.array([0, 0, -delta_z]), quat2, grasp=1.0)
+        if z_pick is None:
+            check_go()
+            #self.UR5.get_view(pos1, quat1, grasp=1.0)
+            self.UR5.get_view(pos2 + np.array([0, 0, 0.1]), quat2, grasp=1.0)
+            check_go()
+            self.UR5.get_view(pos2 + np.array([0, 0, -delta_z]), quat2, grasp=1.0)
+        else:
+            check_go()
+            self.UR5.get_view([pos2[0], pos2[1], z_pick+0.1], quat2, grasp=1.0)
+            check_go()
+            self.UR5.get_view([pos2[0], pos2[1], z_pick+0.01], quat2, grasp=1.0)
         check_go()
         self.UR5.get_view(grasp=0.0)
         check_go()

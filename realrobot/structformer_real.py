@@ -345,7 +345,7 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
 
                 ratio = 1.0 #init_datum["depth"].max() / env.camera.origin_depth.max()
                 translation = translation * ratio
-                # translation[2] = 0
+                translation[2] = 0
 
                 rot_euler = mat2euler(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
                 roll, pitch, yaw = rot_euler
