@@ -6,6 +6,22 @@ from matplotlib import pyplot as plt
 
 DELTA_T = 5
 DELTA_R = 10
+IMAGE_H = 360
+IMAGE_W = 480
+
+# For IOS
+KEY_UP = 0
+KEY_DOWN = 1
+KEY_LEFT = 2
+KEY_RIGHT = 3
+KEY_Q = 113
+KEY_W = 119
+KEY_S = 115
+KEY_Y = 121
+KEY_ENTER = 13
+KEY_BACKSPACE = 127
+KEY_ESC = 27
+
 
 def transform_objpatch(image, mask, translate=(0,0), theta=0):
     mask = mask.astype(np.uint8)
@@ -26,6 +42,8 @@ def transform_objpatch(image, mask, translate=(0,0), theta=0):
         mask = cv2.copyMakeBorder(mask[:ty, :],-ty,0,0,0,cv2.BORDER_CONSTANT,None,value=0)
     
     py, px = np.where(mask)
+    if len(py)==0:
+        return np.zeros_like(image), np.zeros_like(mask)
     cy = int(np.round(np.mean(py)))
     cx = int(np.round(np.mean(px)))
     M = cv2.getRotationMatrix2D((cx, cy), theta, 1.0)
@@ -49,13 +67,16 @@ def show_scene(image1, image2):
     cv2.imshow('Image Viewer', image.astype(np.uint8))
 
 
-def evaluate(data_folder, num_scenes):
+def evaluate(data_folder, output_path, num_scenes):
     scenes = sorted([s.split('_')[0] for s in os.listdir(data_folder) if s.endswith('_img.png')])
     scenes = np.random.choice(scenes, num_scenes, False)
 
+    log_file = os.path.join(output_path, 'log.txt')
+    with open(log_file, 'w') as file:
+        file.write("Num scenes: %d\n" %num_scenes)
     log_transforms = []
     log_images = []
-    for scene in scenes:
+    for sidx, scene in enumerate(scenes):
         img_path = os.path.join(data_folder, '%s_img.png'%scene)
         seg_path = os.path.join(data_folder, '%s_seg.png'%scene)
 
@@ -77,60 +98,79 @@ def evaluate(data_folder, num_scenes):
         show_scene(image, current_image)
 
         # Move Each Object
-        for i, mask in enumerate(segmasks):
+        #for i, mask in enumerate(segmasks):
+        i = 0
+        flag_save = False
+        while not flag_save: #Truei<len(segmasks):
+            i = i%len(segmasks)
             print("Object:", i)
-            trans = [0, 0]
-            theta = 0
+            mask = segmasks[i]
+
+            trans, theta = transforms[i]
+            #trans = [0, 0]
+            #theta = 0
             while True:
                 key = cv2.waitKey(0)
                 #print(key)
-                if key==2:
+                if key==KEY_LEFT:
                     trans[0] -= DELTA_T
-                    if trans[0] < 0:
-                        trans[0] = 0
-                elif key==3:
+                    #if trans[0] < 0:
+                    #    trans[0] = 0
+                elif key==KEY_RIGHT:
                     trans[0] += DELTA_T
-                    if trans[0] > 479:
-                        trans[0] = 479
-                elif key==0:
+                    #if trans[0] > 479:
+                    #    trans[0] = 479
+                elif key==KEY_UP:
                     trans[1] += DELTA_T
-                elif key==1:
+                elif key==KEY_DOWN:
                     trans[1] -= DELTA_T
-                elif key==113:
+                elif key==KEY_Q:
                     theta += DELTA_R
-                elif key==119:
+                elif key==KEY_W:
                     theta -= DELTA_R
-                elif key==13:
+                elif key==KEY_ENTER:
                     transforms[i] = [trans, theta]
                     break
-                elif key==27:
+                elif key==KEY_S:
+                    flag_save = True
+                    break
+                elif key==KEY_ESC:
                     cv2.destroyAllWindows()
-                    exit()
+                    return log_transforms, log_images
+                elif key==KEY_BACKSPACE:
+                    transforms[i] = [trans, theta]
+                    i -= 2
+                    break
+
                 copy_trans = copy.deepcopy(transforms)
                 copy_trans[i] = [trans, theta]
                 current_image = get_transformed_image(image, segmasks, copy_trans)
                 show_scene(image, current_image)
+            i += 1
         current_image = get_transformed_image(image, segmasks, transforms)
         show_scene(image, current_image)
+
+        # Save Results
+        result_image = np.concatenate([image, current_image], 1).astype(np.uint8)
+        cv2.imwrite(os.path.join(output_path, 's%d-%s.png'%(sidx, scene)), result_image)
+        with open(log_file, 'a') as file:
+            file.write("Scene %d: %s / %s\n" %(sidx, scene, transforms))
+
         log_transforms.append(transforms)
         log_images.append(current_image)
-        print(log_transforms)
-        print(log_images)
+        #print(log_transforms)
+        #print(log_images)
     return log_transforms, log_images
 
 
-
-# left: 2, 97
-# right: 3, 100
-# up: 0, 119
-# down: 1, 115
-# enter: 13
-# backspace: 127
-# n: 110
-# p: 112
-# r: 114
-# q: 113
-# w: 119
 if __name__=='__main__':
     folder_path = 'selected_study2' # '/ssd/disk/PreferenceDiffusion/selected/'
-    evaluate(folder_path, 20)
+    while True:
+        name = input("Name: ").replace(' ', '')
+        output_path = 'logs/study2/%s' %name
+        if os.path.isdir(output_path):
+            print("Same Name Already Exists!! Use another name.")
+        else:
+            os.makedirs(output_path)
+            break
+    log_transforms, log_images = evaluate(folder_path, output_path, 20)
