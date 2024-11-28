@@ -3,7 +3,8 @@ import cv2
 import numpy as np
 
 def browse_images(folder_path, num_eval=10):
-    scenes = np.random.choice(np.arange(len(os.listdir(folder_path))), num_eval, replace=False)
+    scene_folders = [s for s in os.listdir(folder_path) if s.startswith('scene')]
+    scenes = np.random.choice(np.arange(len(scene_folders)), num_eval, replace=False)
     print("Press ENTER or →  : move to the next image.")
     print("Press ←  : move back to the previous image.")
     print("Press 1 : select a Well-Organized scene.")
@@ -16,8 +17,12 @@ def browse_images(folder_path, num_eval=10):
         file.write("Selected Images:\n")
 
     scores = []
+    scene_count = 0
 
     for scene in scenes:
+        print('Current scene: %d/%d'%(scene_count, len(scenes)))
+        scene_count += 1
+
         scene_name = 'scene%02d'%scene
         with open(log_file, 'a') as file:
             file.write("%s: "%scene_name)
@@ -34,7 +39,7 @@ def browse_images(folder_path, num_eval=10):
             
             key = cv2.waitKey(0)
             #print(key)
-            if key == 13 or key == 83: #2555904:
+            if key == 13 or key == 3: #2555904:
                 if index < len(images)-1:
                     index += 1
                     cv2.destroyAllWindows()
@@ -45,7 +50,7 @@ def browse_images(folder_path, num_eval=10):
                 score = int(images[index].split('.png')[0].split('_')[-1])
                 scores.append(score)
                 break
-            elif key == 81: #2424832:
+            elif key == 2: #2424832:
                 if index > 0:
                     index -= 1
             elif key == 27 or key == ord('x'):
@@ -57,5 +62,5 @@ def browse_images(folder_path, num_eval=10):
         #cv2.destroyAllWindows()
     print('Average tidiness score: %.3f'%(np.mean(scores)/1000))
 
-folder_path = '/ssd/disk/PreferenceDiffusion/selected/'
-browse_images(folder_path)
+folder_path = 'selected_study1' # '/ssd/disk/PreferenceDiffusion/selected/'
+browse_images(folder_path, 20)

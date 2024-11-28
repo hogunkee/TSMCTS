@@ -21,6 +21,7 @@ test/
 runs/
 outputs/
 vae_outputs/
+selected_study*/
 
 step-*.png
 .tmp*.png
