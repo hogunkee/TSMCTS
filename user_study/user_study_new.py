@@ -53,8 +53,9 @@ def transform_objpatch(image, mask, translate=(0,0), theta=0):
     #plt.show()
     return img_rotated, seg_rotated
 
-def get_transformed_image(image, segmasks, transforms):
-    result = np.ones_like(image).astype(int) * 110
+def get_transformed_image(image, segmasks, transforms, bg_image):
+    #result = np.ones_like(image).astype(int) * 110
+    result = copy.deepcopy(bg_image)
     for i in range(len(segmasks)):
         trans, theta = transforms[i]
         mask = segmasks[i]
@@ -67,11 +68,14 @@ def show_scene(image1, image2):
     cv2.imshow('Image Viewer', image.astype(np.uint8))
 
 
-def evaluate(data_folder, output_path, num_scenes):
+def evaluate(data_folder, output_path, num_scenes, name):
     scenes = sorted([s.split('_')[0] for s in os.listdir(data_folder) if s.endswith('_img.png')])
     scenes = np.random.choice(scenes, num_scenes, False)
 
-    log_file = os.path.join(output_path, 'log.txt')
+    bg_path = ('nv_background.png')
+    bg_image = cv2.imread(bg_path)
+
+    log_file = os.path.join(output_path, 'log_%s.txt'%name)
     with open(log_file, 'w') as file:
         file.write("Num scenes: %d\n" %num_scenes)
     log_transforms = []
@@ -92,9 +96,10 @@ def evaluate(data_folder, output_path, num_scenes):
             segmasks.append(mask)
 
         # Copy the Scene
-        current_image = np.ones_like(image).astype(int) * 110
+        #current_image = np.ones_like(image).astype(int) * 110
+        current_image = copy.deepcopy(bg_image)
         transforms = [[[0, 0], 0] for _ in range(len(segmasks))]
-        current_image = get_transformed_image(image, segmasks, transforms)
+        current_image = get_transformed_image(image, segmasks, transforms, bg_image)
         show_scene(image, current_image)
 
         # Move Each Object
@@ -103,7 +108,7 @@ def evaluate(data_folder, output_path, num_scenes):
         flag_save = False
         while not flag_save: #Truei<len(segmasks):
             i = i%len(segmasks)
-            print("Object:", i)
+            #print("Object:", i)
             mask = segmasks[i]
 
             trans, theta = transforms[i]
@@ -144,10 +149,10 @@ def evaluate(data_folder, output_path, num_scenes):
 
                 copy_trans = copy.deepcopy(transforms)
                 copy_trans[i] = [trans, theta]
-                current_image = get_transformed_image(image, segmasks, copy_trans)
+                current_image = get_transformed_image(image, segmasks, copy_trans, bg_image)
                 show_scene(image, current_image)
             i += 1
-        current_image = get_transformed_image(image, segmasks, transforms)
+        current_image = get_transformed_image(image, segmasks, transforms, bg_image)
         show_scene(image, current_image)
 
         # Save Results
@@ -173,4 +178,4 @@ if __name__=='__main__':
         else:
             os.makedirs(output_path)
             break
-    log_transforms, log_images = evaluate(folder_path, output_path, 20)
+    log_transforms, log_images = evaluate(folder_path, output_path, 20, name)
