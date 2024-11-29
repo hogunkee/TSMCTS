@@ -251,23 +251,34 @@ def main(args, cfg):
 
         struct_pose, pc_poses_in_struct = sampler.sample(batch, num_poses)
         new_obj_xyzs = move_pc_and_create_scene_simple(batch["pcs"], struct_pose, pc_poses_in_struct)
+
         if not args.gui_off:
             visualize_batch_pcs(torch.cat(init_datum["pcs"]).reshape(1, 7, 1024, 6), args.num_samples)
             visualize_batch_pcs(new_obj_xyzs, args.num_samples, limit_B=10, trimesh=True)
 
         struct_rot = struct_pose[0][0][:3, :3]
+        struct_pose = struct_pose[0][0][:3, 3].cpu().numpy()
         
         for obj_idx, tobj_name in enumerate(target_objects):
             pid = obj_ids[tobj_name]
             orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
 
-            translation = new_obj_xyzs[0][obj_idx].mean(0)[:3].cpu().numpy() - init_datum["pcs"][obj_idx].mean(0)[:3].numpy()
+            new_pose = new_obj_xyzs[0][obj_idx].mean(0)[:3].cpu().numpy()
+            new_pose_delta = new_pose - struct_pose
+            #print('new pose delta:', new_pose_delta)
+            scale = 2.0
+            new_pose_delta = scale * new_pose_delta
+            new_pose_delta = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]) @ new_pose_delta
+            translation = new_pose_delta + struct_pose - init_datum["pcs"][obj_idx].mean(0)[:3].numpy()
+            #translation = new_obj_xyzs[0][obj_idx].mean(0)[:3].cpu().numpy() - init_datum["pcs"][obj_idx].mean(0)[:3].numpy()
             object_rot = pc_poses_in_struct[0][obj_idx][:3, :3]
-            rot = mat2quat(struct_rot.cpu().numpy() @ object_rot.cpu().numpy())
+            rot = mat2quat(np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]) @ struct_rot.cpu().numpy() @ object_rot.cpu().numpy())
+            #rot = mat2quat(struct_rot.cpu().numpy() @ object_rot.cpu().numpy())
             new_rot = quaternion_multiply(rot, orig_rot)
 
             p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
-            p.stepSimulation()
+            for _ in range(100):
+                p.stepSimulation()
             env.nvisii_update()
 
             obs = env.get_observation()

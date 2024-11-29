@@ -318,6 +318,12 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
         # beam_goal_obj_poses = np.swapaxes(beam_goal_obj_poses, 1, 0)  # batch size, number of target objects, pose dim
 
         # move pc
+        print('beam goal struct pose:')
+        print(beam_goal_struct_pose[0])
+        print('target object preds:')
+        print(target_object_preds[0])
+        struct_pose = beam_goal_struct_pose[0][:3]
+
         beam_pc_rearrangement.set_goal_poses(beam_goal_struct_pose[0], target_object_preds[0])
         beam_pc_rearrangement.rearrange()
 
@@ -331,25 +337,32 @@ def run_demo(object_selection_model_dir, pose_generation_model_dir, dirs_config,
         # then iteratively predict pose of each object
         # struct_preds, target_object_preds = pose_generation_inference.limited_batch_inference(beam_data)
         for obj_idx in range(num_target_objects):
-            # target_pose = target_object_preds[0][obj_idx]
-            # initial_pose = beam_pc_rearrangements[0].initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
-            # translation = target_pose[:3] - initial_pose
-            translation = beam_pc_rearrangement.goal_xyzs["xyzs"][obj_idx].mean(0).numpy()\
-                        - beam_pc_rearrangement.initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
+            new_pose = beam_pc_rearrangement.goal_xyzs["xyzs"][obj_idx].mean(0).numpy()
+            new_pose_delta = new_pose - struct_pose
+            #print("new pose delta:")
+            #print(new_pose_delta)
+            scale = 1.0
+            new_pose_delta = scale * new_pose_delta
+            new_pose_delta = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]) @ new_pose_delta
+            translation = new_pose_delta + struct_pose - beam_pc_rearrangement.initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
+            #translation = beam_pc_rearrangement.goal_xyzs["xyzs"][obj_idx].mean(0).numpy()\
+            #            - beam_pc_rearrangement.initial_xyzs["xyzs"][obj_idx].mean(0).numpy()
 
-            ratio = 1.0 #init_datum["depth"].max() / env.camera.origin_depth.max()
-            translation = translation * ratio
+            #ratio = 1.0 #init_datum["depth"].max() / env.camera.origin_depth.max()
+            #translation = translation * ratio
             # translation[2] = 0
 
             pid = env.pre_selected_objects[init_datum["shuffle_indices"][obj_idxs[obj_idx]]]
             orig_pos, orig_rot = p.getBasePositionAndOrientation(pid)
 
-            rot = mat2quat(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
+            rot = mat2quat(np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]) @ np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
+            #rot = mat2quat(np.array(beam_pc_rearrangement.goal_poses["obj_poses"][obj_idx][3:]).reshape(3,3))
             new_rot = quaternion_multiply(rot, orig_rot)
 
             # print(orig_pos)
             p.resetBasePositionAndOrientation(pid, orig_pos + translation, new_rot)
-            p.stepSimulation()
+            for _ in range(100):
+                p.stepSimulation()
             env.nvisii_update()
 
             obs = env.get_observation()
@@ -402,6 +415,7 @@ if __name__ == "__main__":
     parser.add_argument('--num-scenes', type=int, default=10)
     parser.add_argument('--gui-off', action="store_true")
     parser.add_argument('--logging', action="store_true")
+    parser.add_argument('--get-reward', action="store_true")
     args = parser.parse_args()
 
     os.environ["DATETIME"] = time.strftime("%Y%m%d-%H%M%S")
