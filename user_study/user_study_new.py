@@ -26,32 +26,49 @@ KEY_ESC = 27
 def transform_objpatch(image, mask, translate=(0,0), theta=0):
     mask = mask.astype(np.uint8)
     H, W, _ = image.shape
-    tx, ty = translate
-    if tx > 0:
-        image = cv2.copyMakeBorder(image[:, :-tx],0,0,tx,0,cv2.BORDER_CONSTANT,None,value=0)
-        mask = cv2.copyMakeBorder(mask[:, :-tx],0,0,tx,0,cv2.BORDER_CONSTANT,None,value=0)
-    elif tx < 0:
-        image = cv2.copyMakeBorder(image[:, -tx:],0,0,0,-tx,cv2.BORDER_CONSTANT,None,value=0)
-        mask = cv2.copyMakeBorder(mask[:, -tx:],0,0,0,-tx,cv2.BORDER_CONSTANT,None,value=0)
-        
-    if ty > 0:
-        image = cv2.copyMakeBorder(image[ty:, :],0,ty,0,0,cv2.BORDER_CONSTANT,None,value=0)
-        mask = cv2.copyMakeBorder(mask[ty:, :],0,ty,0,0,cv2.BORDER_CONSTANT,None,value=0)        
-    elif ty < 0:
-        image = cv2.copyMakeBorder(image[:ty, :],-ty,0,0,0,cv2.BORDER_CONSTANT,None,value=0)
-        mask = cv2.copyMakeBorder(mask[:ty, :],-ty,0,0,0,cv2.BORDER_CONSTANT,None,value=0)
-    
     py, px = np.where(mask)
     if len(py)==0:
         return np.zeros_like(image), np.zeros_like(mask)
     cy = int(np.round(np.mean(py)))
     cx = int(np.round(np.mean(px)))
-    M = cv2.getRotationMatrix2D((cx, cy), theta, 1.0)
-    img_rotated = cv2.warpAffine(image, M, (W, H))
-    seg_rotated = cv2.warpAffine(mask, M, (W, H))
-    #plt.imshow(img_rotated[:,:,::-1]*seg_rotated[:,:,None])
-    #plt.show()
-    return img_rotated, seg_rotated
+
+    # Move the object patch to the center.
+    tx1 = int(W/2 - cx)
+    ty1 = -int(H/2 - cy)
+    if tx1 > 0:
+        image = cv2.copyMakeBorder(image[:, :-tx1],0,0,tx1,0,cv2.BORDER_CONSTANT,None,value=0)
+        mask = cv2.copyMakeBorder(mask[:, :-tx1],0,0,tx1,0,cv2.BORDER_CONSTANT,None,value=0)
+    elif tx1 < 0:
+        image = cv2.copyMakeBorder(image[:, -tx1:],0,0,0,-tx1,cv2.BORDER_CONSTANT,None,value=0)
+        mask = cv2.copyMakeBorder(mask[:, -tx1:],0,0,0,-tx1,cv2.BORDER_CONSTANT,None,value=0)
+    if ty1 > 0:
+        image = cv2.copyMakeBorder(image[ty1:, :],0,ty1,0,0,cv2.BORDER_CONSTANT,None,value=0)
+        mask = cv2.copyMakeBorder(mask[ty1:, :],0,ty1,0,0,cv2.BORDER_CONSTANT,None,value=0)        
+    elif ty1 < 0:
+        image = cv2.copyMakeBorder(image[:ty1, :],-ty1,0,0,0,cv2.BORDER_CONSTANT,None,value=0)
+        mask = cv2.copyMakeBorder(mask[:ty1, :],-ty1,0,0,0,cv2.BORDER_CONSTANT,None,value=0)
+
+    # Get rotated images.
+    M = cv2.getRotationMatrix2D((W/2, H/2), theta, 1.0)
+    image = cv2.warpAffine(image, M, (W, H))
+    mask = cv2.warpAffine(mask, M, (W, H))
+
+    # Move the object patch to the transformed position.
+    tx2 = translate[0] - tx1
+    ty2 = translate[1] - ty1
+    if tx2 > 0:
+        image = cv2.copyMakeBorder(image[:, :-tx2],0,0,tx2,0,cv2.BORDER_CONSTANT,None,value=0)
+        mask = cv2.copyMakeBorder(mask[:, :-tx2],0,0,tx2,0,cv2.BORDER_CONSTANT,None,value=0)
+    elif tx2 < 0:
+        image = cv2.copyMakeBorder(image[:, -tx2:],0,0,0,-tx2,cv2.BORDER_CONSTANT,None,value=0)
+        mask = cv2.copyMakeBorder(mask[:, -tx2:],0,0,0,-tx2,cv2.BORDER_CONSTANT,None,value=0)
+    if ty2 > 0:
+        image = cv2.copyMakeBorder(image[ty2:, :],0,ty2,0,0,cv2.BORDER_CONSTANT,None,value=0)
+        mask = cv2.copyMakeBorder(mask[ty2:, :],0,ty2,0,0,cv2.BORDER_CONSTANT,None,value=0)        
+    elif ty2 < 0:
+        image = cv2.copyMakeBorder(image[:ty2, :],-ty2,0,0,0,cv2.BORDER_CONSTANT,None,value=0)
+        mask = cv2.copyMakeBorder(mask[:ty2, :],-ty2,0,0,0,cv2.BORDER_CONSTANT,None,value=0)
+    return image, mask
 
 def get_transformed_image(image, segmasks, transforms, bg_image, current_sidx=-1):
     #result = np.ones_like(image).astype(int) * 110
@@ -152,6 +169,7 @@ def evaluate(data_folder, output_path, num_scenes, name):
                 elif key==KEY_BACKSPACE:
                     transforms[i] = [trans, theta]
                     i -= 1 #2
+                    i %= len(segmasks)
                     break
 
                 copy_trans = copy.deepcopy(transforms)
