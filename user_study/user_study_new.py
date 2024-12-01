@@ -53,14 +53,20 @@ def transform_objpatch(image, mask, translate=(0,0), theta=0):
     #plt.show()
     return img_rotated, seg_rotated
 
-def get_transformed_image(image, segmasks, transforms, bg_image):
+def get_transformed_image(image, segmasks, transforms, bg_image, current_sidx=-1):
     #result = np.ones_like(image).astype(int) * 110
     result = copy.deepcopy(bg_image)
     for i in range(len(segmasks)):
         trans, theta = transforms[i]
         mask = segmasks[i]
         img_rotated, seg_rotated = transform_objpatch(image, mask, translate=trans, theta=theta)
-        result[seg_rotated==1] = img_rotated[seg_rotated==1]
+        if i==current_sidx:
+            kernel = np.ones((3,3), np.uint8)
+            seg_rotated_dilated = cv2.dilate(seg_rotated, kernel, iterations=1)
+            result[seg_rotated_dilated==1] = np.array([0, 100, 255])
+            result[seg_rotated==1] = img_rotated[seg_rotated==1]
+        else:
+            result[seg_rotated==1] = img_rotated[seg_rotated==1]
     return result
 
 def show_scene(image1, image2):
@@ -99,7 +105,7 @@ def evaluate(data_folder, output_path, num_scenes, name):
         #current_image = np.ones_like(image).astype(int) * 110
         current_image = copy.deepcopy(bg_image)
         transforms = [[[0, 0], 0] for _ in range(len(segmasks))]
-        current_image = get_transformed_image(image, segmasks, transforms, bg_image)
+        current_image = get_transformed_image(image, segmasks, transforms, bg_image, 0)
         show_scene(image, current_image)
 
         # Move Each Object
@@ -135,23 +141,34 @@ def evaluate(data_folder, output_path, num_scenes, name):
                     theta -= DELTA_R
                 elif key==KEY_ENTER:
                     transforms[i] = [trans, theta]
+                    i += 1
                     break
-                elif key==KEY_S:
-                    flag_save = True
-                    break
+                #elif key==KEY_S:
+                #    flag_save = True
+                #    break
                 elif key==KEY_ESC:
                     cv2.destroyAllWindows()
                     return log_transforms, log_images
                 elif key==KEY_BACKSPACE:
                     transforms[i] = [trans, theta]
-                    i -= 2
+                    i -= 1 #2
                     break
 
                 copy_trans = copy.deepcopy(transforms)
                 copy_trans[i] = [trans, theta]
-                current_image = get_transformed_image(image, segmasks, copy_trans, bg_image)
+                current_image = get_transformed_image(image, segmasks, copy_trans, bg_image, i)
                 show_scene(image, current_image)
-            i += 1
+            #i += 1
+            current_image = get_transformed_image(image, segmasks, transforms, bg_image, i)
+            show_scene(image, current_image)
+            if i==len(segmasks):
+                key = cv2.waitKey(0)
+                if key==KEY_ENTER or key==KEY_S:
+                    flag_save = True
+                elif key==KEY_BACKSPACE:
+                    i %= len(segmasks)
+                    current_image = get_transformed_image(image, segmasks, transforms, bg_image, i)
+                    show_scene(image, current_image)
         current_image = get_transformed_image(image, segmasks, transforms, bg_image)
         show_scene(image, current_image)
 
