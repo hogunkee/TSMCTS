@@ -2,6 +2,7 @@ import copy
 import os
 import numpy as np
 import cv2
+import platform
 from matplotlib import pyplot as plt
 
 DELTA_T = 5
@@ -9,19 +10,33 @@ DELTA_R = 10
 IMAGE_H = 360
 IMAGE_W = 480
 
-# For IOS
-KEY_UP = 0
-KEY_DOWN = 1
-KEY_LEFT = 2
-KEY_RIGHT = 3
-KEY_Q = 113
-KEY_W = 119
-KEY_S = 115
-KEY_Y = 121
-KEY_ENTER = 13
-KEY_BACKSPACE = 127
-KEY_ESC = 27
-
+pf = platform.platform()
+if pf.startswith('mac'):
+    # For IOS
+    KEY_UP = 0
+    KEY_DOWN = 1
+    KEY_LEFT = 2
+    KEY_RIGHT = 3
+    KEY_Q = 113
+    KEY_W = 119
+    KEY_S = 115
+    KEY_Y = 121
+    KEY_ENTER = 13
+    KEY_BACKSPACE = 127
+    KEY_ESC = 27
+else:
+    # For Ubuntu
+    KEY_UP = 82
+    KEY_DOWN = 84
+    KEY_LEFT = 81
+    KEY_RIGHT = 83
+    KEY_Q = 113
+    KEY_W = 119
+    KEY_S = 115
+    KEY_Y = 121
+    KEY_ENTER = 13
+    KEY_BACKSPACE = 8
+    KEY_ESC = 27
 
 def transform_objpatch(image, mask, translate=(0,0), theta=0):
     mask = mask.astype(np.uint8)
@@ -119,64 +134,59 @@ def evaluate(data_folder, output_path, num_scenes, name):
             segmasks.append(mask)
 
         # Copy the Scene
-        #current_image = np.ones_like(image).astype(int) * 110
+        #removebg_image = np.ones_like(image).astype(int) * 0
         current_image = copy.deepcopy(bg_image)
         transforms = [[[0, 0], 0] for _ in range(len(segmasks))]
         current_image = get_transformed_image(image, segmasks, transforms, bg_image, 0)
         show_scene(image, current_image)
 
         # Move Each Object
-        #for i, mask in enumerate(segmasks):
+        count_control = 0
         i = 0
         flag_save = False
-        while not flag_save: #Truei<len(segmasks):
+        while not flag_save:
             i = i%len(segmasks)
-            #print("Object:", i)
             mask = segmasks[i]
 
             trans, theta = transforms[i]
-            #trans = [0, 0]
-            #theta = 0
             while True:
                 key = cv2.waitKey(0)
                 #print(key)
                 if key==KEY_LEFT:
                     trans[0] -= DELTA_T
-                    #if trans[0] < 0:
-                    #    trans[0] = 0
+                    count_control += 1
                 elif key==KEY_RIGHT:
                     trans[0] += DELTA_T
-                    #if trans[0] > 479:
-                    #    trans[0] = 479
+                    count_control += 1
                 elif key==KEY_UP:
                     trans[1] += DELTA_T
+                    count_control += 1
                 elif key==KEY_DOWN:
                     trans[1] -= DELTA_T
+                    count_control += 1
                 elif key==KEY_Q:
                     theta += DELTA_R
+                    count_control += 1
                 elif key==KEY_W:
                     theta -= DELTA_R
+                    count_control += 1
                 elif key==KEY_ENTER:
                     transforms[i] = [trans, theta]
                     i += 1
                     break
-                #elif key==KEY_S:
-                #    flag_save = True
-                #    break
                 elif key==KEY_ESC:
                     cv2.destroyAllWindows()
                     return log_transforms, log_images
                 elif key==KEY_BACKSPACE:
                     transforms[i] = [trans, theta]
-                    i -= 1 #2
+                    i -= 1
                     i %= len(segmasks)
                     break
-
                 copy_trans = copy.deepcopy(transforms)
                 copy_trans[i] = [trans, theta]
                 current_image = get_transformed_image(image, segmasks, copy_trans, bg_image, i)
                 show_scene(image, current_image)
-            #i += 1
+
             current_image = get_transformed_image(image, segmasks, transforms, bg_image, i)
             show_scene(image, current_image)
             if i==len(segmasks):
@@ -188,18 +198,19 @@ def evaluate(data_folder, output_path, num_scenes, name):
                     current_image = get_transformed_image(image, segmasks, transforms, bg_image, i)
                     show_scene(image, current_image)
         current_image = get_transformed_image(image, segmasks, transforms, bg_image)
+        removebg_image = get_transformed_image(image, segmasks, transforms, np.zeros_like(bg_image))
         show_scene(image, current_image)
 
         # Save Results
         result_image = np.concatenate([image, current_image], 1).astype(np.uint8)
         cv2.imwrite(os.path.join(output_path, 's%d-%s.png'%(sidx, scene)), result_image)
         with open(log_file, 'a') as file:
-            file.write("Scene %d: %s / %s\n" %(sidx, scene, transforms))
+            file.write("Scene %d: %s / %s / %d\n" %(sidx, scene, transforms, count_control))
+        removebg_image = removebg_image.astype(np.uint8)
+        cv2.imwrite(os.path.join(output_path, 's%d-%s-nobg.png'%(sidx, scene)), removebg_image)
 
         log_transforms.append(transforms)
         log_images.append(current_image)
-        #print(log_transforms)
-        #print(log_images)
     return log_transforms, log_images
 
 
