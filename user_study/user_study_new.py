@@ -106,21 +106,49 @@ def show_scene(image1, image2):
     cv2.imshow('Image Viewer', image.astype(np.uint8))
 
 
-def evaluate(data_folder, output_path, num_scenes, name):
-    scenes = sorted([s.split('_')[0] for s in os.listdir(data_folder) if s.endswith('_img.png')])
-    scenes = np.random.choice(scenes, num_scenes, False)
+def evaluate(data_folder, output_path, name):
+    scenes = sorted([s for s in os.listdir(data_folder) if 'img' in s and '.png' in s])
+    #scenes = sorted([s.split('_')[0] for s in os.listdir(data_folder) if s.endswith('_img.png')])
+    scenes_binary = [s for s in scenes if s.startswith("Binary")]
+    scenes_linear = [s for s in scenes if s.startswith("Linear")]
+    scenes_sd = [s for s in scenes if s.startswith("SD")]
+    scenes_sf = [s for s in scenes if s.startswith("SF")]
+    scenes_02 = [s for s in scenes if s.startswith("Score02")]
+    scenes_24 = [s for s in scenes if s.startswith("Score24")]
+    scenes_46 = [s for s in scenes if s.startswith("Score46")]
+    scenes_68 = [s for s in scenes if s.startswith("Score68")]
+    scenes_81 = [s for s in scenes if s.startswith("Score81")]
+
+    scenes_list = [scenes_binary, scenes_linear, scenes_sd, scenes_sf, scenes_02, scenes_24, scenes_46, scenes_68, scenes_81]
+    scenes = []
+    for si, _scenes in enumerate(scenes_list):
+        print(si, len(_scenes))
+        if si<4:
+            selected_scenes = np.random.choice(_scenes, 4, False)
+            scenes += list(selected_scenes)
+        else:
+            selected_scenes = np.random.choice(_scenes, 3, False)
+            scenes += list(selected_scenes)
+
+    print('Selected scenes:', len(scenes))
+    np.random.shuffle(scenes)
+    print(scenes)
+    #scenes = np.random.choice(scenes, num_scenes, False)
 
     bg_path = ('nv_background.png')
     bg_image = cv2.imread(bg_path)
 
     log_file = os.path.join(output_path, 'log_%s.txt'%name)
     with open(log_file, 'w') as file:
-        file.write("Num scenes: %d\n" %num_scenes)
+        file.write("Num scenes: %d\n" %len(scenes))
     log_transforms = []
     log_images = []
     for sidx, scene in enumerate(scenes):
-        img_path = os.path.join(data_folder, '%s_img.png'%scene)
-        seg_path = os.path.join(data_folder, '%s_seg.png'%scene)
+        print(scene)
+        img_path = os.path.join(data_folder, scene)
+        seg_path = os.path.join(data_folder, scene.replace('_img', '_seg'))
+        #img_path = os.path.join(data_folder, '%s_img.png'%scene)
+        #seg_path = os.path.join(data_folder, '%s_seg.png'%scene)
 
         # Load a Scene
         image = cv2.imread(img_path)
@@ -203,11 +231,13 @@ def evaluate(data_folder, output_path, num_scenes, name):
 
         # Save Results
         result_image = np.concatenate([image, current_image], 1).astype(np.uint8)
-        cv2.imwrite(os.path.join(output_path, 's%d-%s.png'%(sidx, scene)), result_image)
+        cv2.imwrite(os.path.join(output_path, 'Result-scene%d.png'%sidx), result_image)
+        #cv2.imwrite(os.path.join(output_path, 's%d-%s.png'%(sidx, scene)), result_image)
         with open(log_file, 'a') as file:
             file.write("Scene %d: %s / %s / %d\n" %(sidx, scene, transforms, count_control))
         removebg_image = removebg_image.astype(np.uint8)
-        cv2.imwrite(os.path.join(output_path, 's%d-%s-nobg.png'%(sidx, scene)), removebg_image)
+        cv2.imwrite(os.path.join(output_path, 'Result-nobg%d.png'%sidx), removebg_image)
+        #cv2.imwrite(os.path.join(output_path, 's%d-%s-nobg.png'%(sidx, scene)), removebg_image)
 
         log_transforms.append(transforms)
         log_images.append(current_image)
@@ -224,4 +254,4 @@ if __name__=='__main__':
         else:
             os.makedirs(output_path)
             break
-    log_transforms, log_images = evaluate(folder_path, output_path, 20, name)
+    log_transforms, log_images = evaluate(folder_path, output_path, name)
