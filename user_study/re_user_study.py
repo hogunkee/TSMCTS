@@ -134,6 +134,8 @@ def evaluate(data_folder, output_path, name):
     np.random.shuffle(scenes)
     #print(scenes)
     #scenes = np.random.choice(scenes, num_scenes, False)
+    scenes = [s for s in scenes_binary if 'Binary-scene-44' in s]
+    print(scenes)
 
     bg_path = ('nv_background.png')
     bg_image = cv2.imread(bg_path)
