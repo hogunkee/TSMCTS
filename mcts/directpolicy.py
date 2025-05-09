@@ -273,9 +273,9 @@ class MCTS(object):
             prob /= np.sum(prob)
         exceptActions = [a for a in node.children.keys()]
         if node.preAction is None:
-            action, p = self.sampleFromProb(prob, exceptActions, exceptObj=None, deterministic)
+            action, p = self.sampleFromProb(prob, exceptActions, None, deterministic)
         else:
-            action, p = self.sampleFromProb(prob, exceptActions, exceptObj=node.preAction[0], deterministic)
+            action, p = self.sampleFromProb(prob, exceptActions, node.preAction[0], deterministic)
         return action
 
     def expand(self, node):
