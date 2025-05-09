@@ -191,10 +191,10 @@ class MCTS(object):
     def setPreProcess(self, preProcess):
         self.preProcess = preProcess
 
-    def search(self, table, needDetails=False):
+    def search(self, table, needDetails=False, preAction=None):
         # print('search.')
         self.coverage = []
-        self.root = Node(self.renderer.numObjects, table)
+        self.root = Node(self.renderer.numObjects, table, preAction=preAction)
         if self.limitType == 'time':
             timeLimit = time.time() + self.timeLimit / 1000
             while time.time() < timeLimit:
@@ -1078,18 +1078,20 @@ if __name__=='__main__':
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
 
+        preaction = None
         print_fn("--------------------------------")
         for step in range(10):
             plt.cla()
             st = time.time()
             countNode.clear()
-            resultDict = searcher.search(table=table, needDetails=True)
+            resultDict = searcher.search(table=table, needDetails=True, preAction=preaction)
             numInference = searcher.inferenceCount
         
             print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
                 print_fn(f"{i} {c} {str(searcher.root.children[c])}")
             action = resultDict['action']
+            preaction = action
             et = time.time()
             print_fn(f'{et-st} seconds to search.')
 

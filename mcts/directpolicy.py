@@ -191,10 +191,10 @@ class MCTS(object):
     def setPreProcess(self, preProcess):
         self.preProcess = preProcess
 
-    def search(self, table, needDetails=False, deterministic=True):
+    def search(self, table, needDetails=False, deterministic=True, preAction=None):
         # print('search.')
         self.coverage = []
-        self.root = Node(self.renderer.numObjects, table)
+        self.root = Node(self.renderer.numObjects, table, preAction=preAction)
 
         action = self.eval_policy(self.root, deterministic)
         return action, self.root.actionProb
@@ -1102,12 +1102,14 @@ if __name__=='__main__':
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
 
+        preaction = None
         print_fn("--------------------------------")
         for step in range(10):
             plt.cla()
             #st = time.time()
             countNode.clear()
-            action, actionProb = searcher.search(table=table, needDetails=True, deterministic=args.deterministic)
+            action, actionProb = searcher.search(table=table, needDetails=True, deterministic=args.deterministic, preAction=preaction)
+            preaction = action
             #numInference = searcher.inferenceCount
         
             #print_fn("Num Children: %d"%len(searcher.root.children))
