@@ -235,7 +235,7 @@ class MCTS(object):
                 prob[o-1, py, px] = 0.
             else:
                 prob[r-1, o-1, py, px] = 0.
-        prob /= np.sum(prob)
+        #prob /= np.sum(prob)
         ## Block the Previous Moved Object #
         #if exceptObj is not None:
         #    if len(prob.shape)==3:
@@ -243,6 +243,7 @@ class MCTS(object):
         #    else:
         #        prob[:, exceptObj-1] = 0.
         if np.sum(prob)==0:
+            print("Non Feasible Actions!!")
             prob = np.ones_like(prob)
         prob /= np.sum(prob)
         if len(prob.shape)==3:
