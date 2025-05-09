@@ -788,6 +788,7 @@ if __name__=='__main__':
     parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=10)
+    parser.add_argument('--num-steps', type=int, default=20)
     parser.add_argument('--H', type=int, default=12)
     parser.add_argument('--W', type=int, default=15)
     parser.add_argument('--crop-size', type=int, default=128) #96
@@ -1093,7 +1094,7 @@ if __name__=='__main__':
 
         preaction = None
         print_fn("--------------------------------")
-        for step in range(10):
+        for step in range(args.num_steps):
             plt.cla()
             st = time.time()
             countNode.clear()

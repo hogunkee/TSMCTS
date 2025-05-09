@@ -232,7 +232,7 @@ class MCTS(object):
                 prob[o-1, py, px] = 0.
             else:
                 prob[r-1, o-1, py, px] = 0.
-        prob /= np.sum(prob)
+        #prob /= np.sum(prob)
         ## Block the Previous Moved Object #
         #if exceptObj is not None:
         #    if len(prob.shape)==3:
@@ -240,6 +240,7 @@ class MCTS(object):
         #    else:
         #        prob[:, exceptObj-1] = 0.
         if np.sum(prob)==0:
+            print("Non Feasible Actions!!")
             prob = np.ones_like(prob)
         prob /= np.sum(prob)
         if len(prob.shape)==3:
@@ -785,6 +786,7 @@ if __name__=='__main__':
     parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
     parser.add_argument('--num-objects', type=int, default=5)
     parser.add_argument('--num-scenes', type=int, default=10)
+    parser.add_argument('--num-steps', type=int, default=20)
     parser.add_argument('--H', type=int, default=12)
     parser.add_argument('--W', type=int, default=15)
     parser.add_argument('--crop-size', type=int, default=128) #96
@@ -1090,7 +1092,7 @@ if __name__=='__main__':
 
         preaction = None
         print_fn("--------------------------------")
-        for step in range(10):
+        for step in range(args.num_steps):
             plt.cla()
             st = time.time()
             countNode.clear()
