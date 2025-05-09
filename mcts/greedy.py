@@ -158,7 +158,8 @@ class MCTS(object):
         self.searchCount = 0
         self.inferenceCount = 0
         self.blurring = args.blurring
-        self.prob_expand = args.prob_expand
+        self.probExpand = args.prob_expand
+        self.blockPreAction = args.block_preaction
     
     def clearTree(self):
         self.clearChild(self.root)
@@ -191,23 +192,20 @@ class MCTS(object):
     def setPreProcess(self, preProcess):
         self.preProcess = preProcess
 
-    def search(self, table, needDetails=False):
+    def search(self, table, needDetails=False, preAction=None):
         # print('search.')
         self.coverage = []
-        self.root = Node(self.renderer.numObjects, table)
-        if self.limitType == 'time':
-            timeLimit = time.time() + self.timeLimit / 1000
-            while time.time() < timeLimit:
-                self.executeRound()
-        else:
-            while self.searchCount < self.searchLimit:
-                self.executeRound()
-        # mostChild = self.getMostVisitedChild(self.root)
+        self.root = Node(self.renderer.numObjects, table, preAction=preAction)
+        while not self.root.isFullyExpanded():
+            self.executeRound()
+        #if self.limitType == 'time':
+        #    timeLimit = time.time() + self.timeLimit / 1000
+        #    while time.time() < timeLimit:
+        #        self.executeRound()
+        #else:
+        #    while self.searchCount < self.searchLimit:
+        #        self.executeRound()
         bestChild = self.getBestChild(self.root, explorationValue=0.)
-        # if mostChild!=bestChild:
-        #     print('most visited child:', mostChild.numVisits, mostChild.Qmean)
-        #     print('best child:', bestChild.numVisits, bestChild.Qmean)
-        #     print()
         action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
         if needDetails:
             return {"action": action, "expectedReward": (bestChild.Qmean, bestChild.Qnorm), "terminal": bestChild.terminal}
@@ -219,13 +217,13 @@ class MCTS(object):
         while not node.terminal: # self.isTerminal(node)[0]:
             if len(node.children)==0:
                 return self.expand(node)
-            elif node.isFullyExpanded() or random.uniform(0, 1) < args.prob_expand: #0.5:
+            elif node.isFullyExpanded() or random.uniform(0, 1) < args.probExpand: #0.5:
                 node = self.getBestChild(node, self.explorationConstant)
             else:
                 return self.expand(node)
         return node
 
-    def sampleFromProb(self, prob, exceptActions=[]):
+    def sampleFromProb(self, prob, exceptActions=[]):#, exceptObj=None):
         # shape: r x n x h x w
         prob = prob.copy()
         for action in exceptActions:
@@ -234,6 +232,15 @@ class MCTS(object):
                 prob[o-1, py, px] = 0.
             else:
                 prob[r-1, o-1, py, px] = 0.
+        prob /= np.sum(prob)
+        ## Block the Previous Moved Object #
+        #if exceptObj is not None:
+        #    if len(prob.shape)==3:
+        #        prob[exceptObj-1] = 0.
+        #    else:
+        #        prob[:, exceptObj-1] = 0.
+        if np.sum(prob)==0:
+            prob = np.ones_like(prob)
         prob /= np.sum(prob)
         if len(prob.shape)==3:
             nbs, ys, xs = np.where(prob>0.)
@@ -254,7 +261,7 @@ class MCTS(object):
         # print('expand.')
         assert not node.terminal
         if node.numActionCandidates==0:
-            prob = self.getPossibleActions(node, self.treePolicy)
+            prob = self.getPossibleActions(node, self.treePolicy, self.blockPreAction)
         else:
             prob = node.actionProb
         if 'uniform' in self.treePolicy:
@@ -262,6 +269,10 @@ class MCTS(object):
             prob /= np.sum(prob)
         exceptActions = [a for a in node.children.keys()]
         action, p = self.sampleFromProb(prob, exceptActions)
+        #if node.preAction is None:
+        #    action, p = self.sampleFromProb(prob, exceptActions, exceptObj=None)
+        #else:
+        #    action, p = self.sampleFromProb(prob, exceptActions, exceptObj=node.preAction[0])
 
         newNode = Node(self.renderer.numObjects, node.takeAction(action), node, action, p)
         node.children[tuple(action)] = newNode
@@ -358,7 +369,8 @@ class MCTS(object):
 
     def executeRound(self):
         # print('executeRound.')
-        node = self.selectNode(self.root)
+        node = self.expand(self.root)
+        #node = self.selectNode(self.root)
         G = self.rollout(node)
         self.backpropagate(node, G)
         self.searchCount += 1
@@ -428,7 +440,7 @@ class MCTS(object):
             probMap[:, :, :, -1] = 0
         return probMap
     
-    def getPossibleActions(self, node, policy='random'):
+    def getPossibleActions(self, node, policy='random', block=False):
         # random / iql / policy / iql-uniform / policy-uniform
         # print('getPossibleActions.')
         if node.numActionCandidates==0:
@@ -448,6 +460,8 @@ class MCTS(object):
                         probMap[o, py, px] = 0
                 probMap = self.removeBoundaryActions(probMap)
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+                if block and node.preAction is not None:
+                    probMap[node.preAction[0]-1] = 0
         
             elif policy.startswith('iql'):
                 states = []
@@ -493,6 +507,8 @@ class MCTS(object):
 
                 probMap[probMap < self.thresholdProb] = 0.0
                 probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
+                if block and node.preAction is not None:
+                    probMap[:, node.preAction[0]-1] = 0
                 assert not np.isnan(probMap).any()
                 
             elif policy.startswith('policy'):
@@ -531,6 +547,8 @@ class MCTS(object):
 
                 probMap[probMap < self.thresholdProb] = 0.0
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+                if block and node.preAction is not None:
+                    probMap[node.preAction[0]-1] = 0
             node.setActions(probMap)   
         else:
             probMap = node.actionProb
@@ -640,7 +658,7 @@ class MCTS(object):
         tables = [np.copy(node.table)]
         
         if node.numActionCandidates==0:
-            prob = self.getPossibleActions(node, policy)
+            prob = self.getPossibleActions(node, policy, self.blockPreAction)
         else:
             prob = node.actionProb
         if 'uniform' in policy:
@@ -682,7 +700,7 @@ class MCTS(object):
         while not (self.isTerminal(node)[0] or c>1):
             c+= 1
             if node.numActionCandidates==0:
-                prob = self.getPossibleActions(node, policy)
+                prob = self.getPossibleActions(node, policy, self.blockPreAction)
             else:
                 prob = node.actionProb
             
@@ -805,6 +823,7 @@ if __name__=='__main__':
     parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--policy-version', type=int, default=-1)
     parser.add_argument('--continuous-policy', action='store_true')
+    parser.add_argument('--block-preaction', action='store_true')
     args = parser.parse_args()
 
     # Logger
@@ -1069,18 +1088,20 @@ if __name__=='__main__':
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
 
+        preaction = None
         print_fn("--------------------------------")
         for step in range(10):
             plt.cla()
             st = time.time()
             countNode.clear()
-            resultDict = searcher.search(table=table, needDetails=True)
+            resultDict = searcher.search(table=table, needDetails=True, preAction=preaction)
             numInference = searcher.inferenceCount
         
             print_fn("Num Children: %d"%len(searcher.root.children))
             for i, c in enumerate(sorted(list(searcher.root.children.keys()))):
                 print_fn(f"{i} {c} {str(searcher.root.children[c])}")
             action = resultDict['action']
+            preaction = action
             et = time.time()
             print_fn(f'{et-st} seconds to search.')
 

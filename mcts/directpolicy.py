@@ -158,7 +158,8 @@ class MCTS(object):
         self.searchCount = 0
         self.inferenceCount = 0
         self.blurring = args.blurring
-        self.prob_expand = args.prob_expand
+        self.probExpand = args.prob_expand
+        self.blockPreAction = args.block_preaction
     
     def clearTree(self):
         self.clearChild(self.root)
@@ -218,13 +219,13 @@ class MCTS(object):
         while not node.terminal: # self.isTerminal(node)[0]:
             if len(node.children)==0:
                 return self.expand(node)
-            elif node.isFullyExpanded() or random.uniform(0, 1) < args.prob_expand: #0.5:
+            elif node.isFullyExpanded() or random.uniform(0, 1) < args.probExpand: #0.5:
                 node = self.getBestChild(node, self.explorationConstant)
             else:
                 return self.expand(node)
         return node
 
-    def sampleFromProb(self, prob, exceptActions=[], exceptObj=None, deterministic=False):
+    def sampleFromProb(self, prob, exceptActions=[], deterministic=False):
         # shape: r x n x h x w
         prob = prob.copy()
         for action in exceptActions:
@@ -234,12 +235,12 @@ class MCTS(object):
             else:
                 prob[r-1, o-1, py, px] = 0.
         prob /= np.sum(prob)
-        # Block the Previous Moved Object #
-        if exceptObj is not None:
-            if len(prob.shape)==3:
-                prob[exceptObj-1] = 0.
-            else:
-                prob[:, exceptObj-1] = 0.
+        ## Block the Previous Moved Object #
+        #if exceptObj is not None:
+        #    if len(prob.shape)==3:
+        #        prob[exceptObj-1] = 0.
+        #    else:
+        #        prob[:, exceptObj-1] = 0.
         if np.sum(prob)==0:
             prob = np.ones_like(prob)
         prob /= np.sum(prob)
@@ -268,24 +269,25 @@ class MCTS(object):
         # print('expand.')
         assert not node.terminal
         if node.numActionCandidates==0:
-            prob = self.getPossibleActions(node, self.treePolicy)
+            prob = self.getPossibleActions(node, self.treePolicy, self.blockPreAction)
         else:
             prob = node.actionProb
         if 'uniform' in self.treePolicy:
             prob[prob>0] = 1.
             prob /= np.sum(prob)
         exceptActions = [a for a in node.children.keys()]
-        if node.preAction is None:
-            action, p = self.sampleFromProb(prob, exceptActions, None, deterministic)
-        else:
-            action, p = self.sampleFromProb(prob, exceptActions, node.preAction[0], deterministic)
+        action, p = self.sampleFromProb(prob, exceptActions, deterministic)
+        #if node.preAction is None:
+        #    action, p = self.sampleFromProb(prob, exceptActions, None, deterministic)
+        #else:
+        #    action, p = self.sampleFromProb(prob, exceptActions, node.preAction[0], deterministic)
         return action
 
     def expand(self, node):
         # print('expand.')
         assert not node.terminal
         if node.numActionCandidates==0:
-            prob = self.getPossibleActions(node, self.treePolicy)
+            prob = self.getPossibleActions(node, self.treePolicy, self.blockPreAction)
         else:
             prob = node.actionProb
         if 'uniform' in self.treePolicy:
@@ -459,7 +461,7 @@ class MCTS(object):
             probMap[:, :, :, -1] = 0
         return probMap
     
-    def getPossibleActions(self, node, policy='random'):
+    def getPossibleActions(self, node, policy='random', block=False):
         # random / iql / policy / iql-uniform / policy-uniform
         # print('getPossibleActions.')
         if node.numActionCandidates==0:
@@ -479,6 +481,8 @@ class MCTS(object):
                         probMap[o, py, px] = 0
                 probMap = self.removeBoundaryActions(probMap)
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+                if block and node.preAction is not None:
+                    probMap[node.preAction[0]-1] = 0
         
             elif policy.startswith('iql'):
                 states = []
@@ -524,6 +528,8 @@ class MCTS(object):
 
                 probMap[probMap < self.thresholdProb] = 0.0
                 probMap /= np.sum(probMap, axis=(2,3), keepdims=True)
+                if block and node.preAction is not None:
+                    probMap[:, node.preAction[0]-1] = 0
                 assert not np.isnan(probMap).any()
                 
             elif policy.startswith('policy'):
@@ -562,6 +568,8 @@ class MCTS(object):
 
                 probMap[probMap < self.thresholdProb] = 0.0
                 probMap /= np.sum(probMap, axis=(1,2), keepdims=True)
+                if block and node.preAction is not None:
+                    probMap[node.preAction[0]-1] = 0
             node.setActions(probMap)   
         else:
             probMap = node.actionProb
@@ -671,7 +679,7 @@ class MCTS(object):
         tables = [np.copy(node.table)]
         
         if node.numActionCandidates==0:
-            prob = self.getPossibleActions(node, policy)
+            prob = self.getPossibleActions(node, policy, self.blockPreAction)
         else:
             prob = node.actionProb
         if 'uniform' in policy:
@@ -713,7 +721,7 @@ class MCTS(object):
         while not (self.isTerminal(node)[0] or c>1):
             c+= 1
             if node.numActionCandidates==0:
-                prob = self.getPossibleActions(node, policy)
+                prob = self.getPossibleActions(node, policy, self.blockPreAction)
             else:
                 prob = node.actionProb
             
@@ -836,6 +844,7 @@ if __name__=='__main__':
     parser.add_argument('--policy-net', type=str, default='resnet') # 'resnet' / 'transport'
     parser.add_argument('--policy-version', type=int, default=-1)
     parser.add_argument('--continuous-policy', action='store_true')
+    parser.add_argument('--block-preaction', action='store_true')
     parser.add_argument('--deterministic', action='store_true')
     args = parser.parse_args()
 
