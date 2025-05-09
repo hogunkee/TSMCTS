@@ -240,6 +240,9 @@ class MCTS(object):
                 prob[exceptObj-1] = 0.
             else:
                 prob[:, exceptObj-1] = 0.
+        if np.sum(prob)==0:
+            prob = np.ones_like(prob)
+        prob /= np.sum(prob)
         if len(prob.shape)==3:
             nbs, ys, xs = np.where(prob>0.)
             if deterministic:
