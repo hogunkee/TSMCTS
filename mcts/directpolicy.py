@@ -224,7 +224,7 @@ class MCTS(object):
                 return self.expand(node)
         return node
 
-    def sampleFromProb(self, prob, exceptActions=[], deterministic=False):
+    def sampleFromProb(self, prob, exceptActions=[], exceptObj=None, deterministic=False):
         # shape: r x n x h x w
         prob = prob.copy()
         for action in exceptActions:
@@ -234,6 +234,12 @@ class MCTS(object):
             else:
                 prob[r-1, o-1, py, px] = 0.
         prob /= np.sum(prob)
+        # Block the Previous Moved Object #
+        if exceptObj is not None:
+            if len(prob.shape)==3:
+                prob[exceptObj-1] = 0.
+            else:
+                prob[:, exceptObj-1] = 0.
         if len(prob.shape)==3:
             nbs, ys, xs = np.where(prob>0.)
             if deterministic:
@@ -266,7 +272,10 @@ class MCTS(object):
             prob[prob>0] = 1.
             prob /= np.sum(prob)
         exceptActions = [a for a in node.children.keys()]
-        action, p = self.sampleFromProb(prob, exceptActions, deterministic)
+        if node.preAction is None:
+            action, p = self.sampleFromProb(prob, exceptActions, exceptObj=None, deterministic)
+        else:
+            action, p = self.sampleFromProb(prob, exceptActions, exceptObj=node.preAction[0], deterministic)
         return action
 
     def expand(self, node):
