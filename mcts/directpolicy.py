@@ -816,7 +816,7 @@ if __name__=='__main__':
     parser.add_argument('--logging', action="store_true")
     parser.add_argument('--wandb-off', action='store_true')
     # MCTS
-    parser.add_argument('--algorithm', type=str, default='mcts') # 'mcts' / 'alphago'
+    parser.add_argument('--algorithm', type=str, default='direct') # 'mcts' / 'alphago'
     parser.add_argument('--time-limit', type=int, default=None)
     parser.add_argument('--iteration-limit', type=int, default=10000)
     parser.add_argument('--max-depth', type=int, default=7)
@@ -998,7 +998,7 @@ if __name__=='__main__':
     success = 0
     success_eplen = []
     best_scores = []
-    log_dir = 'data/direct_%s' %args.algorithm
+    log_dir = 'data/%s' %args.algorithm
     if args.logging:
         bar = tqdm(range(args.num_scenes))
     else:

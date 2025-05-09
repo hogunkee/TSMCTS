@@ -795,7 +795,7 @@ if __name__=='__main__':
     parser.add_argument('--logging', action="store_true")
     parser.add_argument('--wandb-off', action='store_true')
     # MCTS
-    parser.add_argument('--algorithm', type=str, default='mcts') # 'mcts' / 'alphago'
+    parser.add_argument('--algorithm', type=str, default='greedy') # 'mcts' / 'alphago'
     parser.add_argument('--time-limit', type=int, default=None)
     parser.add_argument('--iteration-limit', type=int, default=10000)
     parser.add_argument('--max-depth', type=int, default=7)
@@ -835,7 +835,7 @@ if __name__=='__main__':
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
     
-    logname = 'MCTS-'
+    logname = 'Greedy-'
     logname += args.tree_policy
     if args.tree_policy=='iql':
         logname += '_' + str(args.threshold_prob)
