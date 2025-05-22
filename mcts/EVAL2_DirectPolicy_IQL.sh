@@ -1,6 +1,6 @@
 #!/bin/bash
 GPU_ID=$1
-MODEL=0450_1905 
+MODEL=0420_1905 
 TAG=directpolicy-iql
 
 OMP_NUM_THREADS=3 CUDA_VISIBLE_DEVICES=${GPU_ID} python directpolicy.py --iteration-limit 3000 --gui-off --data-dir /disk1/hogun --num-scenes 50 --seed 12345 --logging --rollout-policy nostep --tree-policy iql --iql-path /disk1/hogun/PreferenceDiffusion/iql/logs/${MODEL}/iql_final.pth --blurring 1 --exploration 0.5 --use-template --object-split unseen --num-objects 0 --scenes B2,B5 --policy-version 1 --prob-expand 0 --threshold-success 0.9 --deterministic --block-preaction --tag ${TAG} &
