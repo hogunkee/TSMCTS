@@ -783,6 +783,7 @@ if __name__=='__main__':
     parser.add_argument("--seed", default=None, type=int)
     parser.add_argument('--use-template', action="store_true")
     parser.add_argument('--scenes', type=str, default='') # e.g., 'B2,B5,C4,C6,C12,D5,D8,D11,O3,O7'
+    parser.add_argument('--tag', type=str, default='Test')
     parser.add_argument('--inorder', action="store_true")
     parser.add_argument('--scene-split', type=str, default='all') # 'all' / 'seen' / 'unseen'
     parser.add_argument('--object-split', type=str, default='seen') # 'seen' / 'unseen'
@@ -831,18 +832,29 @@ if __name__=='__main__':
     args = parser.parse_args()
 
     # Logger
-    now = datetime.datetime.now()
-    log_name = now.strftime("%m%d_%H%M")
+    #now = datetime.datetime.now()
+    #log_name = now.strftime("%m%d_%H%M")
+    if args.scenes!='':
+        log_name = os.path.join(args.tag, args.scenes.replace(",", ""))
+    else:
+        log_name = os.path.join(args.tag, "Mix")
+    log_dir = 'data'
+    os.makedirs(log_dir, log_name, exist_ok=True)
+        
     if args.logging:
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
     
-    logname = 'MCTS-'
-    logname += args.tree_policy
-    if args.tree_policy=='iql':
-        logname += '_' + str(args.threshold_prob)
+    #logname = 'MCTS-'
+    #logname += args.tree_policy
+    logname = args.tag
+    #if args.tree_policy=='iql':
+    #    logname += '_' + str(args.threshold_prob)
     if args.use_template:
-        logname += '-' + args.scenes
+        if args.scenes!='':
+            logname += '-' + args.scenes
+        else:
+            logname += '-Mix'
     if not args.wandb_off:
         wandb.init(project="MCTS")
         wandb.config.update(parser.parse_args())
@@ -974,7 +986,7 @@ if __name__=='__main__':
     success = 0
     success_eplen = []
     best_scores = []
-    log_dir = 'data/%s' %args.algorithm
+    #log_dir = 'data/%s' %args.algorithm
     if args.logging:
         bar = tqdm(range(args.num_scenes))
     else:
@@ -996,13 +1008,13 @@ if __name__=='__main__':
             else:
                 bar.set_postfix(success_rate="0.0% (0/0)", eplen="0.0")
             
-            os.makedirs('%s-%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
-            with open('%s-%s/config.json'%(log_dir, log_name), 'w') as f:
+            os.makedirs('%s/%s/scene-%d'%(log_dir, log_name, sidx), exist_ok=True)
+            with open('%s/%s/config.json'%(log_dir, log_name), 'w') as f:
                 json.dump(args.__dict__, f, indent=2)
 
             logger.handlers.clear()
             formatter = logging.Formatter('%(asctime)s - %(name)s -\n%(message)s')
-            file_handler = logging.FileHandler('%s-%s/scene-%d/%s.log'%(log_dir, log_name, sidx, args.algorithm))
+            file_handler = logging.FileHandler('%s/%s/scene-%d/%s.log'%(log_dir, log_name, sidx, args.algorithm))
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
 
@@ -1082,12 +1094,12 @@ if __name__=='__main__':
         print_fn('Objects: %s' %[o for o,s in selected_objects])
 
         if args.logging:
-            cv2.imwrite('%s-%s/scene-%d/top_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgb, cv2.COLOR_RGB2BGR))
-            cv2.imwrite('%s-%s/scene-%d/front_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbFront, cv2.COLOR_RGB2BGR))
-            cv2.imwrite('%s-%s/scene-%d/nv_top_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbNV, cv2.COLOR_RGB2BGR))
-            cv2.imwrite('%s-%s/scene-%d/nv_front_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbFrontNV, cv2.COLOR_RGB2BGR))
-            cv2.imwrite('%s-%s/scene-%d/top_seg_init.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[initSeg.astype(int)], cv2.COLOR_RGB2BGR))
-            cv2.imwrite('%s-%s/scene-%d/top_seg_init_nv.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[initSegNV.astype(int)], cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s/%s/scene-%d/top_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgb, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s/%s/scene-%d/front_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbFront, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s/%s/scene-%d/nv_top_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbNV, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s/%s/scene-%d/nv_front_initial.png'%(log_dir, log_name, sidx), cv2.cvtColor(initRgbFrontNV, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s/%s/scene-%d/top_seg_init.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[initSeg.astype(int)], cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s/%s/scene-%d/top_seg_init_nv.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[initSegNV.astype(int)], cv2.COLOR_RGB2BGR))
         initTable = searcher.reset(initRgbNV, initSegNV)
         print_fn('initTable: \n %s' % initTable[0])
         table = initTable
@@ -1131,7 +1143,7 @@ if __name__=='__main__':
                     #plt.imshow(np.mean(actionProb, axis=(0, 1)))
                     actionProb = np.mean(actionProb, axis=(0,1))
                 plt.imshow(actionProb)
-                plt.savefig('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
+                plt.savefig('%s/%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step))
                 #cv2.imwrite('%s-%s/scene-%d/actionprob_%d.png'%(log_dir, log_name, sidx, step), actionProb)
 
             # expected result in mcts #
@@ -1147,7 +1159,7 @@ if __name__=='__main__':
 
             tableRgb = renderer.getRGB(nextTable)
             if args.logging:
-                cv2.imwrite('%s-%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(tableRgb, cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s/%s/scene-%d/expect_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(tableRgb, cv2.COLOR_RGB2BGR))
 
 
             # simulation step in pybullet #
@@ -1160,12 +1172,12 @@ if __name__=='__main__':
             currentSegNV = obs['nv-'+args.view]['segmentation']
             currentRgbFrontNV = obs['nv-front']['rgb']
             if args.logging:
-                cv2.imwrite('%s-%s/scene-%d/top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgb, cv2.COLOR_RGB2BGR))
-                cv2.imwrite('%s-%s/scene-%d/front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFront, cv2.COLOR_RGB2BGR))
-                cv2.imwrite('%s-%s/scene-%d/nv_top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
-                cv2.imwrite('%s-%s/scene-%d/nv_front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
-                cv2.imwrite('%s-%s/scene-%d/top_seg_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
-                cv2.imwrite('%s-%s/scene-%d/top_seg_%d_nv.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s/%s/scene-%d/top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgb, cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s/%s/scene-%d/front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFront, cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s/%s/scene-%d/nv_top_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s/%s/scene-%d/nv_front_real_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s/%s/scene-%d/top_seg_%d.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
+                cv2.imwrite('%s/%s/scene-%d/top_seg_%d_nv.png'%(log_dir, log_name, sidx, step), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
 
             table = searcher.reset(currentRgbNV, currentSegNV)
             if table is None:
@@ -1199,17 +1211,17 @@ if __name__=='__main__':
                 print_fn("--------------------------------")
                 print_fn("--------------------------------")
                 if args.logging:
-                    cv2.imwrite('%s-%s/scene-%d/top_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgb, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFront, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/nv_top_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/nv_front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/top_seg_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
-                    cv2.imwrite('%s-%s/scene-%d/top_seg_final_nv.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s/%s/scene-%d/top_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgb, cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s/%s/scene-%d/front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFront, cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s/%s/scene-%d/nv_top_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbNV, cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s/%s/scene-%d/nv_front_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(currentRgbFrontNV, cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s/%s/scene-%d/top_seg_final.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSeg.astype(int)], cv2.COLOR_RGB2BGR))
+                    cv2.imwrite('%s/%s/scene-%d/top_seg_final_nv.png'%(log_dir, log_name, sidx), cv2.cvtColor(cmap[currentSegNV.astype(int)], cv2.COLOR_RGB2BGR))
                 break
         best_scores.append(best_score)
         if args.logging and bestRgb is not None:
-            cv2.imwrite('%s-%s/scene-%d/top_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgb, cv2.COLOR_RGB2BGR))
-            cv2.imwrite('%s-%s/scene-%d/front_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgbFront, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s/%s/scene-%d/top_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgb, cv2.COLOR_RGB2BGR))
+            cv2.imwrite('%s/%s/scene-%d/front_best.png'%(log_dir, log_name, sidx), cv2.cvtColor(bestRgbFront, cv2.COLOR_RGB2BGR))
         if not args.wandb_off:
             wandb.log({'Success': float(best_score>args.threshold_success),
                        'Eplen': step+1,
@@ -1220,6 +1232,15 @@ if __name__=='__main__':
     print("Average scores: %.2f"%np.mean(best_scores))
     print("Success rate: %.2f (%d/%d)"%(success/args.num_scenes, success, args.num_scenes))
     print("Episode length: %.1f"%(np.mean(success_eplen) if len(success_eplen)>0 else 0))
+        
+    with open(os.path.join(log_dir, log_name, f'perform_data.json'), 'w') as f:
+        perform_data = {
+                "success": success/args.num_scenes, 
+                "score": np.mean(best_scores),
+                "eplen": np.mean(success_eplen) if len(success_eplen)>0 else 0
+                }
+        json.dump(perform_data, f)
+
     if not args.wandb_off:
         wandb.log({'Success Rate': success/args.num_scenes,
                    'Mean Eplen': np.mean(success_eplen) if len(success_eplen)>0 else 0,
