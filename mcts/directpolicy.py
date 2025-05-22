@@ -784,6 +784,7 @@ def setupEnvironment(args, logname):
     }
     
     gui_on = not args.gui_off
+    logname = logname.replace('/', '_')
     env = TableTopTidyingUpEnv(objects_cfg, camera_top, camera_front_top, vis=gui_on, gripper_type='85', logname=logname)
     p.resetDebugVisualizerCamera(2.0, -270., -60., (0., 0., 0.))
     p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Shadows on/off
