@@ -1234,9 +1234,9 @@ if __name__=='__main__':
         
     with open(os.path.join(log_dir, log_name, f'perform_data.json'), 'w') as f:
         perform_data = {
-                "success": success/args.num_scenes, 
-                "score": np.mean(best_scores),
-                "eplen": np.mean(success_eplen) if len(success_eplen)>0 else 0
+                "success": float(success/args.num_scenes), 
+                "score": float(np.mean(best_scores)),
+                "eplen": float(np.mean(success_eplen)) if len(success_eplen)>0 else 0
                 }
         json.dump(perform_data, f)
 
