@@ -859,7 +859,7 @@ if __name__=='__main__':
     else:
         log_name = os.path.join(args.tag, "Mix")
     log_dir = 'data'
-    os.makedirs(log_dir, log_name, exist_ok=True)
+    os.makedirs(os.path.join(log_dir, log_name), exist_ok=True)
         
     if args.logging:
         logger = logging.getLogger()
