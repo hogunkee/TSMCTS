@@ -54,21 +54,22 @@ for logname in logs:
     envs = os.listdir(os.path.join('data', logname))
     for env in sorted(envs):
         scenes = sorted([s for s in os.listdir(os.path.join('data', logname, env)) if s.startswith('scene')])
-        if len(scenes)<=10:
-            continue
         try:
             with open(os.path.join('data', logname, env, 'config.json'), 'r') as f:
                 cfg = json.load(f)
                 seed = cfg['seed']
-            ep_length = []
-            ep_success_length = []
-            ep_success_score = []
-            deltas = []
-            for scene in scenes:
-                scene_dir = os.path.join('data', logname, env, scene)
+        except:
+            error_files.append(os.path.join(logname, env))
+            continue
+
+        ep_length = []
+        ep_success_length = []
+        ep_success_score = []
+        deltas = []
+        for scene in scenes:
+            scene_dir = os.path.join('data', logname, env, scene)
+            try:
                 logfile = [f for f in os.listdir(scene_dir) if f.endswith('.log')]
-                if len(logfile)==0:
-                    continue
                 logfile = logfile[0]
                 with open(os.path.join(scene_dir, logfile), 'r') as f:
                     x = f.readlines()
@@ -77,19 +78,22 @@ for logname in logs:
                 scores, success_score = filter_log(x)
                 if success_score !=0:
                     ep_success_score.append(success_score)
-                if scores is None:
-                    continue
                 if scores[-1]:
                     ep_success_length.append(len(scores[:-1]))
                 ep_length.append(len(scores[:-1]))
+            except:
+                error_files.append(os.path.join(logname, env, scene))
+                continue
 
             numep = len(scenes)
-            if numep==0:
+            if numep==0 or len(ep_success_length)==0:
                 success = '0.00'
+                score = '0.000'
+                eplen = '0.000'
             else:
                 success = '%.2f'%(len(ep_success_length)/len(scenes))
-            score = '%.3f'%(np.mean(ep_success_score))
-            eplen = '%.3f'%(np.mean(ep_success_length))
+                score = '%.3f'%(np.mean(ep_success_score))
+                eplen = '%.3f'%(np.mean(ep_success_length))
             df.loc['%s-%s'%(logname, env)] = [success, score, eplen, numep, seed, logname, env]
 
             #print('Num episodes:', len(scenes))
@@ -100,9 +104,6 @@ for logname in logs:
             #print('Episode length: %.3f' %np.mean(ep_success_length))
             #print('Average length:', np.mean(ep_length))
             #print('-'*40)
-        except:
-            error_files.append(os.path.join(logname, env, scene))
-            continue
 if args.out is not None:
     df.to_csv(args.out, index=False)
 print(df)

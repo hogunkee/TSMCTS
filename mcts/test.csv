@@ -1,7 +1,9 @@
 success,score,eplen,numep,seed,logname,env
 0.16,0.549,10.062,100,3456,A-directpolicy-bc,B2B5
+0.09,0.561,13.667,100,3456,A-directpolicy-bc,C4C6C12
 0.03,0.405,10.667,100,3456,A-directpolicy-bc,D5D8D11
 0.02,0.430,9.500,100,3456,A-directpolicy-bc,Mix
+0.05,0.489,9.400,100,3456,A-directpolicy-bc,O3O7
 0.10,0.542,9.500,100,3456,A-directpolicy-iql,B2B5
 0.10,0.544,7.500,100,3456,A-directpolicy-iql,C4C6C12
 0.02,0.384,8.500,100,3456,A-directpolicy-iql,D5D8D11
@@ -33,6 +35,7 @@ success,score,eplen,numep,seed,logname,env
 0.04,0.497,8.000,50,12345,directpolicy-bc,Mix
 0.10,0.510,14.400,50,12345,directpolicy-bc,O3O7
 0.12,0.518,8.167,50,12345,directpolicy-iql,B2B5
+0.08,0.513,4.250,50,12345,directpolicy-iql,C4C6C12
 0.02,0.373,7.000,50,12345,directpolicy-iql,D5D8D11
 0.06,0.473,5.000,50,12345,directpolicy-iql,Mix
 0.10,0.565,11.600,50,12345,directpolicy-iql,O3O7
