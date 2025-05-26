@@ -52,8 +52,8 @@ df = pd.DataFrame(columns=['success', 'score', 'eplen', 'numep', 'seed', 'lognam
 error_files = []
 for logname in logs:
     envs = os.listdir(os.path.join('data', logname))
-    for env in envs:
-        scenes = [s for s in os.listdir(os.path.join('data', logname, env)) if s.startswith('scene')]
+    for env in sorted(envs):
+        scenes = sorted([s for s in os.listdir(os.path.join('data', logname, env)) if s.startswith('scene')])
         if len(scenes)<=10:
             continue
         try:
@@ -84,7 +84,10 @@ for logname in logs:
                 ep_length.append(len(scores[:-1]))
 
             numep = len(scenes)
-            success = '%.2f'%(len(ep_success_length)/len(scenes))
+            if numep==0:
+                success = '0.00'
+            else:
+                success = '%.2f'%(len(ep_success_length)/len(scenes))
             score = '%.3f'%(np.mean(ep_success_score))
             eplen = '%.3f'%(np.mean(ep_success_length))
             df.loc['%s-%s'%(logname, env)] = [success, score, eplen, numep, seed, logname, env]
